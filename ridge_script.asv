@@ -1,0 +1,63 @@
+edges = -2.5:.5:1;
+blocks = [edges(1:end-1)' edges(2:end)'];
+
+out = tempRidge(ex, 'bg', struct( ...
+    'lagWindowSec', [-1 2.5], ...
+    'lagDropoutBlocksSec', blocks, ...
+    'cvMode', 'trial', ...
+    'cvFolds', 5, ...
+    'useEyeTime', true));
+
+g1 = out.groups{1};
+
+g1.lagDropoutX
+g1.lagDropoutY
+
+% BIAS: directional gain
+out = tempRidge(ly, [], struct( ...
+    'lagWindowSec', [0, 2], ...
+    'rewardDirectionMode', true, ...
+    'cvMode', 'trial', ...
+    'plot', 'true',...
+    'cvFolds', 5));
+
+g = out.groups{1};
+figure
+subplot(1,2,1)
+plot(out.plotLagSec, g.betaTowardX, 'LineWidth', 1.5); hold on
+plot(out.plotLagSec, g.betaAwayX, '--', 'LineWidth', 1.5);
+xline(0, ':'); yline(0, ':');
+xlabel('Target time relative to gaze (s)')
+ylabel('Ridge weight')
+title('X')
+%legend({'toward reward','away reward'}, 'Location', 'best')
+subplot(1,2,2)
+plot(out.plotLagSec, g.betaTowardY, 'LineWidth', 1.5); hold on
+plot(out.plotLagSec, g.betaAwayY, '--', 'LineWidth', 1.5);
+xline(0, ':'); yline(0, ':');
+xlabel('Target time relative to gaze (s)')
+ylabel('Ridge weight')
+title('Y')
+%legend({'toward reward','away reward'}, 'Location', 'best')
+
+%% bias: location gain
+out = tempRidge(ly, [], struct( ...
+    'rewardRegionMode', true, ...
+    'cvMode', 'trial', ...
+    'plot','true', ...
+    'cvFolds', 5));
+
+%latency analysis:
+[~, iHighX] = max(g.betaHighX);
+[~, iLowX]  = max(g.betaLowX);
+
+latHighX = out.plotLagSec(iHighX);
+latLowX  = out.plotLagSec(iLowX);
+
+latencyShiftX = latHighX - latLowX;% negative: high faster lat
+
+%% simple error regression
+errDistReg(ly)
+errDistReg(ka, {'bg'})
+%% idea: SPATIAL RIDGE: gain/error a function of location distance (within the 1 sec interval where it matters)
+

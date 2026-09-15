@@ -1,0 +1,10 @@
+stimuli/*
+v2.0.6/*
+setupFiles/*
+to_be_integrated/*
+*.setup
+*.bin
+*.zip
+*.tar.gz
+cops_analysis/example_data/experimental_ka/ka_jul17.mat
+cops_analysis/lqg-main/notebooks/exports/rewlearn/

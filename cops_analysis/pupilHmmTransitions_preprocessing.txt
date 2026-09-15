@@ -1,0 +1,139 @@
+Pupil–HMM transition analysis: preprocessing steps
+==================================================
+
+Function
+--------
+pupilHmmTransitions(ex, opts)
+
+1. Input and alignment
+----------------------
+- HMM predictions must first be attached to ex.Trials using
+  mergeCoPsHmmStruct.
+- By default, transitions are derived from:
+  ex.Trials(k).hmm.smoothed.hardCloser
+- Eye samples are aligned to trial time using reconstructEyePx.
+- HMM step estimates are mapped onto eye-sample times using mapTargetsByStep.
+
+2. Pupil channels
+-----------------
+- Right pupil: ex.Trials(k).Eye.v(3,:)
+- Left pupil:  ex.Trials(k).Eye.v(6,:)
+- Eye.v analog pupil voltages may legitimately be negative; their sign is
+  therefore not used to determine validity.
+
+3. Invalid samples and artifacts
+--------------------------------
+- Nonfinite pupil samples are marked invalid.
+- Pupil samples are also invalidated when the corresponding eye-position
+  channels are unavailable.
+- By default, pupil samples are strictly excluded when reconstructed gaze is
+  outside ex.setup.screenRect (opts.excludeOutsideScreen=true). This mask is
+  applied both to session normalization and to analyzed traces.
+- Off-screen samples are restored to NaN after short-gap interpolation and
+  smoothing, so those operations cannot reintroduce them. The default screen
+  padding is zero pixels; opts.screenPaddingPx can add a deliberate margin.
+- A missing/invalid screenRect raises an error under the strict default. Set
+  opts.excludeOutsideScreen=false only when analyzing legacy data without
+  display geometry.
+- Samples farther than opts.outlierMad robust SDs from the session median are
+  treated as outliers. The default threshold is 6.
+- Invalid intervals are padded by opts.blinkPaddingSec on both sides. The
+  default is 0.10 s.
+- Gaps no longer than opts.maxInterpGapSec are linearly interpolated when
+  bounded by valid samples. The default is 0.15 s.
+- Longer gaps remain missing.
+- The resulting trace is smoothed with a moving-average window of
+  opts.smoothWindowSec. The default is 0.10 s.
+
+4. Normalization and binocular combination
+-------------------------------------------
+- Each eye is normalized separately across the session.
+- Normalization uses the session median and a robust SD calculated as
+  1.4826 times the median absolute deviation.
+- The normalized left and right pupil traces are averaged when both are
+  available.
+- If only one eye is available, that eye supplies the combined trace.
+- Thus, pupil changes are expressed in session-eye robust SD units.
+
+5. HMM states and transition events
+-----------------------------------
+- hardCloser state coding is:
+    0 = non-tracking
+    1 = tracking the reward-closer target
+    2 = tracking the reward-farther target
+  NaN = no HMM estimate
+- Extracted transition classes are:
+    closer -> farther
+    farther -> closer
+    non-tracking -> closer
+    non-tracking -> farther
+    closer -> non-tracking
+    farther -> non-tracking
+- Detailed labels are retained in out.events.eventType. The default plotting
+  categories pool these into two panels. The first panel shows:
+    non-tracking -> tracking
+    tracking -> non-tracking
+  The second panel shows:
+    closer -> farther
+    farther -> closer
+- Both panels shade the baseline interval in light gray when baseline
+  correction is enabled. A single four-entry legend is shown above the first
+  panel; reference lines and shading are excluded from the legend.
+- By default, a genuine SM3 non-tracking probability is required.
+- Source and destination states must each remain stable for at least
+  opts.minStateDwellSec. The default is 0.10 s.
+- Candidate transitions less than opts.minEventSeparationSec from another
+  transition are rejected. The default is 0.50 s.
+
+6. Event epochs and baseline correction
+----------------------------------------
+- Time zero is the HMM state transition.
+- The default extracted epoch is -1.5 to +3.0 s.
+- The default baseline is -1.5 to -1.0 s.
+- The mean baseline pupil value is subtracted from the entire event trace.
+- Setting opts.baselineWindowSec = [] disables event-wise baseline
+  subtraction. Session/eye robust z-scoring and the remaining preprocessing
+  are still applied; baselinePupilZ is NaN and the corrected trace fields then
+  contain the same normalized values as combinedUncorrectedZ.
+- The early baseline is intended to preserve pupil changes that may precede
+  the physical saccade because of motor preparation.
+- Events require at least 70% valid baseline samples and 60% valid samples
+  across the full epoch by default.
+- Both baseline-corrected and uncorrected combined traces are retained.
+
+7. Default summary windows
+--------------------------
+- Anticipatory response: -0.5 to 0 s
+- Early post-transition response: +0.2 to +1.0 s
+- Late post-transition response: +1.0 to +2.5 s
+- Peak post-transition response: maximum from +0.2 to +2.5 s
+
+8. Saccade controls
+-------------------
+- Saccades are detected from gaze position using detectTrackingSaccadesCoPs.
+- For every retained transition, the function records the latency and
+  amplitude of the nearest detected saccade.
+- These variables can be used to distinguish transition-related pupil effects
+  from effects related to saccade timing or amplitude.
+
+9. Main outputs
+---------------
+- out.events: one row per retained transition, including event type, timing,
+  HMM probabilities, pupil summaries, and nearest-saccade measures.
+- out.timeSec: time axis relative to the transition.
+- out.traces.combined: baseline-corrected combined-eye traces.
+- out.traces.left and out.traces.right: baseline-corrected individual-eye
+  traces.
+- out.traces.combinedUncorrectedZ: normalized but uncorrected combined traces.
+- out.statePupil.summary: continuous pupil means for nonTracking, tracking,
+  closer, and farther states, reported with both sample and trial weighting.
+- out.statePupil.trialMeans: per-trial state means used for trial-weighted
+  comparisons.
+- pupilHmmStateMeans(ex, opts) exposes these continuous-state summaries as a
+  standalone analysis and plots trial-level tracking versus non-tracking
+  boxplots by default. Its comparison table includes a two-sided paired
+  t-test across trials containing usable samples from both states.
+- opts.pairedOnly=true restricts the state summary, trial-level boxplots, and
+  contrasts to trials containing both tracking and non-tracking samples.
+- out.summary: mean pupil response by transition type.
+- out.figure: event-related pupil plot when opts.makePlot=true.

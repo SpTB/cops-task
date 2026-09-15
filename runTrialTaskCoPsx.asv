@@ -1,0 +1,1031 @@
+function [ex] = runTrialTaskCoPsx(ex, pixOn, eyeOn, rewOn)
+% run Trial Task CoPs - Continuous Psychophysics Exp (Restructured)
+% Wojciech Zajkowski 20 Nov 25
+% Restructured by Assistant 25 Nov 25
+
+% Adapted from syth_mask_test.m for VSgui_v2 framework
+% Mouse tracking instead of eye fixation, multi-step stimulus presentation
+
+% Key restructuring:
+% - Separated state updates from frame updates
+% - Integrated continuous reward system
+% - Frame-based timing instead of tic/toc loops
+% - Proper integration with VSgui framework
+
+% history
+% 11/12/25: Created from runTrialTask.m + syth_mask_test.m integration
+% 11/25/25: Restructured for framework consistency
+
+% ------------------------------------------------------------------------
+% PRETRIAL ALLOCATIONS, STIMULUS GENERATION AND SETUP
+% ------------------------------------------------------------------------
+
+arguments
+    ex struct
+    pixOn  {mustBeNumericOrLogical} = true
+    eyeOn  {mustBeNumericOrLogical} = true
+    rewOn {mustBeNumericOrLogical} = true
+end
+
+%debugging vars (filled with timestamps each time event happened)
+been_here = [];
+been_here2 = [];
+
+dpp = atan(ex.setup.monitorWidth/2/ex.setup.viewingDistance)*180/pi/(ex.setup.screenRect(3)/2);
+ppd = 1/dpp;
+
+% point for photodiode synch pulse
+spPos = ex.synch.Pos;
+spSz = ex.synch.PSz;
+spCol = ex.synch.Col;
+
+% Unpack CoPs parameters
+dirs = ex.exp.CoPs.dirs;
+pos = ex.exp.CoPs.pos;
+graph = ex.exp.CoPs.graph;
+ctl = ex.exp.CoPs.ctl;
+rew = ex.exp.CoPs.rew;
+timing = ex.exp.CoPs.timing;
+tut = ex.exp.CoPs.tut;
+
+% One-shot override: run current trial as a center fixation trial.
+useFixationTrial = isfield(ctl, 'next_fixation_trial') && logical(ctl.next_fixation_trial);
+if useFixationTrial
+    ctl.target_num = 1;
+    pos.initx1 = 0;
+    pos.inity1 = 0;
+    pos.dxmin1 = 0;
+    pos.dxmax1 = 0;
+    pos.dymin1 = 0;
+    pos.dymax1 = 0;
+    ex.exp.CoPs.ctl.next_fixation_trial = 0; % consume one-shot flag
+end
+
+
+rew.alwaysOnEyeInBounds; % if yes, reward always given as long as eye traces
+% are within screen bounds
+
+% Optional tutorial mode: use one target with motion biased toward one corner.
+if tut.enable
+    ctl.target_num = 1;
+end
+
+
+% Window and display setup
+window_size = ex.setup.screenRect;
+window_background_color = ex.idx.bg_lum * [255, 255, 255];
+
+% Calculate max distance for reward here...(could be moved to a sep func for more modularity...)
+max_distance_reward = ctl.max_dist_mult * graph.radius *  graph.size_mult;
+gauss_dim = graph.texture_dims(1)*graph.size_mult; % based on texture size
+
+%reward_mat = gauss_rew_land(gauss_dim, [gauss_dim/2, gauss_dim/2], rew.gauss_sigma); % reward matrix
+% Pick Gaussian reward center once per session: center or one of 4 quadrants.
+[rew, selected_center_norm, center_px] = selectGaussRewardCenterCoPsx(rew, gauss_dim);
+ex.exp.CoPs.rew = rew;
+
+reward_mat = gauss_rew_land(gauss_dim, center_px, rew.gauss_sigma); % reward matrix
+xshift = (window_size(3) - gauss_dim)/2; %
+yshift = (window_size(4) - gauss_dim)/2;
+
+% gauss center marker settings
+gauss_center_screen_px = [xshift + center_px(1), yshift + center_px(2)];
+
+% Log center for trial-level data/debugging
+ex.Trials(ex.j).gaussRewardCenterNorm = selected_center_norm;
+ex.Trials(ex.j).gaussRewardCenterPx = center_px;
+
+if ctl.target_num == 2 && isfield(ctl, 'randomize_start_pos') && ctl.randomize_start_pos
+    start_radius = hypot(pos.initx1, pos.inity1);
+    start_theta = rand * (2*pi);
+
+    pos.initx1 = start_radius * cos(start_theta);
+    pos.inity1 = start_radius * sin(start_theta);
+    pos.initx2 = -pos.initx1;
+    pos.inity2 = -pos.inity1;
+end
+
+
+% Initialize target positions
+posT = struct();
+
+if tut.enable
+    corner_targets = rew.gauss_center_positions_norm*2-1; %[0,0; -0.75, -0.75; 0.75, -0.75; -0.75, 0.75; 0.75, 0.75] % Center, TL, TR, BL, BR
+    if  strcmpi(tut.corner_mode, 'fixed')
+        corner_idx = min(max(1, ctl.tutorial.corner_idx), 5);
+        
+    % explicit sequence
+    elseif strcmpi(tut.corner_mode, 'sequence')
+        seq = tut.corner_sequence(:)';
+        seq_counter = tut.sequence_counter;       
+        seq_idx = mod(seq_counter, numel(seq)) + 1;
+        corner_idx = seq(seq_idx);
+        ex.exp.CoPs.tut.sequence_counter = seq_counter + 1;
+    % else: random
+    else
+        corner_idx = randi(5);
+    end
+    target_corner = corner_targets(corner_idx, :);
+    bias_strength = tut.bias_strength;
+    jitter_std = tut.jitter_std;
+
+    if tut.inplace
+        posT.x1 = repmat(target_corner(1), 1, ctl.nsteps);
+        posT.y1 = repmat(target_corner(2), 1, ctl.nsteps);
+    else
+        [posT.x1, posT.y1] = sim_targ_pos_biased_corner( ...
+            ctl.nsteps, [pos.initx1, pos.inity1], ...
+            [pos.dxmin1, pos.dxmax1], [pos.dymin1, pos.dymax1], ...
+            target_corner, bias_strength, jitter_std);
+    end
+   
+    ex.Trials(ex.j).tutorialCornerIdx = corner_idx;
+    ex.Trials(ex.j).tutorialCornerTarget = target_corner;
+else
+    posT.x1 = sim_targ_pos(ctl.nsteps, pos.initx1, pos.dxmin1, pos.dxmax1);
+    posT.y1 = sim_targ_pos(ctl.nsteps, pos.inity1, pos.dymin1, pos.dymax1);
+end
+
+
+if ctl.target_num == 2
+    posT.x2 = sim_targ_pos(ctl.nsteps, pos.initx2, pos.dxmin2, pos.dxmax2);
+    posT.y2 = sim_targ_pos(ctl.nsteps, pos.inity2, pos.dymin2, pos.dymax2);
+end
+ex.Trials(ex.j).posT = posT;
+
+
+% assign colors for eye and mouse positions (overlay dots: ol)
+if ~isempty(ex.eyeCal.LXPos)
+    if ~ ex.setup.stereo.Display
+        olColBinoc = [ex.idx.overlayRed,ex.idx.overlayGreen,ex.idx.overlayBlue, ex.idx.overlayGreen]; % right,left,binoc, mouse
+        olColBinoc = [olColBinoc'*ones(1,3)];
+    else
+        olColBinoc = [ex.idx.overlay,ex.idx.overlay ex.idx.overlay ex.idx.overlay]; % right, left, binoc, mouse
+        olColBinoc = [olColBinoc'*ones(1,3)];
+    end
+    olPSz = 16; %[ceil(ex.setup.eyePSz/2)*ones(2,1); ex.setup.eyePSz; 2]; % eye (R,L,B), mouse
+else olColBinoc = ex.idx.overlay*ones(1,3); %
+    olPSz = 16;%[ex.setup.eyePSz; 2]; % eye, mouse pos
+end
+
+% Eye tolerance visualization (matches checkEyex default tolerance scalar)
+tolerance_scalar = ctl.tolerance_scalar;
+tolHalfW = ex.fix.WinW * tolerance_scalar;
+tolHalfH = ex.fix.WinH * tolerance_scalar;
+tolRect = CenterRectOnPointd([0 0 2*tolHalfW 2*tolHalfH], ex.fix.PCtr(1), ex.fix.PCtr(2));
+tolRectColor = ex.idx.white;
+tolRectPenW = 2;
+
+
+% Optional experimenter-only target circles (not projected).
+useOverlayTargetCircles = isfield(ctl,'circle_target_loc_overlay') && ctl.circle_target_loc_overlay;
+overlayCircleRadiusPx = graph.radius * graph.size_mult;
+overlayCirclePenW = 2;
+overlayCircleColor = ex.idx.white;
+
+
+% MAKE STIMULUS AND PRELOAD TEXTURES
+try
+    [stimTextures, targPositions] = makeStimulusCoPsx(ex.setup, ctl, ex.stim.seq{ex.j}, posT, graph);
+catch err
+    fprintf(2, '%s\n', getReport(err, 'extended'));
+    error('Failed to create stimulus: %s', err.message);
+end
+
+% PRE-ALLOCATE MEMORY FOR TIMING AND DATA
+frametimestep = 1/ex.setup.refreshRate;
+eyetimestep = 1/ex.setup.adc.Rate;  % 500Hz is the fastest Eyelink sample binocularly
+maxTrialDur = timing.wait_secs * ctl.nsteps + 5 + ex.fix.waitstop; % add buffer time
+flip_info = NaN(ceil(maxTrialDur*ex.setup.refreshRate),4);
+StimStart = NaN*ones(1,ceil(ex.setup.refreshRate*ex.fix.stimDuration));
+
+flip_info_grow_chunk = ceil(10 * ex.setup.refreshRate); % grow by ~10s if trial runs longer than expected
+stimstart_grow_chunk = ceil(2 * ex.setup.refreshRate);  % grow by ~2s as needed
+
+% Initialize eye-related variables
+if eyeOn
+    centerEye_t0 = GetSecs; % hack to prevent several re-centerings of eye position per key-press
+    trEye.v = NaN(length(ex.setup.adc.Channels),ceil(maxTrialDur*ex.setup.adc.Rate)); % pre-allocate memory
+    trEye.t = NaN(1,ceil(maxTrialDur*ex.setup.adc.Rate));
+    trEye.n = 0; % nAcquiredFrames
+    trEye.sacc = [];
+    pass_eye = 0;
+    if isempty(ex.eyeCal.LXPos)
+        lastEyePos = [0 0];
+    else lastEyePos = [0 0; 0 0];
+    end
+    lasteyeposttime = 0;
+end
+manualStart_t0 = -Inf; % debounce manual trial start (F6)
+mousePos = [NaN,NaN];%[x+ex.setup.mouseXOffset,y];
+
+% Initialize other trial variables
+eyeInBounds = 0;
+pass_eye = 0; % currently this one's init is doubled for convenience..
+pass_eye_accum = 0; %number of eye frames that were passed in a row
+%freeViewing = 0; % for checkEye, 0 for assessing fixation (switched off for GO state); 1 for skipping fixation assesment
+mousePositions = [];
+olPos = [NaN,NaN];
+closeness_vec = [];
+reward_vec = [];
+scaled_reward_vec = [];
+current_step = 1;
+
+% Time variables
+time_startTrial = NaN;
+time_fpOn = NaN;
+time_stimOn = NaN;
+time_choice = NaN;
+time_reward = NaN; % analogue to time_earlyReward (replaces time_rewardGiven)
+time_error = NaN;
+
+% initialize misc
+current_x = NaN;
+current_y = NaN;
+current_xy = [0,0];
+gauss_reward = NaN;
+% Initialize reward tracking
+reward_accum_realized = 0; % total REALIZED (i.e., already rewarded) reward value across trial
+reward_accum_since_last = 0; % total reward value since last reward delivery (or start of trial)
+reward_start = 0;
+reward_stop = 0;
+reward_on = 0;
+reward_cnt = 0;
+% reward_dur = rew.duration;
+
+% Fixation flash settings (dot flashes only during fixation period)
+fixFlashHz = 5;      % flashes per second
+fixFlashDuty = 0.5;  % proportion of cycle that stays visible
+fixFlashEnabled = 0; % toggle with F6
+fixFlashToggle_t0 = -Inf;
+fixFlashToggleDebounceSecs = 0.25;
+
+
+% Initialize state variables
+stimulus_active = false;
+reward_active = false; % xx add reward refractory period, maybe..
+
+
+% Initialize loop counters
+fi = 1; % frame index
+si = 0; % stim frame index
+ei = 1; % eye frame index
+xi = 1; % eye frame index but only for GO (to check reward update freq)
+lastframet = 0;
+lasteyepostime = 0;
+ex.loopcnt(ex.j) = 0;
+ex.Trials(ex.j).to = 0; % default is no time-out
+ex.Trials(ex.j).pa = 0; % default is no pause
+% ex.Trials(ex.j).dR = 0; % default is no decrease in reward size
+% ex.Trials(ex.j).addInstructionTrials = 0;
+% ------------------------------------------------------------------------
+% TRIAL START
+% ------------------------------------------------------------------------
+% use clock time as unique trial ID
+clocktime = fix(clock);
+
+% get trial start times
+tic
+if pixOn
+    tocBEFORESTROBES = toc;
+    sendStrobes([ex.strobe.TRIAL_ID,fix(clock),ex.strobe.TRIAL_NUMBER,ex.j]);
+    tocSENDSTROBES = toc;
+end
+if eyeOn
+    trstart_Eyelink = Eyelink('TrackerTime');
+    toc_trstartEYELINK = toc;
+end
+trstart = GetSecs;  % start of trial time
+toc_trstartGETSECS = toc;
+
+% this synchronizes the ripple and the datapixOnx clocks
+if pixOn
+    sendStrobe(ex.strobe.TRIAL_START);
+    toc_trstartSENDSTROBE = toc;
+    [tmp,tmp,trstart_Datapixx] = getDatapixxDin(ex.strobe.TRIAL_START);
+end
+
+ttime = GetSecs-trstart;
+state = ex.states.START;
+
+% ------------------------------------------------------------------------
+% MAIN TRIAL LOOP
+% ------------------------------------------------------------------------
+while state ~= ex.states.BREAKFIX &&...
+        state ~= ex.states.TRIALCOMPLETE &&...
+        state ~= ex.states.NOFIX &&...
+        ex.quit == 0 && ttime > 0
+    
+    % --------------------------------------------------------------------
+    % STATE UPDATE SECTION -----------------------------------------------
+    % --------------------------------------------------------------------
+    freeViewing = ex.exp.CoPs.freeViewing;
+    % START -> FPON
+    if state == ex.states.START && ttime > ex.fix.freeduration
+        state = ex.states.FPON;
+        stimulus_active = true;
+        time_startTrial = GetSecs - trstart;
+        %disp('in fixation dot on');
+        %fprintf('in fixation dot on');
+        time_fpOn = GetSecs - trstart;
+    end
+    
+    % FPON -> FPHOLD (fixation acquired)
+    if state == ex.states.FPON  && pass_eye && freeViewing == 0% && ttime < ex.fix.waitstop
+        time_startFixation = GetSecs - trstart;
+        
+        % if ttime > 0.5 % brief fixation period
+        state = ex.states.FPHOLD;
+        if pixOn sendStrobe(ex.strobe.FIXATION_START);
+          %  disp('in fixation acquired');
+           % fprintf('in fixation acquired');
+        end
+    elseif state == ex.states.FPON && ttime < ex.fix.waitstop && freeViewing == 1 
+        time_startFixation = GetSecs - trstart;
+        % if ttime > 0.5 % brief fixation period
+        state = ex.states.FPHOLD;
+        if pixOn sendStrobe(ex.strobe.FIXATION_START);
+        end
+    elseif state == ex.states.FPON && ttime > ex.fix.waitstop && freeViewing == 1
+        state = ex.states.NOFIX;
+        disp('in no fixation acquired');
+        fprintf('in no fixation acquired');
+        time_breakFixation = GetSecs - trstart;
+    end
+    
+    % FPHOLD -> FIXATIONCOMPLETE
+    if state == ex.states.FPHOLD
+        if  false %~pass_eye 
+            state = ex.states.BREAKFIX;
+            disp('in breakfix');
+            %new
+        elseif pass_eye && pass_eye_accum <= 500
+           % disp('during fix')
+            % time_breakFixation = GetSecs - trstart;
+        elseif ttime > time_startTrial + ex.fix.duration && pass_eye_accum>500
+            % current_step = current_step + 1;
+            state = ex.states.PREGO;
+            if ~rew.alwaysOnEyeInBounds
+                Datapixx('SetDoutValues',1);
+                Datapixx('RegWr');
+            end
+            time_prego = GetSecs - trstart;
+            disp('fixation complete');
+            fprintf('fixation complete');
+        end
+    end
+    
+    % FIXATIONCOMPLETE -> GO (start stimulus presentation)
+    if state == ex.states.PREGO
+       % reward_stop=1;
+        if ttime > time_prego + timing.prego_delay
+            state = ex.states.FIXATIONCOMPLETE;
+            time_fixationComplete = GetSecs - trstart;
+            disp('stimulus pre-presentation');
+            fprintf('stimulus pre-presentation');
+        end
+    end
+    % FIXATIONCOMPLETE -> GO (start stimulus presentation)
+    if state == ex.states.FIXATIONCOMPLETE && ttime>0; % xx this can be increased for testing
+        if ttime > time_fixationComplete + timing.go_delay
+            state = ex.states.GO;
+            if ~rew.alwaysOnEyeInBounds
+                Datapixx('SetDoutValues',0);
+                Datapixx('RegWr');
+            end
+            freeViewing = 1; %because fixation no longer needed
+            time_stimOn = GetSecs - trstart;
+            reward_active = true;
+            disp('stimulus presentation started');
+            fprintf('stimulus presentation started');
+        end
+    end
+    
+    
+    % --------------------------------------------------------------------
+    % FRAME UPDATE SECTION -----------------------------------------------
+    % --------------------------------------------------------------------
+    % update eye position (fast)
+    ttime = GetSecs-trstart;
+    if eyeOn
+        if ttime > lasteyepostime + eyetimestep
+
+            [x,y] = GetMouse;
+            %Prepare single screen call for all onscreen dots ( fp, eyepos, mousepos)
+                if isempty(ex.eyeCal.LXPos) %monocular eye position
+                    olPos = [lastEyePos;mousePos]; % eye pos; mouse pos
+                    
+                else %overlay dot positions: binocular eye positions; mouse
+                    olPos = [lastEyePos;
+                        mean(lastEyePos,1); ... % mean R/L eye position;
+                        mousePos]; % mouse positions
+                end
+            % pass_eye =1;
+            %xxsimEyes(trEye, lastEyePos)
+            % simulate eye position here..
+            if current_step == 5
+                % fprintf('here')
+            end
+            
+            %calc rew
+            if state == ex.states.GO && reward_active
+                % Get current mouse position
+                % [current_x, current_y] = GetMouse();
+                eyePts = lastEyePos(:,1:2);
+                validEyeRows = all(isfinite(eyePts), 2);
+                if any(validEyeRows)
+                    % Use both eyes when available; fallback to single valid eye.
+                    current_xy_abs = mean(eyePts(validEyeRows, :), 1);
+                else
+                    current_xy_abs = [NaN NaN];
+                end
+
+                currentEyeInBounds = all(isfinite(current_xy_abs)) && ...
+                    current_xy_abs(1) >= ex.setup.screenRect(1) && current_xy_abs(1) <= ex.setup.screenRect(3) && ...
+                    current_xy_abs(2) >= ex.setup.screenRect(2) && current_xy_abs(2) <= ex.setup.screenRect(4);
+                % fprintf('current_xy = [%f %f]\n', current_xy(1), current_xy(2));
+                % mousePositions = [mousePositions; current_x, current_y, GetSecs()];
+
+
+                % Calculate closeness to targets ( [0-1] bound )
+                if ctl.target_num == 1
+                    closeness = calc_closeness(current_xy_abs, ...
+                        targPositions(current_step).targ1.pos_abs, max_distance_reward);
+                else
+                    closeness1 = calc_closeness(current_xy_abs, ...
+                        targPositions(current_step).targ1.pos_abs, max_distance_reward);
+                    closeness2 = calc_closeness(current_xy_abs, ...
+                        targPositions(current_step).targ2.pos_abs, max_distance_reward);
+                    closeness = max(closeness1, closeness2);
+                end
+                
+                % Map absolute screen coordinates to reward matrix coordinates
+                rel_x = round(current_xy_abs(1) - xshift);
+                rel_y = round(current_xy_abs(2) - yshift);
+                %is position (mouse/gaze) within the texture and on screen?
+                if currentEyeInBounds && ...
+                        (rel_x >= 1 && rel_x <= size(reward_mat,2)) && ...
+                        (rel_y >= 1 && rel_y <= size(reward_mat,1))
+                    gauss_reward = reward_mat(rel_y, rel_x);
+                else
+                    gauss_reward = 0;
+                end
+                %normalize:
+                gauss_reward = gauss_reward * (ctl.gauss_scalar-1) + 1;
+
+                % 
+                % % Map screen coordinates to reward matrix coordinates
+                % rel_x = uint16(current_xy(1) - xshift);
+                % rel_y = uint16(current_xy(2) - yshift);
+                % %is position (mouse/gaze) within the texture?
+                % if (rel_x>0 && rel_x<=size(reward_mat,1)) &&...
+                %         (rel_y>0 && rel_y<=size(reward_mat,2))
+                %     gauss_reward = reward_mat(rel_x, rel_y);
+                % else
+                %     gauss_reward = 0;
+                % end
+                
+                % Calculate scaled reward
+                if strcmp(ctl.reward_type, 'add')  & isfield(ctl, 'precision_weight')
+                    scaled_reward = closeness * ctl.precision_weight + gauss_reward * (1 - ctl.precision_weight);
+                elseif strcmp(ctl.reward_type, 'mult')  & isfield(ctl, 'gauss_scalar')
+                    scaled_reward = closeness * gauss_reward;
+                else
+                    disp('reward type not set properly!')
+                    break
+                end
+                
+                
+                % Store data
+                closeness_vec(end+1) = closeness;
+                reward_vec(end+1) = gauss_reward;
+                scaled_reward_vec(end+1) = scaled_reward;
+                
+                % Check for accumulated reward threshold
+                if ~isempty(scaled_reward_vec)
+                    reward_accum_since_last = sum(scaled_reward_vec) - reward_accum_realized; % this workds because reward_accum_realized is updated only after;
+                    if (reward_accum_since_last > rew.threshold)  && ~reward_on
+                        reward_accum_realized = reward_accum_realized + reward_accum_since_last;
+                        fprintf('\nReward delivered! Accumulated: %.2f\n', reward_accum_since_last);
+                        % Trigger reward delivery
+                        %if rewOn time_reward(ex.reward.time); end
+                        reward_cnt = reward_cnt + 1;
+                        time_reward(reward_cnt) = GetSecs() - trstart;
+                        reward_start = 1;
+                    end
+                end
+                
+                % Check for error conditions (too far from targets)
+                if current_step > 3
+                    if length(closeness_vec)>rew.accum_len_fp
+                        distance_window = 1 - closeness_vec(end-(rew.accum_len_fp):end);
+                    else
+                        distance_window = 1 -closeness_vec(1:end);
+                    end
+                    % if max(distance_window) > 0.95 || mean(distance_window) > 0.5
+                    %     sprintf('Bad performance - ending trial');
+                    %     state = ex.states.ERROR;
+                    %     time_error = GetSecs() - trstart;
+                    %     stimulus_active = false;
+                    %     reward_active = false;
+                    % end
+                    
+                end
+                xi = xi+1;
+            end
+            
+            % fprintf('Mouse X: %4d   Y: %4d\n', current_x, current_y);
+            % fprintf('gauss_reward: %4d\n', gauss_reward);
+            if state == ex.states.FPON
+               %keyboard
+            end
+            % [pass_eye,trEye,lastEyePos] = checkEyex(trEye,ex,pass_eye,freeViewing, lastEyePos);
+            [pass_eye,trEye,lastEyePos] = checkEyex(trEye,ex,pass_eye,freeViewing, lastEyePos, 0, 0, tolerance_scalar);
+            if pass_eye==1
+               pass_eye_accum = pass_eye_accum +1;
+               % sprintf('were adding')
+               % sprintf(pass_eye_accum);
+            else
+                pass_eye_accum = 0;
+            end
+            lasteyepostime = ttime;
+            ei = ei+1;
+        end
+    else
+        if ttime > .2 pass_eye = 1; end
+    end
+    
+     % Check whether at least one tracked eye is visible and within display bounds.
+    if eyeOn
+        if isempty(ex.eyeCal.LXPos)
+            eyePts = lastEyePos(1,1:2);
+            validEyeRows = all(isfinite(eyePts), 2);
+            eyeInBounds = any(validEyeRows) && ...
+                all(eyePts(validEyeRows,1) >= ex.setup.screenRect(1) & eyePts(validEyeRows,1) <= ex.setup.screenRect(3)) && ...
+                all(eyePts(validEyeRows,2) >= ex.setup.screenRect(2) & eyePts(validEyeRows,2) <= ex.setup.screenRect(4));
+        else
+            eyePts = lastEyePos(:,1:2);
+            validEyeRows = all(isfinite(eyePts), 2);
+            eyeInBounds = any(validEyeRows) && ...
+                all(eyePts(validEyeRows,1) >= ex.setup.screenRect(1) & eyePts(validEyeRows,1) <= ex.setup.screenRect(3)) && ...
+                all(eyePts(validEyeRows,2) >= ex.setup.screenRect(2) & eyePts(validEyeRows,2) <= ex.setup.screenRect(4));
+        end
+        %eyeInBounds = all(isfinite(eyePts(:))) && ...
+         %   all(eyePts(:,1) >= ex.setup.screenRect(1) & eyePts(:,1) <= ex.setup.screenRect(3)) && ...
+          %  all(eyePts(:,2) >= ex.setup.screenRect(2) & eyePts(:,2) <= ex.setup.screenRect(4));
+    else
+        eyeInBounds = false;
+    end
+
+
+
+
+    % give reward
+    if rewOn
+        if rew.alwaysOnEyeInBounds && state>5.5
+            if eyeInBounds
+                Datapixx('SetDoutValues',1);
+                Datapixx('RegWr');
+                reward_on = 1;
+            elseif ~eyeInBounds || state <=5.5
+                Datapixx('SetDoutValues',0);
+                Datapixx('RegWr');
+                reward_on = 0;
+            end
+        else
+            if reward_start
+                Datapixx('SetDoutValues',1);
+                Datapixx('RegWr');
+                reward_start = 0;
+                reward_on = 1;
+                %sprintf('rew now!')
+            end
+            if (current_step > ctl.nsteps) ||...
+                    (reward_on && ttime > time_reward(reward_cnt) + rew.duration)%*rew.scale
+                Datapixx('SetDoutValues',0);
+                Datapixx('RegWr');
+                reward_on = 0;
+                % been_here2(end+1) = GetSecs() - trstart;
+                %sprintf('rew over!')
+            end
+        end
+    end
+    % Screen('FillRect', ex.setup.overlay, ex.idx.bg);
+% Screen('CopyWindow', ex.setup.overlay, ex.setup.window);
+% Screen('Flip', ex.setup.window);
+    if ttime > lastframet + frametimestep
+        
+        % --------------------------------------------------------------------
+        % CONTINUOUS REWARD CALCULATION SECTION -------------------------------
+        % --------------------------------------------------------------------
+        % if state == ex.states.GO && reward_active
+        %     % Get current mouse position
+        %     [current_x, current_y] = GetMouse();
+        %     % print([current_x, current_y]);
+        %     mousePositions = [mousePositions; current_x, current_y, GetSecs()];
+        %
+        %     % Calculate closeness to targets ( [0-1] bound )
+        %     if ctl.target_num == 1
+        %         closeness = calc_closeness([current_x, current_y], ...
+        %             targPositions(current_step).targ1.pos_abs, max_distance_reward);
+        %     else
+        %         closeness1 = calc_closeness([current_x, current_y], ...
+        %             targPositions(current_step).targ1.pos_abs, max_distance_reward);
+        %         closeness2 = calc_closeness([current_x, current_y], ...
+        %             targPositions(current_step).targ2.pos_abs, max_distance_reward);
+        %         closeness = max(closeness1, closeness2);
+        %     end
+        %
+        %     % Map screen coordinates to reward matrix coordinates
+        %     rel_x = uint16(current_x - xshift);
+        %     rel_y = uint16(current_y - yshift);
+        %     %is position (mouse/gaze) within the texture?
+        %     if (rel_x>0 && rel_x<=size(reward_mat,1)) &&...
+        %             (rel_y>0 && rel_y<=size(reward_mat,2))
+        %         gauss_reward = reward_mat(rel_x, rel_y);
+        %     else
+        %         gauss_reward = 0;
+        %     end
+        %
+        %     % Calculate scaled reward
+        %     scaled_reward = closeness * ctl.precision_weight + gauss_reward * (1 - ctl.precision_weight);
+        %
+        %     % Store data
+        %     closeness_vec(end+1) = closeness;
+        %     reward_vec(end+1) = gauss_reward;
+        %     scaled_reward_vec(end+1) = scaled_reward;
+        %
+        %     % Check for accumulated reward threshold
+        %     if ~isempty(scaled_reward_vec)
+        %         reward_accum_since_last = sum(scaled_reward_vec) - reward_accum_realized; % this workds because reward_accum_realized is updated only after;
+        %         if (reward_accum_since_last > rew.threshold)  && ~reward_on
+        %             reward_accum_realized = reward_accum_realized + reward_accum_since_last;
+        %             fprintf('\nReward delivered! Accumulated: %.2f\n', reward_accum_since_last);
+        %             % Trigger reward delivery
+        %             %if rewOn time_reward(ex.reward.time); end
+        %             reward_cnt = reward_cnt + 1;
+        %             time_reward(reward_cnt) = GetSecs() - trstart;
+        %             reward_start = 1;
+        %         end
+        %     end
+        %
+        %     % Check for error conditions (too far from targets)
+        %     if current_step > 3
+        %         if length(closeness_vec)>rew.accum_len_fp
+        %             distance_window = 1 - closeness_vec(end-(rew.accum_len_fp):end);
+        %         else
+        %             distance_window = 1 -closeness_vec(1:end)
+        %         end
+        %         % if max(distance_window) > 0.95 || mean(distance_window) > 0.5
+        %         %     sprintf('Bad performance - ending trial');
+        %         %     state = ex.states.ERROR;
+        %         %     time_error = GetSecs() - trstart;
+        %         %     stimulus_active = false;
+        %         %     reward_active = false;
+        %         % end
+        %
+        %     end
+        % end
+
+        % Clear screen
+        Screen('FillRect', ex.setup.window, ex.idx.bg_lum);
+        
+        %flash
+        inFixationPeriod = (state == ex.states.FPON || state == ex.states.FPHOLD);
+        showFixationDot = true;
+        if inFixationPeriod && fixFlashEnabled && ~isnan(time_fpOn)
+            flashPeriod = 1 / fixFlashHz;
+            flashPhase = mod(ttime - time_fpOn, flashPeriod);
+            showFixationDot = flashPhase <= (fixFlashDuty * flashPeriod);
+        end
+        
+        % Draw fixation point (if no stim)
+        if inFixationPeriod && ~stimulus_active && showFixationDot
+        % if (state == ex.states.FPON || state == ex.states.FPHOLD) &&...
+        %         ~stimulus_active
+            Screen('DrawDots', ex.setup.window, ex.fix.PCtr, ex.fix.PSz, ex.idx.white);
+        end
+        
+        % Draw stimulus if active
+        if stimulus_active && (current_step <= ctl.nsteps)
+            
+            % Determine which step to show
+            if state == ex.states.PREGO
+                step_to_show = ctl.nsteps + 1;  % Always show the last image (circled first step) during PREGO
+            else
+                step_to_show = current_step;
+            end
+            
+            % Draw current stimulus texture XX pack into playStimulus? & add si update
+            Screen('DrawTexture', ex.setup.window, stimTextures(step_to_show));
+
+            % Optional marker showing Gaussian reward center on screen.
+            if rew.show_gauss_center_marker & state == ex.states.GO
+                %Screen('DrawDots', ex.setup.window, gauss_center_screen_px, rew.gauss_center_marker_psz, ex.idx.white);
+                markerHalfSz = rew.gauss_center_marker_psz / 2;
+                markerPenW = max(1, round(rew.gauss_center_marker_psz / 6));
+                Screen('DrawLine', ex.setup.window, ex.idx.white, ...
+                    gauss_center_screen_px(1) - markerHalfSz, gauss_center_screen_px(2) - markerHalfSz, ...
+                    gauss_center_screen_px(1) + markerHalfSz, gauss_center_screen_px(2) + markerHalfSz, markerPenW);
+                Screen('DrawLine', ex.setup.window, ex.idx.white, ...
+                    gauss_center_screen_px(1) - markerHalfSz, gauss_center_screen_px(2) + markerHalfSz, ...
+                    gauss_center_screen_px(1) + markerHalfSz, gauss_center_screen_px(2) - markerHalfSz, markerPenW);
+            end
+
+            % draw fix on top of stim, if necessary
+             if inFixationPeriod && showFixationDot
+                Screen('DrawDots', ex.setup.window, ex.fix.PCtr, ex.fix.PSz, ex.idx.white);
+            end
+            
+            % NEW: draw eye position
+            %Screen('DrawDots', ex.setup.window, olPos, olPSz, olCol, [], 2);   % dot type 2 = anti-aliased circle% draw eye dots, mouse position
+            if mod(fi,20) == 0  % refresh dot every x frames maybe
+                % clear overlay
+               % Screen('FillRect', ex.setup.overlay, ex.idx.bg);
+               
+                if isempty(ex.setup.overlay)
+                    % Fallback if no overlay window is configured.
+                    if state<5.5
+                        Screen('FrameRect', ex.setup.window, tolRectColor, tolRect, tolRectPenW);
+                    end
+                else
+                    % clear and redraw experimenter-only overlay
+                    Screen('FillRect', ex.setup.overlay, ex.idx.bg);
+                    if state<5.5
+                        Screen('FrameRect', ex.setup.overlay, tolRectColor, tolRect, tolRectPenW);
+                    end
+                end
+                
+                % overlay: circle targets
+                if useOverlayTargetCircles
+                    t1 = targPositions(step_to_show).targ1.pos_abs;
+                    circ1 = CenterRectOnPointd([0 0 2*overlayCircleRadiusPx 2*overlayCircleRadiusPx], t1(1), t1(2));
+                    if isempty(ex.setup.overlay)
+                        Screen('FrameOval', ex.setup.window, overlayCircleColor, circ1, overlayCirclePenW);
+                    else
+                        Screen('FrameOval', ex.setup.overlay, overlayCircleColor, circ1, overlayCirclePenW);
+                    end
+                    if ctl.target_num == 2
+                        t2 = targPositions(step_to_show).targ2.pos_abs;
+                        circ2 = CenterRectOnPointd([0 0 2*overlayCircleRadiusPx 2*overlayCircleRadiusPx], t2(1), t2(2));
+                        if isempty(ex.setup.overlay)
+                            Screen('FrameOval', ex.setup.window, overlayCircleColor, circ2, overlayCirclePenW);
+                        else
+                            Screen('FrameOval', ex.setup.overlay, overlayCircleColor, circ2, overlayCirclePenW);
+                        end
+                    end
+                end
+
+
+    % pick the most recent column (use end or 1 depending on which column you want)
+             %   eyePos = olPos(1:2, end);            % 2x1 vector [eyeX; eyeY]
+             %   olPos(3:4,:) = 0; % eliminate mouse position...
+                
+             % Keep reward logic based on mean(valid eyes), but only show per-eye positions
+                % on the experimenter overlay when both eyes are available.
+                % if isempty(ex.eyeCal.LXPos)
+                %     overlayPos = olPos(1:2,:); % monocular: single eye + mouse
+                %     overlayColors = olColBinoc(1:2,:);
+                % else
+                %     overlayPos = olPos(1:2,:); % binocular: right + left eyes only
+                %     overlayColors = olColBinoc(1:2,:);
+                % end
+                %keyboard
+             
+                if isempty(ex.setup.overlay)
+                    Screen('Drawdots',ex.setup.window,olPos',olPSz',olColBinoc');
+                    %Screen('Drawdots',ex.setup.window,overlayPos',olPSz',overlayColors');
+                else
+                   Screen('Drawdots',ex.setup.overlay,olPos',olPSz',olColBinoc');
+                   %Screen('Drawdots',ex.setup.overlay,overlayPos',olPSz',overlayColors');
+                end
+
+            end
+            
+            
+            % Draw synch pulse
+            Screen('DrawDots', ex.setup.window, spPos, spSz, spCol);
+            
+            % Update stimulus step based on timing
+            if state == ex.states.GO
+                step_duration = GetSecs() - (time_stimOn + trstart);
+                if step_duration > (current_step - 1) * timing.wait_secs
+                    current_step = current_step + 1;
+                    %fprintf('Moving to step %d/%d\n', current_step, ctl.nsteps);
+                end
+                si = si + 1; % what is the purpose of keeping track of si?
+            end
+            % possibly to keep track of StimStart
+        end
+        
+        
+        if state == ex.states.GO && stimulus_active
+            if fi > size(flip_info,1)
+                flip_info(end+1:end+flip_info_grow_chunk, :) = NaN;
+            end
+            if si > numel(StimStart)
+                StimStart(end+1:end+stimstart_grow_chunk) = NaN;
+            end
+            StimStart(si) = flip_info(fi,1);
+        end
+        
+
+        
+        % Draw reward indicator if reward was given XX (can this be only on experimenter screen?)
+        if ~isnan(time_reward(1)) && ttime > time_reward(reward_cnt) && ttime < time_reward(reward_cnt) + 0.5
+            %Screen('DrawText', ex.setup.window, 'REWARD', 100, 100, ex.idx.white);
+            if isempty(ex.setup.overlay)
+                Screen('DrawText', ex.setup.window, 'REWARD', 100, 100, ex.idx.white);
+            else
+                Screen('DrawText', ex.setup.overlay, 'REWARD', 100, 100, ex.idx.white);
+            end
+
+        end
+        
+        % Flip screen
+        Screen('DrawingFinished', ex.setup.window);
+         if fi > size(flip_info,1)
+            flip_info(end+1:end+flip_info_grow_chunk, :) = NaN;
+         end
+        [flip_info(fi,1), flip_info(fi,2), flip_info(fi,3), flip_info(fi,4)] =...
+            Screen('Flip', ex.setup.window);
+        fi = fi + 1;
+        if fi > 500 
+            %keyboard
+        end
+        lastframet = ttime;
+    end
+    
+    % --------------------------------------------------------------------
+    % INPUT HANDLING SECTION ---------------------------------------------
+    % --------------------------------------------------------------------
+    [keyIsDown, secs, keyCode] = KbCheck;
+    if ~isMatlabWindowFocusedLocal()
+        keyCode = zeros(size(keyCode));
+    end
+    
+    if strcmpi(KbName(keyCode),'F4')
+        ex.quit = 4;
+        state;
+    elseif strcmpi(KbName(keyCode),'F1')
+        ex.quit = 1;
+        ex.Trials(ex.j).pa = 1;
+        state;
+    elseif strcmpi(KbName(keyCode),'F2')
+        ex.quit = 2;
+        ex.Trials(ex.j).to = 1;
+    % o': flicker
+    elseif strcmpi(KbName(keyCode),'F6')
+        if GetSecs - fixFlashToggle_t0 > fixFlashToggleDebounceSecs
+            fixFlashEnabled = ~fixFlashEnabled;
+            fixFlashToggle_t0 = GetSecs;
+            if fixFlashEnabled
+                disp('fixation flash ON');
+            else
+                disp('fixation flash OFF');
+            end
+        end
+    %F7: recenter
+    elseif strcmpi(KbName(keyCode),'F7')
+        % to make sure we only re-center once per keyboard press
+        if GetSecs - centerEye_t0 > .5
+            ex=centerEye(ex);
+            disp(['eye recentering #: ' num2str(ex.eyeCal.Delta(1).cnt)])
+            centerEye_t0 = GetSecs;
+        end
+     %F8: start trial
+    elseif strcmpi(KbName(keyCode),'F8')
+        % Manual start option: in constrained viewing mode, allow trial
+        % progression even when fixation has not been acquired.
+        if freeViewing == 0 &&...
+                (state == ex.states.FPON || state == ex.states.FPHOLD) &&...
+                GetSecs - manualStart_t0 > .5
+            state = ex.states.PREGO;
+            if ~rew.alwaysOnEyeInBounds
+                Datapixx('SetDoutValues',1);
+                Datapixx('RegWr');
+            end
+            time_startFixation = GetSecs - trstart;
+            time_prego = time_startFixation;
+            manualStart_t0 = GetSecs;
+            disp('manual trial start (F8) from FPON');
+            fprintf('manual trial start (F8) from FPON');
+            if pixOn
+                sendStrobe(ex.strobe.FIXATION_START);
+            end
+        end
+
+    
+
+    end
+    
+    % Check for trial completion
+    if state == ex.states.GO && current_step > ctl.nsteps
+        state = ex.states.TRIALCOMPLETE;
+        Datapixx('SetDoutValues',0);
+        Datapixx('RegWr');
+        % been_here2(end+1) = GetSecs() - trstart;
+        stimulus_active = false;
+        reward_active = false;
+        disp('trial complete');
+    end
+    
+    ex.loopcnt(ex.j) = ex.loopcnt(ex.j) + 1;
+end
+
+% ------------------------------------------------------------------------
+% TRIAL END AND DATA STORAGE
+% ------------------------------------------------------------------------
+% blank screen at the end of trial
+Screen('FillRect', ex.setup.window, ex.idx.bg_lum);
+Screen('Flip', ex.setup.window);
+
+% Store trial information
+ex.Trials(ex.j).ID = fix(clock);
+ex.Trials(ex.j).Eye = trEye;
+
+% Store trial times
+ex.Trials(ex.j).TrialEnd = GetSecs();
+ex.Trials(ex.j).TrialStart = trstart;
+if pixOn ex.Trials(ex.j).TrialStartDatapixx = trstart_Datapixx; end
+ex.Trials(ex.j).TrialEndDatapixx = NaN; % Would need actual datapixx time
+if eyeOn ex.Trials(ex.j).TrialStarteyelink = trstart_Eyelink; end
+if eyeOn ex.Trials(ex.j).TrialEndEyelink = NaN; end % Would need actual eyelink time
+
+ex.Trials(ex.j).times.startTrial = time_startTrial + trstart;
+ex.Trials(ex.j).times.stimOn = time_stimOn + trstart;
+ex.Trials(ex.j).times.choice = time_choice + trstart;
+ex.Trials(ex.j).times.reward = time_reward + trstart;
+ex.Trials(ex.j).times.error = time_error + trstart;
+
+% Store CoPs specific data
+% ex.Trials(ex.j).mousePositions = mousePositions;
+% ex.Trials(ex.j).current_x = current_x_vec;
+% ex.Trials(ex.j).current_y = current_y_vec;
+ex.Trials(ex.j).closeness = closeness_vec;
+ex.Trials(ex.j).reward = reward_vec;
+ex.Trials(ex.j).scaledReward = scaled_reward_vec;
+ex.Trials(ex.j).targetPositions = targPositions;
+ex.Trials(ex.j).nsteps = ctl.nsteps;
+ex.Trials(ex.j).rewardAccumulated = reward_accum_realized + reward_accum_since_last; % need to add the unrealised reward amount
+
+% Store behavioral performance
+if state == ex.states.REWARD || ~isnan(time_reward(1))
+    good = 1;
+    if rewOn RewardSize = rew.duration; end
+elseif state == ex.states.ERROR
+    good = -1;
+    if rewOn RewardSize = 0;end
+else
+    good = 0;
+    if rewOn RewardSize = 0; end
+end
+
+ex.Trials(ex.j).Reward = good;
+if rewOn ex.Trials(ex.j).RewardSize = RewardSize; end
+
+% number of successfully completed trials
+ex.goodtrial = ex.goodtrial + abs(good);
+
+% store display timing
+ex.Trials(ex.j).flip_info = flip_info(1:fi-1,:);
+
+% -------------------------------------------------------------------------
+% TRIAL ONLINE OUTPUT FOR EXPERIMENTER
+% -------------------------------------------------------------------------
+% correct = length(find([ex.Trials.Reward]==1));
+% disp(['# trials:' num2str(ex.goodtrial) '  %success:' ...
+%     num2str(correct/ex.goodtrial) ])
+% disp(['fileName: ' ex.Header.onlineFileName ])
+
+% increase trial counter
+ex.j = ex.j + 1;
+
+% Close stimulus textures
+if ~isempty(stimTextures)
+    Screen('Close', stimTextures);
+end
+
+end
+
+
+function tf = isMatlabWindowFocusedLocal()
+% Return true only when MATLAB desktop/main window is focused and not minimized.
+% If focus cannot be determined (e.g., no desktop/Java), default to true.
+tf = true;
+if ~usejava('desktop') || ~desktop('-inuse')
+    return
+end
+try
+    desktopObj = com.mathworks.mde.desk.MLDesktop.getInstance;
+    mainFrame = desktopObj.getMainFrame;
+    if ~isempty(mainFrame)
+        isFocused = logical(mainFrame.isActive());
+        frameState = mainFrame.getExtendedState();
+        isMinimized = bitand(frameState, java.awt.Frame.ICONIFIED) ~= 0;
+        tf = isFocused && ~isMinimized;
+    end
+catch
+    tf = true;
+end
+end

@@ -1,0 +1,2413 @@
+
+
+
+function out = processCoPsEye(ex, opts)
+% analyzeCoPsEye
+% Offline analysis for eye-tracking data from runTrialTaskCoPsx.m (ex.Trials).
+%
+% out = analyzeCoPsEye(ex)
+% out = analyzeCoPsEye(ex, opts)
+%
+% Inputs
+%   ex   : experiment struct containing ex.Trials and calibration/settings fields.
+%   opts : (optional) struct with fields:
+%       .makePlots       (logical, default true)
+%       .savePlots       (logical, default false)
+%       .plotDir         (char, default 'analysis_plots')
+%       .maxLagSec       (double, default 0.5)
+%       .useEyeTime      (logical, default false) use Eye.t if reliable
+%
+% Output (struct)
+%   out.trialSummary : full table with one row per trial
+%   out.sessionSummary : session-level summary; all non-trial-primary metrics
+%       should be interpreted from this level by default
+%   out.samples      : table with per-sample traces (long format)
+%   out.meta         : struct with options and helper metadata
+
+if nargin < 2 || isempty(opts)
+    opts = struct();
+end
+
+defaults = struct( ...
+    'makePlots', false, ...
+    'savePlots', 0, ...
+    'plotDir', '/home/vpixx/vsgui/vsg/cops_analysis/plots', ...
+    'maxLagSec', 5, ...
+    'ccgWindowSec', [-0.5 2.5], ...
+    'ccgSmoothSteps', 3, ...
+    'ccgInterpBlinkSec', 0.2, ...
+    'useEyeTime', false, ...
+    'onlyGoState', true, ...
+    'minInBoundsFrac', 0.33, ...
+    'minRewardPoints', 500, ...
+    'sampleTrials', [13,14, 50, 100], ...
+    'analysisStartStep', 1, ...
+    'rewardDistanceNBins', 12, ...
+    'trackingDistMult', 2.5, ...
+    'switchRequireSaccade', true, ...
+    'requireTrackingSaccade', true, ...
+    'trackingPreWindowSec', 0.1, ...
+    'trackingVar', 'isTracking', ...
+    'trackingTableMode', 'valid'); % 'valid' vs 'tracked'
+defaultFields = fieldnames(defaults);
+for i = 1:numel(defaultFields)
+    field = defaultFields{i};
+    if ~isfield(opts, field)
+        opts.(field) = defaults.(field);
+    end
+end
+
+if ~isfield(ex, 'Trials') || isempty(ex.Trials)
+    error('Input ex has no trials in ex.Trials.');
+end
+
+nTr = numel(ex.Trials);
+[trialPrimaryMetrics, sessionPrimaryMetrics] = getMetricPrimacyLists();
+sessionParams = extractSessionParams(ex);
+
+trialSummary = table('Size', [nTr 104], ...
+    'VariableTypes', [repmat({'double'}, 1, 7), {'string'}, repmat({'double'}, 1, 96)], ...
+    'VariableNames', {'trial','nSamples','inBoundsFrac','backgroundNoiseLvl','targetVisibility','coherence','targetNum','imageName','meanDistPx1', ...
+    'meanDistPx2','meanDistPx', ...
+    'stepCaptureProb','stepMedianTimeToCaptureSec','stepCaptureAtEndProb','nAnalyzedSteps','nCapturedSteps', ...
+    'targetTransitionProb','targetSwitchRateHz','targetMeanDwellSteps','targetMeanDwellSec', ...
+    'targetMeanDwellSecNear','targetMeanDwellSecMid','targetMeanDwellSecFar', ...
+    'isTracking','isTracking_sacc','isTracking_conserv','isTracking_lib','peakTrackFrac','outerTrackFrac','peakTrackBias','firstTrackPeakTarget','trackErrorPx','trackVariabilityPx','trackBiasPx','trackScreenCenterBiasPx','trackGaussSpecificBiasPx','trackBiasXPx','trackBiasYPx', ...
+    'nTrackedSamplesEarly','nTrackedSamplesLate', ...
+    'trackErrorPxEarly','trackErrorPxLate', ...
+    'trackVariabilityPxEarly','trackVariabilityPxLate', ...
+    'trackBiasPxEarly','trackBiasPxLate', ...
+    'trackScreenCenterBiasPxEarly','trackScreenCenterBiasPxLate', ...
+    'trackGaussSpecificBiasPxEarly','trackGaussSpecificBiasPxLate', ...
+    'trackBiasXPxEarly','trackBiasXPxLate', ...
+    'trackBiasYPxEarly','trackBiasYPxLate', ...
+    'nTrackedSamples','nTrackedSamplesNear','nTrackedSamplesMid','nTrackedSamplesFar', ...
+    'trackErrorPxNear','trackErrorPxMid','trackErrorPxFar', ...
+    'trackVariabilityPxNear','trackVariabilityPxMid','trackVariabilityPxFar', ...
+    'trackBiasPxNear','trackBiasPxMid','trackBiasPxFar', ...
+    'trackScreenCenterBiasPxNear','trackScreenCenterBiasPxMid','trackScreenCenterBiasPxFar', ...
+    'trackGaussSpecificBiasPxNear','trackGaussSpecificBiasPxMid','trackGaussSpecificBiasPxFar', ...
+    'trackBiasXPxNear','trackBiasXPxMid','trackBiasXPxFar', ...
+    'trackBiasYPxNear','trackBiasYPxMid','trackBiasYPxFar', ...
+    'switchToPeakFrac', ...
+    'switchWhenOtherPeakFrac','switchProbPeak','switchProbOuter','switchProbDelta', ...
+    'saccToPeak','saccToOuter','saccPeakFrac', ...
+    'distFixMid','distFixPeak','distPerm', ...
+    'meanScaledRewardSaved','nRewardEvents','good', ...
+    'targetQ1TimeSec', 'targetQ2TimeSec','targetQ3TimeSec','targetQ4TimeSec',...
+    'gazeQ1TimeSec', 'gazeQ2TimeSec','gazeQ3TimeSec','gazeQ4TimeSec', ...
+    'gaussQuadNormPeak','gaussQuadNormOther','gaussQuadBias'});
+trialSummary{:, [1:7, 9:104]} = NaN;
+keepMainTrial = false(nTr, 1);
+permControlData = cell(nTr, 1);
+iriTables = cell(nTr, 1);
+trackingTables = cell(nTr, 1);
+rewardSwitchTables = cell(nTr, 1);
+ccgXRows = cell(nTr, 1);
+ccgYRows = cell(nTr, 1);
+ccgVelXRows = cell(nTr, 1);
+ccgVelYRows = cell(nTr, 1);
+sessionTrackingSamples = initSessionTrackingSamples();
+sessionObs = initSessionPrimaryObservations();
+
+sampleTables = cell(1, numel(opts.sampleTrials));
+includeSampleTrial = false(nTr, 1);
+includeSampleTrial(opts.sampleTrials) = true;
+
+screenW = ex.setup.screenRect(3);
+screenH = ex.setup.screenRect(4);
+maxDistPx = hypot(screenW, screenH);
+
+pooledRewardByDistance.gaze = rewardDistanceAccumulatorCoPs('init', opts.rewardDistanceNBins, maxDistPx);
+pooledRewardByDistance.target = rewardDistanceAccumulatorCoPs('init', opts.rewardDistanceNBins, maxDistPx);
+
+for j = 1:nTr
+    if mod(j,20)==0
+        fprintf('trial %d\n',j)
+    end
+    T = ex.Trials(j);
+
+    isFixationTrial = isfield(T, 'isFixationTrial') && logical(T.isFixationTrial);
+    isTutorialTrial = isfield(T, 'isTutorialTrial') && logical(T.isTutorialTrial);
+    hasRunPhase = isfield(T, 'runPhase') && ~isempty(T.runPhase);
+    if hasRunPhase
+        runPhase = string(T.runPhase);
+        isMainTrial = runPhase == "main";
+    else
+        % Backward compatibility: older CoPs sessions did not label run
+        % phase, and should be treated as main-task trials unless another
+        % explicit exclusion flag is present.
+        isMainTrial = ~isFixationTrial && ~isTutorialTrial;
+    end
+
+    % Analyze only main-task trials. Skip tutorial, fixation/recentering,
+    % and any other non-main trial types when present.
+    if ~isMainTrial || isFixationTrial || isTutorialTrial
+        continue
+    end
+    keepMainTrial(j) = true;
+    trialSummary.backgroundNoiseLvl(j) = getTrialBackgroundNoiseLevel(T);
+    trialSummary.targetVisibility(j) = getTrialTargetVisibility(T, sessionParams);
+    trialSummary.coherence(j) = getTrialCoherence(T, sessionParams);
+    trialSummary.targetNum(j) = getTrialTargetNum(T, sessionParams);
+    trialSummary.imageName(j) = getTrialImageName(ex, T, j);
+
+    % extract locations by timepoint 
+    [xPx, yPx, tRel, tAbs, valid] = reconstructEyePx(ex, T, opts.useEyeTime);
+    
+    [targetX, targetY, target2X, target2Y, stepIdx] = mapTargetsByStep(ex, T, tRel);
+
+    
+    % trial selection
+    sel = selectTrials(ex, T, tAbs, xPx, yPx, valid, opts);
+    inBounds = sel.inBounds;
+
+    % select only tp during 'go' period
+    goMask = true(size(tAbs));
+    if opts.onlyGoState
+        goMask = tAbs >= T.times.stimOn & tAbs <= T.TrialEnd;
+    end
+
+    xPx = xPx(goMask);
+    yPx = yPx(goMask);
+    tRel = tRel(goMask);
+    tAbs = tAbs(goMask);
+    valid = valid(goMask);
+    targetX = targetX(goMask);
+    targetY = targetY(goMask);
+    target2X = target2X(goMask);
+    target2Y = target2Y(goMask);
+    stepIdx = stepIdx(goMask);
+    inBounds = inBounds(goMask);
+
+    % Canonicalize target identity for offline analysis:
+    % t1 is the left target, t2 is the right target. If x is tied, t1 is
+    % the upper target. This keeps target labels interpretable even when
+    % online task generation randomizes the initial target layout.
+    [targetX, targetY, target2X, target2Y] = canonicalizeTargetOrder(targetX, targetY, target2X, target2Y);
+    
+    nS = numel(tRel); % num of samples
+    dtSec = 1 / inferFs(ex);
+
+    %distances
+    distPx1 = computeDistanceToTargets(xPx, yPx, targetX, targetY, inBounds);
+    distPx2 = computeDistanceToTargets(xPx, yPx, target2X, target2Y, inBounds);
+    distPx = distPx1;
+    useT2 = isfinite(distPx2) & ((~isfinite(distPx1)) | distPx2 < distPx1);
+    distPx(useT2) = distPx2(useT2);
+
+    xPx(~inBounds) = NaN;
+    yPx(~inBounds) = NaN;
+    [ccgXRows{j}, ccgYRows{j}, ccgVelXRows{j}, ccgVelYRows{j}] = computeTrialCrossCorrRows( ...
+        xPx, yPx, targetX, targetY, stepIdx, analysisMaskFromStep(stepIdx, opts.analysisStartStep), valid, inBounds, dtSec, ...
+        opts.ccgWindowSec, opts.ccgSmoothSteps, opts.ccgInterpBlinkSec);
+    % sample trial extraction here
+    if includeSampleTrial(j)
+        jj=find(opts.sampleTrials==j);
+        sampleTables{jj} = table(repmat(j, nS, 1), tRel(:), tAbs(:), xPx(:), yPx(:), ...
+            inBounds(:), stepIdx(:), targetX(:), targetY(:), target2X(:), target2Y(:), distPx(:), ...
+            'VariableNames', {'trial','tRelSec','tAbsSec','xPx','yPx','inBounds', ...
+            'step','targetX','targetY','target2X', 'target2Y','distPx'});
+    end
+
+    if ~sel.keepTrial
+        trialSummary.trial(j) = j;
+        trialSummary.good(j) = 0;
+        trialSummary.inBoundsFrac(j) = mean(inBounds, 'omitnan');
+        continue
+    end
+    trialSummary.good(j) = 1;
+    
+    analysisMask = stepIdx >= opts.analysisStartStep;
+
+    rewTS = calcRewPerTp(ex, xPx, yPx, targetX, targetY, target2X, target2Y, inBounds, T);
+    rewardThis = rewTS.scaledReward;
+    gaussCtr = getGaussianCenterPx(ex,T);
+    fixMid = ex.fix.PCtr(:)';
+
+    trialSummary.distFixMid(j) = meanDistanceToCloserTarget( ...
+        repmat(fixMid(1), size(targetX)), repmat(fixMid(2), size(targetY)), ...
+        targetX, targetY, target2X, target2Y, analysisMask);
+    trialSummary.distFixPeak(j) = meanDistanceToCloserTarget( ...
+        repmat(gaussCtr(1), size(targetX)), repmat(gaussCtr(2), size(targetY)), ...
+        targetX, targetY, target2X, target2Y, analysisMask);
+
+    gazeTimes=computeQuadrantTimes(xPx, yPx, ex.fix.PCtr(:)', analysisMask & inBounds, dtSec);
+    trialSummary.gazeQ1TimeSec(j)= gazeTimes(1);
+    trialSummary.gazeQ2TimeSec(j)= gazeTimes(2);
+    trialSummary.gazeQ3TimeSec(j)= gazeTimes(3);
+    trialSummary.gazeQ4TimeSec(j)= gazeTimes(4);
+
+    tgtXAll = [targetX(:); target2X(:)];
+    tgtYAll = [targetY(:); target2Y(:)];
+    tgtMaskAll = [analysisMask(:) & inBounds(:); analysisMask(:) & inBounds(:)];
+    targetTimes=computeQuadrantTimes(tgtXAll, tgtYAll, ex.fix.PCtr(:)', tgtMaskAll, dtSec);
+    trialSummary.targetQ1TimeSec(j) = targetTimes(1);
+    trialSummary.targetQ2TimeSec(j) = targetTimes(2);
+    trialSummary.targetQ3TimeSec(j) = targetTimes(3);
+    trialSummary.targetQ4TimeSec(j) = targetTimes(4);
+
+    gaussQuadIdx = classifyQuadrantCoPs(gaussCtr(1), gaussCtr(2), ex.fix.PCtr(:)');
+    if ~isnan(gaussQuadIdx)
+        normOcc = gazeTimes ./ targetTimes;
+        normOcc(~isfinite(normOcc)) = NaN;
+        otherIdx = setdiff(1:4, gaussQuadIdx);
+        trialSummary.gaussQuadNormPeak(j) = normOcc(gaussQuadIdx);
+        trialSummary.gaussQuadNormOther(j) = mean(normOcc(otherIdx), 'omitnan');
+        if isfinite(trialSummary.gaussQuadNormPeak(j)) && isfinite(trialSummary.gaussQuadNormOther(j))
+            trialSummary.gaussQuadBias(j) = ...
+                trialSummary.gaussQuadNormPeak(j) - trialSummary.gaussQuadNormOther(j);
+        end
+    end
+
+    gazeDistFromGaussCtr = hypot(xPx - gaussCtr(1), yPx - gaussCtr(2));
+    t1DistFromGaussCtr = hypot(targetX - gaussCtr(1), targetY - gaussCtr(2));
+    t2DistFromGaussCtr = hypot(target2X - gaussCtr(1), target2Y - gaussCtr(2));
+    targetDistFromGaussCtr = [t1DistFromGaussCtr(:); t2DistFromGaussCtr(:)];
+    targetReward = [rewardThis(:); rewardThis(:)];
+
+    keepGaze = analysisMask & inBounds & isfinite(gazeDistFromGaussCtr) & isfinite(rewardThis);
+    keepTarget = tgtMaskAll & isfinite(targetDistFromGaussCtr) & isfinite(targetReward);
+    pooledRewardByDistance.gaze = rewardDistanceAccumulatorCoPs('update', ...
+        pooledRewardByDistance.gaze, gazeDistFromGaussCtr(keepGaze), rewardThis(keepGaze));
+    pooledRewardByDistance.target = rewardDistanceAccumulatorCoPs('update', ...
+        pooledRewardByDistance.target, targetDistFromGaussCtr(keepTarget), targetReward(keepTarget));
+
+    % Keep the step index returned by mapTargetsByStep so that target
+    % trajectories and step-conditioned analyses use the same discretization.
+    nStep = numel(unique(stepIdx(isfinite(stepIdx))));
+    % xPx = accumarray(g, xPx, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % yPx = accumarray(g, yPx, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % tRel = accumarray(g, tRel, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % tAbs = accumarray(g, tAbs, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % valid = accumarray(g, double(valid), [nStep 1], @mean, 0) > 0;
+    % 
+    % targetX = accumarray(g, targetX, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % targetY = accumarray(g, targetY, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % target2X =accumarray(g, target2X, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % target2Y =accumarray(g, target2Y, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % stepIdx = accumarray(g, stepIdx, [nStep 1], @(v) mean(v, 'omitnan'), NaN);
+    % 
+    % capture stats: gaze entering a target zone
+    captureRadiusPx = ex.exp.CoPs.graph.radius * ex.exp.CoPs.graph.size_mult;
+    stepCap = computeStepCaptureMetrics(tRel, stepIdx, xPx, yPx, targetX, targetY, target2X, target2Y, inBounds, captureRadiusPx);
+    trialSummary.stepCaptureProb(j) = stepCap.captureProb;
+    trialSummary.stepMedianTimeToCaptureSec(j) = stepCap.medianTimeToCaptureSec;
+    trialSummary.stepCaptureAtEndProb(j) = stepCap.captureAtEndProb;
+    trialSummary.nAnalyzedSteps(j) = stepCap.nSteps;
+    trialSummary.nCapturedSteps(j) = sum(stepCap.captured, 'omitnan');
+
+    % switching behav
+    betweenMarginPx = captureRadiusPx / 2; % margin of error: values below signify 
+    % distance difference between targets being to small to assign identity
+    stab = calcSwitching(tRel, stepIdx, xPx, yPx, distPx1, distPx2, inBounds, betweenMarginPx, ex.exp.CoPs.ctl.nsteps, dtSec, ex.setup, opts.switchRequireSaccade);
+    trialSummary.targetSwitchRateHz(j) = stab.switchRateHz;
+    trialSummary.targetTransitionProb(j) = stab.transProbStep;
+    trialSummary.targetMeanDwellSteps(j) = stab.meanDwellSteps;
+    trialSummary.targetMeanDwellSec(j) = stab.meanDwellSec;
+    dwellBinMetrics = computeTrialTargetDwellDistanceBinMetrics( ...
+        stepIdx, distPx1, distPx2, t1DistFromGaussCtr, t2DistFromGaussCtr, ...
+        inBounds, betweenMarginPx, tRel, ex.exp.CoPs.ctl.nsteps, sessionParams.gaussSigma);
+    trialSummary.targetMeanDwellSecNear(j) = dwellBinMetrics.targetMeanDwellSecNear;
+    trialSummary.targetMeanDwellSecMid(j) = dwellBinMetrics.targetMeanDwellSecMid;
+    trialSummary.targetMeanDwellSecFar(j) = dwellBinMetrics.targetMeanDwellSecFar;
+
+    % peak bias: preference for tracking target that is closer to the Gaussian peak
+    trackingDistPx = opts.trackingDistMult * captureRadiusPx;
+    minTrackingSec = 0.050;
+    earlyTrackingSec = 0.100;
+    minPhaseTrackingSec = 0.200;
+    peakBias = calcCtrTrackingBias( ...
+        targetX, targetY, target2X, target2Y, xPx, yPx, distPx1, distPx2, ...
+        inBounds, betweenMarginPx, gaussCtr, stepIdx, nStep, trackingDistPx, minTrackingSec, dtSec, ex.fix.PCtr(:)', earlyTrackingSec, minPhaseTrackingSec, ex.setup, opts.requireTrackingSaccade, opts.switchRequireSaccade);
+    % Recompute peak-choice metrics directly on the processed trial inputs.
+    % This keeps switch-conditioned peak metrics aligned with the validated
+    % direct helper path even if wrapper internals drift.
+    assignPeak = assignTargetIdentityCoPs(distPx1, distPx2, inBounds, betweenMarginPx, stepIdx);
+    peakDist1 = hypot(targetX(:) - gaussCtr(1), targetY(:) - gaussCtr(2));
+    peakDist2 = hypot(target2X(:) - gaussCtr(1), target2Y(:) - gaussCtr(2));
+    peakCloser = zeros(size(peakDist1));
+    peakCloser(peakDist1 < peakDist2) = 1;
+    peakCloser(peakDist2 < peakDist1) = 2;
+    directChoice = computePeakChoiceMetricsCoPs( ...
+        assignPeak, peakCloser, peakBias.isTracking, stepIdx, xPx, yPx, ...
+        targetX, targetY, target2X, target2Y, gaussCtr, nStep, dtSec, ex.setup, opts.switchRequireSaccade, distPx1, distPx2, trackingDistPx);
+    choiceFields = fieldnames(directChoice);
+    for ii = 1:numel(choiceFields)
+        peakBias.(choiceFields{ii}) = directChoice.(choiceFields{ii});
+    end
+    if strcmpi(string(opts.trackingTableMode), "valid")
+        trialTargetNum = getTrialTargetNum(T, sessionParams);
+        if isfinite(trialTargetNum) && trialTargetNum == 1
+            trackingTables{j} = buildTrialValidTrackingTable( ...
+                j, tRel, tAbs, stepIdx, xPx, yPx, targetX, targetY, target2X, target2Y, ...
+                inBounds, valid, analysisMask, gaussCtr, ex.fix.PCtr(:)', dtSec);
+        else
+            trackingTables{j} = table();
+        end
+    else
+        trackingTables{j} = buildTrialTrackingTable( ...
+            j, tRel, tAbs, stepIdx, xPx, yPx, targetX, targetY, target2X, target2Y, ...
+            distPx1, distPx2, inBounds, betweenMarginPx, peakBias, gaussCtr, ex.fix.PCtr(:)', dtSec, opts.trackingPreWindowSec, opts.trackingVar, opts.requireTrackingSaccade);
+    end
+    rewardSwitchTables{j} = buildRewardTriggeredSwitchTable( ...
+        j, tRel, stepIdx, distPx1, distPx2, inBounds, betweenMarginPx, T, opts.analysisStartStep, ...
+        trialSummary.backgroundNoiseLvl(j), [-0.5, 0.5]);
+    validTrackingMask = analysisMask & valid;
+    if any(validTrackingMask)
+        trialSummary.isTracking(j) = mean(peakBias.isTracking(validTrackingMask), 'omitnan');
+        trialSummary.isTracking_sacc(j) = mean(peakBias.isTrackingSacc(validTrackingMask), 'omitnan');
+        trialSummary.isTracking_conserv(j) = mean(peakBias.isTrackingConserv(validTrackingMask), 'omitnan');
+        trialSummary.isTracking_lib(j) = mean(peakBias.isTrackingLib(validTrackingMask), 'omitnan');
+    end
+    trialSummary.peakTrackFrac(j) = peakBias.trackPeakFrac;
+    trialSummary.outerTrackFrac(j) = peakBias.trackOuterFrac;
+    trialSummary.peakTrackBias(j) = peakBias.peakTrackBias;
+    trialSummary.firstTrackPeakTarget(j) = peakBias.firstTrackPeakTarget;
+    trialSummary.trackErrorPx(j) = peakBias.trackErrorPx;
+    trialSummary.trackVariabilityPx(j) = peakBias.trackVariabilityPx;
+    trialSummary.trackBiasPx(j) = peakBias.trackBiasPx;
+    trialSummary.trackScreenCenterBiasPx(j) = peakBias.trackScreenCenterBiasPx;
+    trialSummary.trackGaussSpecificBiasPx(j) = peakBias.trackGaussSpecificBiasPx;
+    trialSummary.trackBiasXPx(j) = peakBias.trackBiasXPx;
+    trialSummary.trackBiasYPx(j) = peakBias.trackBiasYPx;
+    trialBinMetrics = computeTrialTrackDistanceBinMetrics(peakBias, sessionParams.gaussSigma);
+    trialPhaseMetrics = computeTrialTrackPhaseBinMetrics(peakBias);
+    trialSummary.nTrackedSamplesEarly(j) = trialPhaseMetrics.nTrackedSamplesEarly;
+    trialSummary.nTrackedSamplesLate(j) = trialPhaseMetrics.nTrackedSamplesLate;
+    trialSummary.trackErrorPxEarly(j) = trialPhaseMetrics.trackErrorPxEarly;
+    trialSummary.trackErrorPxLate(j) = trialPhaseMetrics.trackErrorPxLate;
+    trialSummary.trackVariabilityPxEarly(j) = trialPhaseMetrics.trackVariabilityPxEarly;
+    trialSummary.trackVariabilityPxLate(j) = trialPhaseMetrics.trackVariabilityPxLate;
+    trialSummary.trackBiasPxEarly(j) = trialPhaseMetrics.trackBiasPxEarly;
+    trialSummary.trackBiasPxLate(j) = trialPhaseMetrics.trackBiasPxLate;
+    trialSummary.trackScreenCenterBiasPxEarly(j) = trialPhaseMetrics.trackScreenCenterBiasPxEarly;
+    trialSummary.trackScreenCenterBiasPxLate(j) = trialPhaseMetrics.trackScreenCenterBiasPxLate;
+    trialSummary.trackGaussSpecificBiasPxEarly(j) = trialPhaseMetrics.trackGaussSpecificBiasPxEarly;
+    trialSummary.trackGaussSpecificBiasPxLate(j) = trialPhaseMetrics.trackGaussSpecificBiasPxLate;
+    trialSummary.trackBiasXPxEarly(j) = trialPhaseMetrics.trackBiasXPxEarly;
+    trialSummary.trackBiasXPxLate(j) = trialPhaseMetrics.trackBiasXPxLate;
+    trialSummary.trackBiasYPxEarly(j) = trialPhaseMetrics.trackBiasYPxEarly;
+    trialSummary.trackBiasYPxLate(j) = trialPhaseMetrics.trackBiasYPxLate;
+    trialSummary.nTrackedSamples(j) = trialBinMetrics.nTrackedSamples;
+    trialSummary.nTrackedSamplesNear(j) = trialBinMetrics.nTrackedSamplesNear;
+    trialSummary.nTrackedSamplesMid(j) = trialBinMetrics.nTrackedSamplesMid;
+    trialSummary.nTrackedSamplesFar(j) = trialBinMetrics.nTrackedSamplesFar;
+    trialSummary.trackErrorPxNear(j) = trialBinMetrics.trackErrorPxNear;
+    trialSummary.trackErrorPxMid(j) = trialBinMetrics.trackErrorPxMid;
+    trialSummary.trackErrorPxFar(j) = trialBinMetrics.trackErrorPxFar;
+    trialSummary.trackVariabilityPxNear(j) = trialBinMetrics.trackVariabilityPxNear;
+    trialSummary.trackVariabilityPxMid(j) = trialBinMetrics.trackVariabilityPxMid;
+    trialSummary.trackVariabilityPxFar(j) = trialBinMetrics.trackVariabilityPxFar;
+    trialSummary.trackBiasPxNear(j) = trialBinMetrics.trackBiasPxNear;
+    trialSummary.trackBiasPxMid(j) = trialBinMetrics.trackBiasPxMid;
+    trialSummary.trackBiasPxFar(j) = trialBinMetrics.trackBiasPxFar;
+    trialSummary.trackScreenCenterBiasPxNear(j) = trialBinMetrics.trackScreenCenterBiasPxNear;
+    trialSummary.trackScreenCenterBiasPxMid(j) = trialBinMetrics.trackScreenCenterBiasPxMid;
+    trialSummary.trackScreenCenterBiasPxFar(j) = trialBinMetrics.trackScreenCenterBiasPxFar;
+    trialSummary.trackGaussSpecificBiasPxNear(j) = trialBinMetrics.trackGaussSpecificBiasPxNear;
+    trialSummary.trackGaussSpecificBiasPxMid(j) = trialBinMetrics.trackGaussSpecificBiasPxMid;
+    trialSummary.trackGaussSpecificBiasPxFar(j) = trialBinMetrics.trackGaussSpecificBiasPxFar;
+    trialSummary.trackBiasXPxNear(j) = trialBinMetrics.trackBiasXPxNear;
+    trialSummary.trackBiasXPxMid(j) = trialBinMetrics.trackBiasXPxMid;
+    trialSummary.trackBiasXPxFar(j) = trialBinMetrics.trackBiasXPxFar;
+    trialSummary.trackBiasYPxNear(j) = trialBinMetrics.trackBiasYPxNear;
+    trialSummary.trackBiasYPxMid(j) = trialBinMetrics.trackBiasYPxMid;
+    trialSummary.trackBiasYPxFar(j) = trialBinMetrics.trackBiasYPxFar;
+    trialSummary.switchToPeakFrac(j) = peakBias.switchToPeakFrac;
+    trialSummary.switchWhenOtherPeakFrac(j) = peakBias.switchWhenOtherPeakFrac;
+    trialSummary.switchProbPeak(j) = peakBias.switchProbPeak;
+    trialSummary.switchProbOuter(j) = peakBias.switchProbOuter;
+    trialSummary.switchProbDelta(j) = peakBias.switchProbDelta;
+    trialSummary.saccToPeak(j) = peakBias.saccToPeak;
+    trialSummary.saccToOuter(j) = peakBias.saccToOuter;
+    trialSummary.saccPeakFrac(j) = peakBias.saccPeakFrac;
+    sessionTrackingSamples = appendSessionTrackingSamples(sessionTrackingSamples, peakBias, trialSummary.backgroundNoiseLvl(j));
+    sessionObs = appendSessionPrimaryObservations(sessionObs, stepCap, stab, dwellBinMetrics, peakBias, ...
+        xPx, yPx, targetX, targetY, target2X, target2Y, analysisMask, inBounds, ...
+        ex.fix.PCtr(:)', dtSec, gaussQuadIdx, trialSummary.backgroundNoiseLvl(j));
+
+
+
+
+
+
+    % Fill summary row.
+    trialSummary.trial(j) = j;
+    trialSummary.nSamples(j) = nS;
+    trialSummary.inBoundsFrac(j) = mean(inBounds, 'omitnan');
+    trialSummary.meanDistPx1(j) = mean(distPx1, 'omitnan');
+    trialSummary.meanDistPx2(j) = mean(distPx2, 'omitnan');
+    trialSummary.meanDistPx(j) = mean(distPx, 'omitnan');
+
+    if isfield(T, 'scaledReward') && ~isempty(T.scaledReward)
+        trialSummary.meanScaledRewardSaved(j) = mean(T.scaledReward, 'omitnan');
+    else
+        trialSummary.meanScaledRewardSaved(j) = NaN;
+    end
+
+
+    if isfield(T, 'times') && isfield(T.times, 'reward')
+        rv = T.times.reward;
+        trialSummary.nRewardEvents(j) = sum(isfinite(rv));
+        rv = rv(isfinite(rv));
+        if numel(rv) >= 2
+            iriTables{j} = table( ...
+                ones(numel(rv) - 1, 1), ...
+                repmat(j, numel(rv) - 1, 1), ...
+                (1:(numel(rv) - 1))', ...
+                diff(rv(:)), ...
+                repmat(trialSummary.backgroundNoiseLvl(j), numel(rv) - 1, 1), ...
+                'VariableNames', {'sessionNo', 'trial', 'iriNo', 'iriSec', 'backgroundNoiseLvl'});
+        end
+    else
+        trialSummary.nRewardEvents(j) = NaN;
+    end
+
+    permControlData{j} = struct( ...
+        'xPx', xPx, ...
+        'yPx', yPx, ...
+        'targetX', targetX, ...
+        'targetY', targetY, ...
+        'target2X', target2X, ...
+        'target2Y', target2Y, ...
+        'analysisMask', analysisMask);
+
+end
+
+trialSummary = assignPermutedDistanceControl(trialSummary, permControlData);
+
+trialSummary = trialSummary(keepMainTrial, :);
+
+nonEmptySampleTables = sampleTables(~cellfun(@isempty, sampleTables));
+if isempty(nonEmptySampleTables)
+    samples = table();
+else
+    samples = vertcat(nonEmptySampleTables{:});
+end
+
+nonEmptyIriTables = iriTables(~cellfun(@isempty, iriTables));
+if isempty(nonEmptyIriTables)
+    iri = table();
+else
+    iri = vertcat(nonEmptyIriTables{:});
+end
+
+nonEmptyTrackingTables = trackingTables(~cellfun(@isempty, trackingTables));
+if isempty(nonEmptyTrackingTables)
+    tracking = table();
+else
+    tracking = vertcat(nonEmptyTrackingTables{:});
+end
+
+nonEmptyRewardSwitchTables = rewardSwitchTables(~cellfun(@isempty, rewardSwitchTables));
+if isempty(nonEmptyRewardSwitchTables)
+    rewardSwitch = table();
+else
+    rewardSwitch = vertcat(nonEmptyRewardSwitchTables{:});
+end
+
+ccgLagSamples = [];
+ccgLagSec = [];
+for j = find(keepMainTrial(:))'
+    if ~isempty(ccgXRows{j})
+        ccgLagSamples = ccgXRows{j}.lagSamples(:)';
+        ccgLagSec = ccgXRows{j}.lagSec(:)';
+        break
+    end
+end
+ccgx = buildCrossCorrTable(trialSummary.trial, ccgXRows(keepMainTrial), ccgLagSamples);
+ccgy = buildCrossCorrTable(trialSummary.trial, ccgYRows(keepMainTrial), ccgLagSamples);
+ccgvx = buildCrossCorrTable(trialSummary.trial, ccgVelXRows(keepMainTrial), ccgLagSamples);
+ccgvy = buildCrossCorrTable(trialSummary.trial, ccgVelYRows(keepMainTrial), ccgLagSamples);
+
+sessionSummary = struct();
+sessionSummary.nTrials = height(trialSummary);
+sessionSummary = addNestedSessionMomentSummaries(sessionSummary, sessionObs, sessionTrackingSamples, sessionPrimaryMetrics, sessionParams.gaussSigma);
+trialPrimaryVars = intersect(trialPrimaryMetrics, trialSummary.Properties.VariableNames, 'stable');
+
+out = struct();
+out.trialSummary = trialSummary;
+out.sessionSummary = sessionSummary;
+out.samples = samples;
+out.iri = iri;
+out.tracking = tracking;
+out.rewardSwitch = rewardSwitch;
+out.ccgx = ccgx;
+out.ccgy = ccgy;
+out.ccgvx = ccgvx;
+out.ccgvy = ccgvy;
+out.params = sessionParams;
+out.meta = struct('nTrials', nTr, 'nMainTrials', sum(keepMainTrial), 'options', opts, 'fsHz', inferFs(ex));
+out.meta.ccgLagSamples = ccgLagSamples(:);
+out.meta.ccgLagSec = ccgLagSec(:);
+out.meta.rewardByDistance = struct();
+out.meta.rewardByDistance.gaze = rewardDistanceAccumulatorCoPs('finalize', pooledRewardByDistance.gaze);
+out.meta.rewardByDistance.target = rewardDistanceAccumulatorCoPs('finalize', pooledRewardByDistance.target);
+out.meta.quadrantLabels = struct( ...
+    'Q1', 'top-right', ...
+    'Q2', 'top-left', ...
+    'Q3', 'bottom-left', ...
+    'Q4', 'bottom-right');
+out.meta.trackDistanceBins = getGaussDistanceBinDefinitions(sessionParams.gaussSigma);
+out.meta.trackingAggregation = buildTrackingAggregation(sessionTrackingSamples, sessionParams.gaussSigma);
+out.meta.metricPrimacy = struct( ...
+    'trialPrimary', {trialPrimaryVars}, ...
+    'sessionPrimary', {sessionPrimaryMetrics}, ...
+    'trialSummaryInterpretation', 'Use out.trialSummary for per-trial measures; trial-primary fields are listed in out.meta.metricPrimacy.trialPrimary.', ...
+    'sessionSummaryInterpretation', 'Use out.sessionSummary as the default level for all session-primary metrics.');
+
+
+if opts.makePlots
+    plotCoPsEyeQC(out, opts);
+end
+
+end
+
+
+function [trialPrimaryMetrics, sessionPrimaryMetrics] = getMetricPrimacyLists()
+trialPrimaryMetrics = { ...
+    'trial', ...
+    'nSamples', ...
+    'backgroundNoiseLvl', ...
+    'targetVisibility', ...
+    'inBoundsFrac', ...
+    'meanDistPx1', ...
+    'meanDistPx2', ...
+    'meanDistPx', ...
+    'distFixMid', ...
+    'distFixPeak', ...
+    'distPerm', ...
+    'meanScaledRewardSaved', ...
+    'nRewardEvents', ...
+    'good'};
+
+specs = getSessionMetricSpecs();
+sessionPrimaryMetrics = {specs.name};
+end
+
+
+function specs = getSessionMetricSpecs()
+specs = [ ...
+    metricSpec('stepCaptureProb', 'observedMean'), ...
+    metricSpec('stepMedianTimeToCaptureSec', 'captureLatency'), ...
+    metricSpec('stepCaptureAtEndProb', 'observedMean'), ...
+    metricSpec('targetTransitionProb', 'observedMean'), ...
+    metricSpec('targetSwitchRateHz', 'switchRate'), ...
+    metricSpec('targetMeanDwellSteps', 'observedMean'), ...
+    metricSpec('targetMeanDwellSec', 'observedMean'), ...
+    metricSpec('targetMeanDwellSecNear', 'observedMean'), ...
+    metricSpec('targetMeanDwellSecMid', 'observedMean'), ...
+    metricSpec('targetMeanDwellSecFar', 'observedMean'), ...
+    metricSpec('peakTrackFrac', 'observedMean'), ...
+    metricSpec('outerTrackFrac', 'observedMean'), ...
+    metricSpec('peakTrackBias', 'observedMean'), ...
+    metricSpec('trackErrorPx', 'track', 'trackKind', 'error', 'includeDistanceBins', true, 'includePhaseBins', true), ...
+    metricSpec('trackVariabilityPx', 'track', 'trackKind', 'variability', 'includeDistanceBins', true, 'includePhaseBins', true), ...
+    metricSpec('trackBiasPx', 'track', 'trackKind', 'bias', 'includeDistanceBins', true, 'includePhaseBins', true), ...
+    metricSpec('trackScreenCenterBiasPx', 'track', 'trackKind', 'screenCenterBias', 'includeDistanceBins', true, 'includePhaseBins', true), ...
+    metricSpec('trackGaussSpecificBiasPx', 'track', 'trackKind', 'gaussSpecificBias', 'includeDistanceBins', true, 'includePhaseBins', true), ...
+    metricSpec('trackBiasXPx', 'track', 'trackKind', 'biasX', 'includeDistanceBins', true, 'includePhaseBins', true), ...
+    metricSpec('trackBiasYPx', 'track', 'trackKind', 'biasY', 'includeDistanceBins', true, 'includePhaseBins', true), ...
+    metricSpec('switchToPeakFrac', 'observedMean'), ...
+    metricSpec('switchWhenOtherPeakFrac', 'observedMean'), ...
+    metricSpec('switchProbPeak', 'observedMean'), ...
+    metricSpec('switchProbOuter', 'observedMean'), ...
+    metricSpec('switchProbDelta', 'switchDelta'), ...
+    metricSpec('saccToPeak', 'observedSum'), ...
+    metricSpec('saccToOuter', 'observedSum'), ...
+    metricSpec('saccPeakFrac', 'observedMean'), ...
+    metricSpec('targetQ1TimeSec', 'observedSum'), ...
+    metricSpec('targetQ2TimeSec', 'observedSum'), ...
+    metricSpec('targetQ3TimeSec', 'observedSum'), ...
+    metricSpec('targetQ4TimeSec', 'observedSum'), ...
+    metricSpec('gazeQ1TimeSec', 'observedSum'), ...
+    metricSpec('gazeQ2TimeSec', 'observedSum'), ...
+    metricSpec('gazeQ3TimeSec', 'observedSum'), ...
+    metricSpec('gazeQ4TimeSec', 'observedSum'), ...
+    metricSpec('gaussQuadNormPeak', 'gaussQuad', 'gaussMode', 'peak'), ...
+    metricSpec('gaussQuadNormOther', 'gaussQuad', 'gaussMode', 'other'), ...
+    metricSpec('gaussQuadBias', 'gaussQuad', 'gaussMode', 'bias')];
+end
+
+
+function spec = metricSpec(name, kind, varargin)
+spec = struct( ...
+    'name', name, ...
+    'kind', kind, ...
+    'trackKind', '', ...
+    'includeDistanceBins', false, ...
+    'includePhaseBins', false, ...
+    'gaussMode', '');
+for i = 1:2:numel(varargin)
+    spec.(varargin{i}) = varargin{i+1};
+end
+end
+
+
+function sessionObs = initSessionPrimaryObservations()
+sessionObs = struct( ...
+    'switchProbPeak', zeros(0,1), ...
+    'switchProbPeakNoise', zeros(0,1), ...
+    'switchProbOuter', zeros(0,1), ...
+    'switchProbOuterNoise', zeros(0,1), ...
+    'targetSwitchEvents', zeros(0,1), ...
+    'targetSwitchEventsNoise', zeros(0,1), ...
+    'targetSwitchTotalDurSec', 0, ...
+    'targetSwitchDurSec', zeros(0,1), ...
+    'targetSwitchDurSecNoise', zeros(0,1), ...
+    'gaussQuadPeakGazeTimeSec', 0, ...
+    'gaussQuadPeakGazeTimeSecByTrial', zeros(0,1), ...
+    'gaussQuadPeakTargetTimeSec', 0, ...
+    'gaussQuadPeakTargetTimeSecByTrial', zeros(0,1), ...
+    'gaussQuadOtherGazeTimeSec', 0, ...
+    'gaussQuadOtherGazeTimeSecByTrial', zeros(0,1), ...
+    'gaussQuadOtherTargetTimeSec', 0, ...
+    'gaussQuadOtherTargetTimeSecByTrial', zeros(0,1), ...
+    'gaussQuadNoise', zeros(0,1));
+end
+
+
+function sessionObs = appendSessionPrimaryObservations(sessionObs, stepCap, stab, dwellBinMetrics, peakBias, ...
+    xPx, yPx, targetX, targetY, target2X, target2Y, analysisMask, inBounds, ctrPx, dtSec, gaussQuadIdx, noiseLevel)
+sessionObs = appendObservedValues(sessionObs, 'stepCaptureProb', double(stepCap.captured(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'stepCaptureAtEndProb', double(stepCap.capturedAtStepEnd(:)), noiseLevel);
+
+capTimes = stepCap.timeToCaptureSec(stepCap.captured & isfinite(stepCap.timeToCaptureSec) & stepCap.timeToCaptureSec > 0);
+sessionObs = appendObservedValues(sessionObs, 'stepMedianTimeToCaptureSec', capTimes(:), noiseLevel);
+
+sessionObs = appendObservedValues(sessionObs, 'targetTransitionProb', double(stab.switchIndicators(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'targetMeanDwellSteps', stab.dwellSteps(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'targetMeanDwellSec', stab.dwellSec(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'targetMeanDwellSecNear', dwellBinMetrics.dwellSecNear(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'targetMeanDwellSecMid', dwellBinMetrics.dwellSecMid(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'targetMeanDwellSecFar', dwellBinMetrics.dwellSecFar(:), noiseLevel);
+
+sessionObs = appendObservedValues(sessionObs, 'peakTrackFrac', double(peakBias.trackedIsPeak(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'outerTrackFrac', 1 - double(peakBias.trackedIsPeak(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'peakTrackBias', peakBias.trackedPeakBiasObs(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'trackBiasPx', peakBias.trackedBiasPx(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'trackScreenCenterBiasPx', peakBias.trackedScreenCenterBiasPx(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'trackGaussSpecificBiasPx', peakBias.trackedGaussSpecificBiasPx(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'trackBiasXPx', peakBias.trackedBiasXPx(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'trackBiasYPx', peakBias.trackedBiasYPx(:), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'switchToPeakFrac', double(peakBias.switchToPeakObs(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'switchWhenOtherPeakFrac', double(peakBias.switchWhenOtherPeakObs(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'switchProbPeak', double(peakBias.switchProbPeakObs(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'switchProbOuter', double(peakBias.switchProbOuterObs(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'saccToPeak', double(peakBias.saccEntryPeakObs(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'saccToOuter', double(~peakBias.saccEntryPeakObs(:)), noiseLevel);
+sessionObs = appendObservedValues(sessionObs, 'saccPeakFrac', double(peakBias.saccEntryPeakObs(:)), noiseLevel);
+sessionObs.targetSwitchEvents = [sessionObs.targetSwitchEvents; double(stab.switchIndicators(:))]; %#ok<AGROW>
+sessionObs.targetSwitchEventsNoise = [sessionObs.targetSwitchEventsNoise; repmat(noiseLevel, numel(stab.switchIndicators), 1)]; %#ok<AGROW>
+if isfinite(stab.trialDurSec)
+    sessionObs.targetSwitchTotalDurSec = sessionObs.targetSwitchTotalDurSec + stab.trialDurSec;
+    sessionObs.targetSwitchDurSec = [sessionObs.targetSwitchDurSec; stab.trialDurSec]; %#ok<AGROW>
+    sessionObs.targetSwitchDurSecNoise = [sessionObs.targetSwitchDurSecNoise; noiseLevel]; %#ok<AGROW>
+end
+
+if ~isnan(gaussQuadIdx)
+    gazeMask = analysisMask(:) & inBounds(:) & isfinite(xPx(:)) & isfinite(yPx(:));
+    if any(gazeMask)
+        x = xPx(gazeMask);
+        y = yPx(gazeMask);
+        gazeQuad = classifyQuadrantCoPs(x, y, ctrPx);
+        ctrGaze = dtSec * sum(gazeQuad == gaussQuadIdx);
+        othGaze = dtSec * sum(gazeQuad ~= gaussQuadIdx);
+        sessionObs.gaussQuadPeakGazeTimeSec = sessionObs.gaussQuadPeakGazeTimeSec + ctrGaze;
+        sessionObs.gaussQuadOtherGazeTimeSec = sessionObs.gaussQuadOtherGazeTimeSec + othGaze;
+        sessionObs.gaussQuadPeakGazeTimeSecByTrial = [sessionObs.gaussQuadPeakGazeTimeSecByTrial; ctrGaze]; %#ok<AGROW>
+        sessionObs.gaussQuadOtherGazeTimeSecByTrial = [sessionObs.gaussQuadOtherGazeTimeSecByTrial; othGaze]; %#ok<AGROW>
+    end
+
+    targetMask = [analysisMask(:) & inBounds(:); analysisMask(:) & inBounds(:)];
+    tgtXAll = [targetX(:); target2X(:)];
+    tgtYAll = [targetY(:); target2Y(:)];
+    tgtXAll = tgtXAll(targetMask);
+    tgtYAll = tgtYAll(targetMask);
+    if ~isempty(tgtXAll)
+        targetQuad = classifyQuadrantCoPs(tgtXAll, tgtYAll, ctrPx);
+        ctrTgt = dtSec * sum(targetQuad == gaussQuadIdx);
+        othTgt = dtSec * sum(targetQuad ~= gaussQuadIdx);
+        sessionObs.gaussQuadPeakTargetTimeSec = sessionObs.gaussQuadPeakTargetTimeSec + ctrTgt;
+        sessionObs.gaussQuadOtherTargetTimeSec = sessionObs.gaussQuadOtherTargetTimeSec + othTgt;
+        sessionObs.gaussQuadPeakTargetTimeSecByTrial = [sessionObs.gaussQuadPeakTargetTimeSecByTrial; ctrTgt]; %#ok<AGROW>
+        sessionObs.gaussQuadOtherTargetTimeSecByTrial = [sessionObs.gaussQuadOtherTargetTimeSecByTrial; othTgt]; %#ok<AGROW>
+        sessionObs.gaussQuadNoise = [sessionObs.gaussQuadNoise; noiseLevel]; %#ok<AGROW>
+    end
+end
+
+gazeMask = analysisMask(:) & inBounds(:) & isfinite(xPx(:)) & isfinite(yPx(:));
+if any(gazeMask)
+    x = xPx(gazeMask);
+    y = yPx(gazeMask);
+    sessionObs = appendObservedValues(sessionObs, 'gazeQ1TimeSec', dtSec * double(x >= ctrPx(1) & y < ctrPx(2)), noiseLevel);
+    sessionObs = appendObservedValues(sessionObs, 'gazeQ2TimeSec', dtSec * double(x < ctrPx(1) & y < ctrPx(2)), noiseLevel);
+    sessionObs = appendObservedValues(sessionObs, 'gazeQ3TimeSec', dtSec * double(x < ctrPx(1) & y >= ctrPx(2)), noiseLevel);
+    sessionObs = appendObservedValues(sessionObs, 'gazeQ4TimeSec', dtSec * double(x >= ctrPx(1) & y >= ctrPx(2)), noiseLevel);
+end
+
+targetMask = [analysisMask(:) & inBounds(:); analysisMask(:) & inBounds(:)];
+tgtX = [targetX(:); target2X(:)];
+tgtY = [targetY(:); target2Y(:)];
+tgtX = tgtX(targetMask);
+tgtY = tgtY(targetMask);
+if ~isempty(tgtX)
+    sessionObs = appendObservedValues(sessionObs, 'targetQ1TimeSec', dtSec * double(tgtX >= ctrPx(1) & tgtY < ctrPx(2)), noiseLevel);
+    sessionObs = appendObservedValues(sessionObs, 'targetQ2TimeSec', dtSec * double(tgtX < ctrPx(1) & tgtY < ctrPx(2)), noiseLevel);
+    sessionObs = appendObservedValues(sessionObs, 'targetQ3TimeSec', dtSec * double(tgtX < ctrPx(1) & tgtY >= ctrPx(2)), noiseLevel);
+    sessionObs = appendObservedValues(sessionObs, 'targetQ4TimeSec', dtSec * double(tgtX >= ctrPx(1) & tgtY >= ctrPx(2)), noiseLevel);
+end
+end
+
+
+function dwellMetrics = computeTrialTargetDwellDistanceBinMetrics(stepIdx, distPx1, distPx2, t1DistFromGaussCtr, t2DistFromGaussCtr, ...
+    inBounds, betweenMarginPx, tRel, nsteps, gaussSigma)
+dwellMetrics = struct( ...
+    'targetMeanDwellSecNear', NaN, ...
+    'targetMeanDwellSecMid', NaN, ...
+    'targetMeanDwellSecFar', NaN, ...
+    'dwellSecNear', zeros(0, 1), ...
+    'dwellSecMid', zeros(0, 1), ...
+    'dwellSecFar', zeros(0, 1));
+
+assign = assignTargetIdentityCoPs(distPx1, distPx2, inBounds, betweenMarginPx, stepIdx);
+assignedStep = assign.assignedStep(:);
+steps = assign.step(:);
+if isempty(steps) || isempty(assignedStep)
+    return
+end
+
+stepDist1 = aggregateStepwiseMean(stepIdx, t1DistFromGaussCtr, steps);
+stepDist2 = aggregateStepwiseMean(stepIdx, t2DistFromGaussCtr, steps);
+assignedTargetDist = NaN(size(assignedStep));
+assignedTargetDist(assignedStep == 1) = stepDist1(assignedStep == 1);
+assignedTargetDist(assignedStep == 2) = stepDist2(assignedStep == 2);
+
+stepDurSec = inferStepDurationSec(tRel, nsteps);
+bins = resolveGaussDistanceBins(gaussSigma);
+suffixMap = {'Near', 'Mid', 'Far'};
+binCode = zeros(size(assignedStep));
+for i = 1:numel(bins)
+    m = assignedStep > 0 & assignedTargetDist >= bins(i).lowerPx & assignedTargetDist <= bins(i).upperPx;
+    binCode(m) = i;
+end
+
+valid = assignedStep > 0 & binCode > 0 & isfinite(assignedTargetDist);
+if ~any(valid)
+    return
+end
+
+assignedValid = assignedStep(valid);
+binValid = binCode(valid);
+runStart = [true; diff(assignedValid) ~= 0 | diff(binValid) ~= 0];
+runIdx = cumsum(runStart);
+runBin = accumarray(runIdx, binValid, [], @(v) v(1));
+dwellSec = accumarray(runIdx, 1, [], @sum) * stepDurSec;
+
+for i = 1:numel(bins)
+    fieldName = ['dwellSec' suffixMap{i}];
+    meanField = ['targetMeanDwellSec' suffixMap{i}];
+    vals = dwellSec(runBin == i);
+    dwellMetrics.(fieldName) = vals(:);
+    if ~isempty(vals)
+        dwellMetrics.(meanField) = mean(vals, 'omitnan');
+    end
+end
+end
+
+
+function stepMeans = aggregateStepwiseMean(stepIdx, values, steps)
+stepIdx = stepIdx(:);
+values = values(:);
+steps = steps(:);
+stepMeans = NaN(size(steps));
+for i = 1:numel(steps)
+    mask = isfinite(stepIdx) & stepIdx == steps(i) & isfinite(values);
+    if any(mask)
+        stepMeans(i) = mean(values(mask), 'omitnan');
+    end
+end
+end
+
+
+function stepDurSec = inferStepDurationSec(tRel, nsteps)
+trialDur = max(tRel) - min(tRel);
+if ~isfinite(trialDur) || trialDur <= 0
+    stepDurSec = NaN;
+else
+    stepDurSec = trialDur / max(nsteps, 1);
+end
+end
+
+
+function sessionSummary = addNestedSessionMomentSummaries(sessionSummary, sessionObs, sessionTrackingSamples, sessionPrimaryMetrics, gaussSigma)
+meanStruct = struct();
+sdStruct = struct();
+seStruct = struct();
+specs = getSessionMetricSpecs();
+specMap = containers.Map({specs.name}, num2cell(1:numel(specs)));
+
+for i = 1:numel(sessionPrimaryMetrics)
+    metric = sessionPrimaryMetrics{i};
+    spec = specs(specMap(metric));
+    [meanStruct.(metric), sdStruct.(metric), seStruct.(metric)] = ...
+        computeSessionPrimaryMoments(spec, sessionObs, sessionTrackingSamples, gaussSigma);
+end
+
+sessionSummary.mean = meanStruct;
+sessionSummary.sd = sdStruct;
+sessionSummary.se = seStruct;
+end
+
+function [meanVal, sdVal, seVal] = computeSessionPrimaryMoments(spec, sessionObs, sessionTrackingSamples, gaussSigma)
+meanVal = struct('all', NaN);
+sdVal = struct('all', NaN);
+seVal = struct('all', NaN);
+
+switch spec.kind
+    case 'captureLatency'
+        [meanVal, sdVal, seVal] = computeCaptureLatencyMoments(sessionObs);
+        return
+    case 'switchRate'
+        [meanVal, sdVal, seVal] = computeSwitchRateMoments(sessionObs);
+        return
+    case 'switchDelta'
+        [meanVal, sdVal, seVal] = computeSwitchProbDeltaMoments(sessionObs);
+        return
+    case 'gaussQuad'
+        [meanVal, sdVal, seVal] = computeGaussQuadMoments(sessionObs, spec.gaussMode);
+        return
+    case 'track'
+        [meanVal, sdVal, seVal] = computeTrackMetricMoments(sessionTrackingSamples, spec.trackKind, spec.includeDistanceBins, spec.includePhaseBins, gaussSigma);
+        return
+    case 'observedSum'
+        [meanVal, sdVal, seVal] = summarizeObservedMetric(sessionObs, spec.name, 'sum', false);
+        return
+    case 'observedMean'
+        [meanVal, sdVal, seVal] = summarizeObservedMetric(sessionObs, spec.name, 'mean', true);
+        return
+    otherwise
+        [meanVal, sdVal, seVal] = summarizeObservedMetric(sessionObs, spec.name, 'mean', true);
+        return
+end
+end
+
+
+function sessionObs = appendObservedValues(sessionObs, fieldName, values, noiseLevel)
+if isempty(values)
+    return
+end
+
+values = values(:);
+values = values(isfinite(values));
+if isempty(values)
+    return
+end
+
+if ~isfield(sessionObs, fieldName)
+    sessionObs.(fieldName) = zeros(0, 1);
+end
+
+noiseField = [fieldName 'Noise'];
+if ~isfield(sessionObs, noiseField)
+    sessionObs.(noiseField) = zeros(0, 1);
+end
+
+sessionObs.(fieldName) = [sessionObs.(fieldName); values]; %#ok<AGROW>
+sessionObs.(noiseField) = [sessionObs.(noiseField); repmat(noiseLevel, numel(values), 1)]; %#ok<AGROW>
+end
+
+
+function [meanVal, sdVal, seVal] = computeCaptureLatencyMoments(sessionObs)
+meanVal = struct('all', NaN);
+sdVal = struct('all', NaN);
+seVal = struct('all', NaN);
+
+lat = sessionObs.stepMedianTimeToCaptureSec(:);
+noise = sessionObs.stepMedianTimeToCaptureSecNoise(:);
+
+[meanVal.all, sdVal.all, seVal.all] = summarizeLatencyVector(lat);
+
+validNoise = isfinite(noise);
+if any(validNoise)
+    uniqueNoise = unique(noise(validNoise));
+    for i = 1:numel(uniqueNoise)
+        noiseLevel = uniqueNoise(i);
+        suffix = makeNoiseLevelFieldSuffix(noiseLevel);
+        mask = validNoise & noise == noiseLevel;
+        [meanVal.(suffix), sdVal.(suffix), seVal.(suffix)] = summarizeLatencyVector(lat(mask));
+    end
+end
+end
+
+
+function [meanStruct, sdStruct, seStruct] = summarizeObservedMetric(sessionObs, fieldName, mode, includeDispersion)
+if nargin < 4
+    includeDispersion = true;
+end
+meanStruct = struct('all', NaN);
+sdStruct = struct('all', NaN);
+seStruct = struct('all', NaN);
+
+if ~isfield(sessionObs, fieldName)
+    return
+end
+obs = sessionObs.(fieldName)(:);
+noiseField = [fieldName 'Noise'];
+if isfield(sessionObs, noiseField)
+    noise = sessionObs.(noiseField)(:);
+else
+    noise = NaN(size(obs));
+end
+
+[meanStruct.all, sdStruct.all, seStruct.all] = summarizeVectorWithMode(obs, mode, includeDispersion);
+
+validNoise = isfinite(noise);
+if any(validNoise)
+    uniqueNoise = unique(noise(validNoise));
+    for i = 1:numel(uniqueNoise)
+        noiseLevel = uniqueNoise(i);
+        suffix = makeNoiseLevelFieldSuffix(noiseLevel);
+        mask = validNoise & noise == noiseLevel;
+        [meanStruct.(suffix), sdStruct.(suffix), seStruct.(suffix)] = ...
+            summarizeVectorWithMode(obs(mask), mode, includeDispersion);
+    end
+end
+end
+
+
+function [meanStruct, sdStruct, seStruct] = computeSwitchRateMoments(sessionObs)
+meanStruct = struct('all', NaN);
+sdStruct = struct('all', NaN);
+seStruct = struct('all', NaN);
+
+[meanStruct.all, sdStruct.all, seStruct.all] = summarizeSwitchRate( ...
+    sessionObs.targetSwitchEvents(:), sessionObs.targetSwitchTotalDurSec);
+
+noise = sessionObs.targetSwitchEventsNoise(:);
+validNoise = isfinite(noise);
+if any(validNoise)
+    uniqueNoise = unique(noise(validNoise));
+    for i = 1:numel(uniqueNoise)
+        noiseLevel = uniqueNoise(i);
+        suffix = makeNoiseLevelFieldSuffix(noiseLevel);
+        maskEvents = validNoise & noise == noiseLevel;
+        maskDur = isfinite(sessionObs.targetSwitchDurSecNoise(:)) & sessionObs.targetSwitchDurSecNoise(:) == noiseLevel;
+        totalDur = sum(sessionObs.targetSwitchDurSec(maskDur), 'omitnan');
+        [meanStruct.(suffix), sdStruct.(suffix), seStruct.(suffix)] = summarizeSwitchRate( ...
+            sessionObs.targetSwitchEvents(maskEvents), totalDur);
+    end
+end
+end
+
+
+function [meanStruct, sdStruct, seStruct] = computeSwitchProbDeltaMoments(sessionObs)
+meanStruct = struct('all', NaN);
+sdStruct = struct('all', NaN);
+seStruct = struct('all', NaN);
+
+[meanStruct.all, sdStruct.all, seStruct.all] = summarizeDelta( ...
+    sessionObs.switchProbPeak(:), sessionObs.switchProbOuter(:));
+
+noiseC = sessionObs.switchProbPeakNoise(:);
+noiseO = sessionObs.switchProbOuterNoise(:);
+noiseVals = unique([noiseC(isfinite(noiseC)); noiseO(isfinite(noiseO))]);
+for i = 1:numel(noiseVals)
+    noiseLevel = noiseVals(i);
+    suffix = makeNoiseLevelFieldSuffix(noiseLevel);
+    obsC = sessionObs.switchProbPeak(noiseC == noiseLevel);
+    obsO = sessionObs.switchProbOuter(noiseO == noiseLevel);
+    [meanStruct.(suffix), sdStruct.(suffix), seStruct.(suffix)] = summarizeDelta(obsC, obsO);
+end
+end
+
+
+function [meanStruct, sdStruct, seStruct] = computeGaussQuadMoments(sessionObs, mode)
+meanStruct = struct('all', NaN);
+sdStruct = struct('all', NaN);
+seStruct = struct('all', NaN);
+
+switch mode
+    case 'peak'
+        meanStruct.all = safeRatio(sessionObs.gaussQuadPeakGazeTimeSec, sessionObs.gaussQuadPeakTargetTimeSec);
+    case 'other'
+        meanStruct.all = safeRatio(sessionObs.gaussQuadOtherGazeTimeSec, sessionObs.gaussQuadOtherTargetTimeSec);
+    case 'bias'
+        ctr = safeRatio(sessionObs.gaussQuadPeakGazeTimeSec, sessionObs.gaussQuadPeakTargetTimeSec);
+        oth = safeRatio(sessionObs.gaussQuadOtherGazeTimeSec, sessionObs.gaussQuadOtherTargetTimeSec);
+        meanStruct.all = ctr - oth;
+end
+
+noise = sessionObs.gaussQuadNoise(:);
+validNoise = isfinite(noise);
+if any(validNoise)
+    uniqueNoise = unique(noise(validNoise));
+    for i = 1:numel(uniqueNoise)
+        noiseLevel = uniqueNoise(i);
+        suffix = makeNoiseLevelFieldSuffix(noiseLevel);
+        mask = validNoise & noise == noiseLevel;
+        ctrG = sum(sessionObs.gaussQuadPeakGazeTimeSecByTrial(mask), 'omitnan');
+        ctrT = sum(sessionObs.gaussQuadPeakTargetTimeSecByTrial(mask), 'omitnan');
+        othG = sum(sessionObs.gaussQuadOtherGazeTimeSecByTrial(mask), 'omitnan');
+        othT = sum(sessionObs.gaussQuadOtherTargetTimeSecByTrial(mask), 'omitnan');
+        switch mode
+            case 'peak'
+                meanStruct.(suffix) = safeRatio(ctrG, ctrT);
+            case 'other'
+                meanStruct.(suffix) = safeRatio(othG, othT);
+            case 'bias'
+                meanStruct.(suffix) = safeRatio(ctrG, ctrT) - safeRatio(othG, othT);
+        end
+        sdStruct.(suffix) = NaN;
+        seStruct.(suffix) = NaN;
+    end
+end
+end
+
+
+function [meanStruct, sdStruct, seStruct] = computeTrackMetricMoments(sessionTrackingSamples, metricKind, includeDistanceBins, includePhaseBins, gaussSigma)
+meanStruct = struct('all', NaN);
+sdStruct = struct('all', NaN);
+seStruct = struct('all', NaN);
+
+[obsAll, validMask] = resolveTrackObservations(sessionTrackingSamples, metricKind, true(size(sessionTrackingSamples.errX)));
+[meanStruct.all, sdStruct.all, seStruct.all] = summarizeVectorWithMode(obsAll, 'mean', true);
+
+noise = sessionTrackingSamples.noise(:);
+validNoise = validMask & isfinite(noise);
+if any(validNoise)
+    uniqueNoise = unique(noise(validNoise));
+    for i = 1:numel(uniqueNoise)
+        noiseLevel = uniqueNoise(i);
+        suffix = makeNoiseLevelFieldSuffix(noiseLevel);
+        [obs, ~] = resolveTrackObservations(sessionTrackingSamples, metricKind, validMask & noise == noiseLevel);
+        [meanStruct.(suffix), sdStruct.(suffix), seStruct.(suffix)] = summarizeVectorWithMode(obs, 'mean', true);
+    end
+end
+
+if includeDistanceBins
+    bins = resolveGaussDistanceBins(gaussSigma);
+    for i = 1:numel(bins)
+        binName = bins(i).name;
+        [obs, ~] = resolveTrackObservations(sessionTrackingSamples, metricKind, validMask & bins(i).maskFn(sessionTrackingSamples.targetDistFromCtr));
+        [meanStruct.(binName), sdStruct.(binName), seStruct.(binName)] = summarizeVectorWithMode(obs, 'mean', true);
+    end
+end
+
+if includePhaseBins
+    phaseDefs = getTrackPhaseBinDefinitions();
+    for i = 1:numel(phaseDefs)
+        phaseName = phaseDefs(i).name;
+        mask = validMask & sessionTrackingSamples.phaseCode(:) == phaseDefs(i).code;
+        [obs, ~] = resolveTrackObservations(sessionTrackingSamples, metricKind, mask);
+        [meanStruct.(phaseName), sdStruct.(phaseName), seStruct.(phaseName)] = summarizeVectorWithMode(obs, 'mean', true);
+    end
+end
+end
+
+
+function [obs, validMask] = resolveTrackObservations(sessionTrackingSamples, metricKind, mask)
+errX = sessionTrackingSamples.errX(:);
+errY = sessionTrackingSamples.errY(:);
+mask = mask(:);
+switch metricKind
+    case 'bias'
+        obs = sessionTrackingSamples.bias(:);
+        validMask = mask & isfinite(obs);
+    case 'screenCenterBias'
+        obs = sessionTrackingSamples.screenCenterBias(:);
+        validMask = mask & isfinite(obs);
+    case 'gaussSpecificBias'
+        obs = sessionTrackingSamples.gaussSpecificBias(:);
+        validMask = mask & isfinite(obs);
+    case 'biasX'
+        obs = sessionTrackingSamples.biasX(:);
+        validMask = mask & isfinite(obs);
+    case 'biasY'
+        obs = sessionTrackingSamples.biasY(:);
+        validMask = mask & isfinite(obs);
+    case 'error'
+        obs = sqrt(errX.^2 + errY.^2);
+        validMask = mask & isfinite(obs);
+    case 'variability'
+        validMask = mask & isfinite(errX) & isfinite(errY);
+        if any(validMask)
+            meanErrX = mean(errX(validMask), 'omitnan');
+            meanErrY = mean(errY(validMask), 'omitnan');
+            obs = sqrt((errX - meanErrX).^2 + (errY - meanErrY).^2);
+        else
+            obs = NaN(size(errX));
+        end
+        validMask = validMask & isfinite(obs);
+    otherwise
+        obs = NaN(size(errX));
+        validMask = false(size(errX));
+end
+obs = obs(validMask);
+end
+
+
+function [meanVal, sdVal, seVal] = summarizeVectorWithMode(obs, mode, includeDispersion)
+if nargin < 3
+    includeDispersion = true;
+end
+meanVal = NaN;
+sdVal = NaN;
+seVal = NaN;
+obs = obs(isfinite(obs));
+if isempty(obs)
+    return
+end
+
+switch mode
+    case 'sum'
+        meanVal = sum(obs, 'omitnan');
+    case 'median'
+        meanVal = median(obs, 'omitnan');
+    otherwise
+        meanVal = mean(obs, 'omitnan');
+end
+
+if ~includeDispersion
+    return
+end
+
+if numel(obs) == 1
+    sdVal = 0;
+    seVal = 0;
+else
+    sdVal = std(obs, 0, 'omitnan');
+    seVal = sdVal / sqrt(numel(obs));
+end
+end
+
+
+function [rateVal, sdVal, seVal] = summarizeSwitchRate(events, totalDur)
+rateVal = NaN;
+sdVal = NaN;
+seVal = NaN;
+events = events(isfinite(events));
+if isempty(events) || ~isfinite(totalDur) || totalDur <= 0
+    return
+end
+nSwitch = sum(events, 'omitnan');
+rateVal = nSwitch / totalDur;
+sdVal = sqrt(rateVal);
+seVal = sqrt(nSwitch) / totalDur;
+end
+
+
+function [deltaVal, sdVal, seVal] = summarizeDelta(obsCenter, obsOuter)
+deltaVal = NaN;
+sdVal = NaN;
+seVal = NaN;
+obsCenter = obsCenter(isfinite(obsCenter));
+obsOuter = obsOuter(isfinite(obsOuter));
+if isempty(obsCenter) || isempty(obsOuter)
+    return
+end
+pCenter = mean(obsCenter, 'omitnan');
+pOuter = mean(obsOuter, 'omitnan');
+deltaVal = pCenter - pOuter;
+varCenter = pCenter * (1 - pCenter);
+varOuter = pOuter * (1 - pOuter);
+sdVal = sqrt(varCenter + varOuter);
+seVal = sqrt((varCenter / numel(obsCenter)) + (varOuter / numel(obsOuter)));
+end
+
+
+function r = safeRatio(num, den)
+r = NaN;
+if isfinite(num) && isfinite(den) && den > 0
+    r = num / den;
+end
+end
+
+
+function [medianVal, sdVal, seVal] = summarizeLatencyVector(lat)
+medianVal = NaN;
+sdVal = NaN;
+seVal = NaN;
+lat = lat(isfinite(lat));
+if isempty(lat)
+    return
+end
+
+medianVal = median(lat, 'omitnan');
+if numel(lat) == 1
+    sdVal = 0;
+    seVal = 0;
+else
+    sdVal = std(lat, 0, 'omitnan');
+    seVal = sdVal / sqrt(numel(lat));
+end
+end
+
+
+function params = extractSessionParams(ex)
+tutNreps = getNestedNumeric(ex, {'exp', 'CoPs', 'tut', 'nreps'});
+params = struct( ...
+    'expNreps', getNestedNumeric(ex, {'exp', 'nreps'}), ...
+    'totalNreps', getNestedNumeric(ex, {'exp', 'total_nreps'}), ...
+    'nsteps', getNestedNumeric(ex, {'exp', 'CoPs', 'ctl', 'nsteps'}), ...
+    'waitSecs', getNestedNumeric(ex, {'exp', 'CoPs', 'timing', 'wait_secs'}), ...
+    'gaussScalar', getFirstAvailableNestedNumeric(ex, { ...
+        {'exp', 'CoPs', 'ctl', 'gauss_scalar'}, ...
+        {'exp', 'CoPs', 'ctl', 'precision_weight'}}), ...
+    'gaussCenterIdx', getNestedNumeric(ex, {'exp', 'CoPs', 'rew', 'gauss_center_idx'}), ...
+    'maxDistMult', getNestedNumeric(ex, {'exp', 'CoPs', 'ctl', 'max_dist_mult'}), ...
+    'targetNum', getNestedNumeric(ex, {'exp', 'CoPs', 'ctl', 'target_num'}), ...
+    'rewardThreshold', getNestedNumeric(ex, {'exp', 'CoPs', 'rew', 'threshold'}), ...
+    'rewardDuration', getNestedNumeric(ex, {'exp', 'CoPs', 'rew', 'duration'}), ...
+    'gaussSigma', getNestedNumeric(ex, {'exp', 'CoPs', 'rew', 'gauss_sigma'}), ...
+    'targetVisibility', getDefaultedTargetVisibility(ex), ...
+    'coherence', getDefaultedCoherence(ex), ...
+    'showGaussMarker', getNestedNumericOrLogical(ex, {'exp', 'CoPs', 'rew', 'show_gauss_marker'}), ...
+    'backgroundNoiseMain', preserveNumericValue(getNestedValue(ex, {'exp', 'CoPs', 'graph', 'background_noise_lvl'})), ...
+    'freeViewing', getNestedNumeric(ex, {'exp', 'CoPs', 'freeViewing'}));
+
+if isnan(params.totalNreps)
+    params.totalNreps = params.expNreps + tutNreps;
+end
+end
+
+
+function value = getTrialTargetVisibility(T, sessionParams)
+value = 1;
+if isfield(T, 'target_visibility') && isscalar(T.target_visibility) && isfinite(T.target_visibility)
+    value = double(T.target_visibility);
+elseif isfield(sessionParams, 'targetVisibility') && isscalar(sessionParams.targetVisibility) && isfinite(sessionParams.targetVisibility)
+    value = sessionParams.targetVisibility;
+end
+end
+
+
+function value = getTrialCoherence(T, sessionParams)
+value = 1;
+if isfield(T, 'coherence') && isscalar(T.coherence) && isfinite(T.coherence)
+    value = double(T.coherence);
+elseif isfield(sessionParams, 'coherence') && isscalar(sessionParams.coherence) && isfinite(sessionParams.coherence)
+    value = sessionParams.coherence;
+end
+end
+
+
+function value = getTrialTargetNum(T, sessionParams)
+value = NaN;
+if isfield(T, 'target_num') && isscalar(T.target_num) && isfinite(T.target_num)
+    value = double(T.target_num);
+elseif isfield(sessionParams, 'targetNum') && isscalar(sessionParams.targetNum) && isfinite(sessionParams.targetNum)
+    value = double(sessionParams.targetNum);
+end
+end
+
+
+function imageName = getTrialImageName(ex, T, trialIdx)
+imageName = string(missing);
+
+if isfield(T, 'imageName') && (ischar(T.imageName) || isstring(T.imageName))
+    candidate = string(T.imageName);
+    if strlength(strtrim(candidate)) > 0
+        imageName = candidate;
+        return
+    end
+end
+
+if isfield(T, 'stimPath') && (ischar(T.stimPath) || isstring(T.stimPath))
+    candidate = basenameStringLocal(T.stimPath);
+    if strlength(candidate) > 0
+        imageName = candidate;
+        return
+    end
+end
+
+if isfield(ex, 'stim') && isstruct(ex.stim) && isfield(ex.stim, 'seq') && ...
+        numel(ex.stim.seq) >= trialIdx
+    candidate = basenameStringLocal(ex.stim.seq{trialIdx});
+    if strlength(candidate) > 0
+        imageName = candidate;
+    end
+end
+end
+
+
+function value = getDefaultedTargetVisibility(ex)
+value = preserveNumericValue(getNestedValue(ex, {'exp', 'CoPs', 'graph', 'target_visibility'}));
+if ~isnumeric(value) || isempty(value) || all(~isfinite(value(:)))
+    value = 1;
+end
+end
+
+
+function value = getDefaultedCoherence(ex)
+value = preserveNumericValue(getNestedValue(ex, {'exp', 'CoPs', 'ctl', 'coherence'}));
+if ~isnumeric(value) || isempty(value) || all(~isfinite(value(:)))
+    value = 1;
+end
+end
+
+
+function sessionTrackingSamples = initSessionTrackingSamples()
+sessionTrackingSamples = struct( ...
+    'errX', [], ...
+    'errY', [], ...
+    'bias', [], ...
+    'biasX', [], ...
+    'biasY', [], ...
+    'screenCenterBias', [], ...
+    'gaussSpecificBias', [], ...
+    'targetDistFromCtr', [], ...
+    'phaseCode', [], ...
+    'noise', []);
+end
+
+
+function sessionTrackingSamples = appendSessionTrackingSamples(sessionTrackingSamples, centerBias, noiseLevel)
+if ~isfield(centerBias, 'trackedErrXPx') || isempty(centerBias.trackedErrXPx)
+    return
+end
+
+noiseVec = repmat(noiseLevel, numel(centerBias.trackedErrXPx), 1);
+sessionTrackingSamples.errX = [sessionTrackingSamples.errX; centerBias.trackedErrXPx(:)]; %#ok<AGROW>
+sessionTrackingSamples.errY = [sessionTrackingSamples.errY; centerBias.trackedErrYPx(:)]; %#ok<AGROW>
+sessionTrackingSamples.bias = [sessionTrackingSamples.bias; centerBias.trackedBiasPx(:)]; %#ok<AGROW>
+sessionTrackingSamples.biasX = [sessionTrackingSamples.biasX; centerBias.trackedBiasXPx(:)]; %#ok<AGROW>
+sessionTrackingSamples.biasY = [sessionTrackingSamples.biasY; centerBias.trackedBiasYPx(:)]; %#ok<AGROW>
+sessionTrackingSamples.screenCenterBias = [sessionTrackingSamples.screenCenterBias; centerBias.trackedScreenCenterBiasPx(:)]; %#ok<AGROW>
+sessionTrackingSamples.gaussSpecificBias = [sessionTrackingSamples.gaussSpecificBias; centerBias.trackedGaussSpecificBiasPx(:)]; %#ok<AGROW>
+sessionTrackingSamples.targetDistFromCtr = [sessionTrackingSamples.targetDistFromCtr; centerBias.trackedTargetDistFromCtrPx(:)]; %#ok<AGROW>
+sessionTrackingSamples.phaseCode = [sessionTrackingSamples.phaseCode; centerBias.trackedPhaseCode(:)]; %#ok<AGROW>
+sessionTrackingSamples.noise = [sessionTrackingSamples.noise; noiseVec(:)]; %#ok<AGROW>
+end
+
+
+function metrics = computeTrialTrackDistanceBinMetrics(peakBias, gaussSigma)
+metricNames = { ...
+    'nTrackedSamples', 'nTrackedSamplesNear', 'nTrackedSamplesMid', 'nTrackedSamplesFar', ...
+    'trackErrorPxNear', 'trackErrorPxMid', 'trackErrorPxFar', ...
+    'trackVariabilityPxNear', 'trackVariabilityPxMid', 'trackVariabilityPxFar', ...
+    'trackBiasPxNear', 'trackBiasPxMid', 'trackBiasPxFar', ...
+    'trackScreenCenterBiasPxNear', 'trackScreenCenterBiasPxMid', 'trackScreenCenterBiasPxFar', ...
+    'trackGaussSpecificBiasPxNear', 'trackGaussSpecificBiasPxMid', 'trackGaussSpecificBiasPxFar', ...
+    'trackBiasXPxNear', 'trackBiasXPxMid', 'trackBiasXPxFar', ...
+    'trackBiasYPxNear', 'trackBiasYPxMid', 'trackBiasYPxFar'};
+metrics = cell2struct(repmat({NaN}, size(metricNames)), metricNames, 2);
+
+if ~isfield(peakBias, 'trackedTargetDistFromCtrPx') || isempty(peakBias.trackedTargetDistFromCtrPx)
+    return
+end
+
+metrics.nTrackedSamples = numel(peakBias.trackedTargetDistFromCtrPx);
+
+bins = resolveGaussDistanceBins(gaussSigma);
+suffixMap = {'Near', 'Mid', 'Far'};
+for i = 1:numel(bins)
+    mask = bins(i).maskFn(peakBias.trackedTargetDistFromCtrPx(:));
+    suffix = suffixMap{i};
+    metrics.(['nTrackedSamples' suffix]) = sum(mask, 'omitnan');
+    metrics.(['trackErrorPx' suffix]) = computeTrackErrorFromArrays(peakBias.trackedErrXPx, peakBias.trackedErrYPx, mask);
+    metrics.(['trackVariabilityPx' suffix]) = computeTrackVariabilityFromArrays(peakBias.trackedErrXPx, peakBias.trackedErrYPx, mask);
+    metrics.(['trackBiasPx' suffix]) = meanWithMask(peakBias.trackedBiasPx, mask);
+    metrics.(['trackScreenCenterBiasPx' suffix]) = meanWithMask(peakBias.trackedScreenCenterBiasPx, mask);
+    metrics.(['trackGaussSpecificBiasPx' suffix]) = meanWithMask(peakBias.trackedGaussSpecificBiasPx, mask);
+    metrics.(['trackBiasXPx' suffix]) = meanWithMask(peakBias.trackedBiasXPx, mask);
+    metrics.(['trackBiasYPx' suffix]) = meanWithMask(peakBias.trackedBiasYPx, mask);
+end
+end
+
+
+function metrics = computeTrialTrackPhaseBinMetrics(peakBias)
+metricNames = { ...
+    'nTrackedSamplesEarly','nTrackedSamplesLate', ...
+    'trackErrorPxEarly','trackErrorPxLate', ...
+    'trackVariabilityPxEarly','trackVariabilityPxLate', ...
+    'trackBiasPxEarly','trackBiasPxLate', ...
+    'trackScreenCenterBiasPxEarly','trackScreenCenterBiasPxLate', ...
+    'trackGaussSpecificBiasPxEarly','trackGaussSpecificBiasPxLate', ...
+    'trackBiasXPxEarly','trackBiasXPxLate', ...
+    'trackBiasYPxEarly','trackBiasYPxLate'};
+metrics = cell2struct(repmat({NaN}, size(metricNames)), metricNames, 2);
+
+if ~isfield(peakBias, 'trackedPhaseCode') || isempty(peakBias.trackedPhaseCode)
+    return
+end
+
+phaseDefs = getTrackPhaseBinDefinitions();
+for i = 1:numel(phaseDefs)
+    mask = peakBias.trackedPhaseCode(:) == phaseDefs(i).code;
+    suffix = phaseDefs(i).suffix;
+    metrics.(['nTrackedSamples' suffix]) = sum(mask);
+    metrics.(['trackErrorPx' suffix]) = computeTrackErrorFromArrays(peakBias.trackedErrXPx, peakBias.trackedErrYPx, mask);
+    metrics.(['trackVariabilityPx' suffix]) = computeTrackVariabilityFromArrays(peakBias.trackedErrXPx, peakBias.trackedErrYPx, mask);
+    metrics.(['trackBiasPx' suffix]) = meanWithMask(peakBias.trackedBiasPx, mask);
+    metrics.(['trackScreenCenterBiasPx' suffix]) = meanWithMask(peakBias.trackedScreenCenterBiasPx, mask);
+    metrics.(['trackGaussSpecificBiasPx' suffix]) = meanWithMask(peakBias.trackedGaussSpecificBiasPx, mask);
+    metrics.(['trackBiasXPx' suffix]) = meanWithMask(peakBias.trackedBiasXPx, mask);
+    metrics.(['trackBiasYPx' suffix]) = meanWithMask(peakBias.trackedBiasYPx, mask);
+end
+end
+
+
+function value = meanWithMask(x, mask)
+x = x(:);
+mask = mask(:) & isfinite(x);
+if ~any(mask)
+    value = NaN;
+    return
+end
+value = mean(x(mask), 'omitnan');
+end
+
+
+function value = computeTrackErrorFromArrays(errX, errY, mask)
+errX = errX(:);
+errY = errY(:);
+mask = mask(:) & isfinite(errX) & isfinite(errY);
+if ~any(mask)
+    value = NaN;
+    return
+end
+value = sqrt(mean(errX(mask).^2 + errY(mask).^2, 'omitnan'));
+end
+
+
+function value = computeTrackVariabilityFromArrays(errX, errY, mask)
+errX = errX(:);
+errY = errY(:);
+mask = mask(:) & isfinite(errX) & isfinite(errY);
+if ~any(mask)
+    value = NaN;
+    return
+end
+errX = errX(mask);
+errY = errY(mask);
+meanErrX = mean(errX, 'omitnan');
+meanErrY = mean(errY, 'omitnan');
+value = sqrt(mean((errX - meanErrX).^2 + (errY - meanErrY).^2, 'omitnan'));
+end
+
+
+function bins = resolveGaussDistanceBins(gaussSigma)
+defs = getGaussDistanceBinDefinitions(gaussSigma);
+bins = defs;
+bins(1).maskFn = @(d) isfinite(d) & d <= defs(1).upperPx;
+bins(2).maskFn = @(d) isfinite(d) & d > defs(2).lowerPx & d <= defs(2).upperPx;
+bins(3).maskFn = @(d) isfinite(d) & d > defs(3).lowerPx;
+end
+
+
+function defs = getGaussDistanceBinDefinitions(gaussSigma)
+if ~isfinite(gaussSigma) || gaussSigma <= 0
+    gaussSigma = 175;
+end
+
+defs = struct( ...
+    'name', {'near', 'mid', 'far'}, ...
+    'lowerPx', {0, gaussSigma, 2 * gaussSigma}, ...
+    'upperPx', {gaussSigma, 2 * gaussSigma, Inf});
+end
+
+
+function defs = getTrackPhaseBinDefinitions()
+defs = struct( ...
+    'name', {'early', 'late'}, ...
+    'suffix', {'Early', 'Late'}, ...
+    'code', {1, 2});
+end
+
+
+function agg = buildTrackingAggregation(sessionTrackingSamples, gaussSigma)
+agg = struct();
+agg.distanceBins = struct();
+agg.phaseBins = struct();
+
+if isempty(sessionTrackingSamples.errX)
+    return
+end
+
+bins = resolveGaussDistanceBins(gaussSigma);
+for i = 1:numel(bins)
+    binName = bins(i).name;
+    mask = bins(i).maskFn(sessionTrackingSamples.targetDistFromCtr);
+    agg.distanceBins.(binName) = summarizeTrackingStats(sessionTrackingSamples, mask);
+end
+
+phaseDefs = getTrackPhaseBinDefinitions();
+for i = 1:numel(phaseDefs)
+    phaseName = phaseDefs(i).name;
+    mask = sessionTrackingSamples.phaseCode == phaseDefs(i).code;
+    agg.phaseBins.(phaseName) = summarizeTrackingStats(sessionTrackingSamples, mask);
+end
+end
+
+
+function stats = summarizeTrackingStats(sessionTrackingSamples, mask)
+mask = mask(:);
+errX = sessionTrackingSamples.errX(:);
+errY = sessionTrackingSamples.errY(:);
+[~, biasMask] = resolveTrackObservations(sessionTrackingSamples, 'bias', mask);
+[~, screenMask] = resolveTrackObservations(sessionTrackingSamples, 'screenCenterBias', mask);
+[~, gaussMask] = resolveTrackObservations(sessionTrackingSamples, 'gaussSpecificBias', mask);
+
+valid = mask & isfinite(errX) & isfinite(errY) & biasMask(:) & screenMask(:) & gaussMask(:);
+errX = sessionTrackingSamples.errX(valid);
+errY = sessionTrackingSamples.errY(valid);
+bias = sessionTrackingSamples.bias(valid);
+screenCenterBias = sessionTrackingSamples.screenCenterBias(valid);
+gaussSpecificBias = sessionTrackingSamples.gaussSpecificBias(valid);
+
+stats = struct( ...
+    'n', numel(errX), ...
+    'sumBias', sum(bias, 'omitnan'), ...
+    'sumBiasX', sum(sessionTrackingSamples.biasX(valid), 'omitnan'), ...
+    'sumBiasY', sum(sessionTrackingSamples.biasY(valid), 'omitnan'), ...
+    'sumScreenCenterBias', sum(screenCenterBias, 'omitnan'), ...
+    'sumGaussSpecificBias', sum(gaussSpecificBias, 'omitnan'), ...
+    'sumErrSq', sum(errX.^2 + errY.^2, 'omitnan'), ...
+    'sumErrX', sum(errX, 'omitnan'), ...
+    'sumErrY', sum(errY, 'omitnan'), ...
+    'sumErrXSq', sum(errX.^2, 'omitnan'), ...
+    'sumErrYSq', sum(errY.^2, 'omitnan'));
+end
+
+
+function suffix = makeNoiseLevelFieldSuffix(noiseLevel)
+noiseLabel = regexprep(num2str(noiseLevel, '%.15g'), '\.', 'p');
+noiseLabel = regexprep(noiseLabel, '-', 'm');
+suffix = matlab.lang.makeValidName(['noise' noiseLabel]);
+end
+
+
+function noiseLevel = getTrialBackgroundNoiseLevel(T)
+noiseLevel = NaN;
+if isfield(T, 'background_noise_lvl') && isscalar(T.background_noise_lvl) && isnumeric(T.background_noise_lvl)
+    noiseLevel = T.background_noise_lvl;
+end
+end
+
+
+function trackingTable = buildTrialTrackingTable(trialNo, tRel, tAbs, stepIdx, xPx, yPx, ...
+    targetX, targetY, target2X, target2Y, distPx1, distPx2, inBounds, betweenMarginPx, peakBias, peakPx, screenCenterPx, dtSec, preTrackingSec, trackingVar, requireTrackingSaccade)
+trackingTable = table();
+
+if nargin < 20 || isempty(trackingVar)
+    trackingVar = 'isTracking_lib';
+end
+if nargin < 21 || isempty(requireTrackingSaccade)
+    requireTrackingSaccade = true;
+end
+trackingField = iResolveTrackingFieldLocal(trackingVar, requireTrackingSaccade);
+
+if ~isstruct(peakBias) || ~isfield(peakBias, trackingField) || isempty(peakBias.(trackingField))
+    return
+end
+
+assign = assignTargetIdentityCoPs(distPx1, distPx2, inBounds, betweenMarginPx);
+assignedSample = assign.assignedSample(:);
+trackedSeries = peakBias.(trackingField)(:);
+trackedMask = trackedSeries >= 1 & assignedSample > 0;
+if ~any(trackedMask)
+    return
+end
+
+trackedIdx = find(trackedMask);
+runBreak = [true; diff(trackedIdx) > 1];
+runStartPos = find(runBreak);
+runEndPos = [runStartPos(2:end) - 1; numel(trackedIdx)];
+phaseCodePerSample = NaN(size(assignedSample));
+if strcmp(trackingField, 'isTracking') && isfield(peakBias, 'trackedPhaseCode') && ~isempty(peakBias.trackedPhaseCode)
+    phaseCodePerSample(trackedMask) = peakBias.trackedPhaseCode(:);
+end
+
+if ~isfinite(dtSec) || dtSec <= 0
+    preSamples = 0;
+else
+    preSamples = max(0, round(max(preTrackingSec, 0) / dtSec));
+end
+
+trackingPieces = cell(numel(runStartPos), 1);
+for i = 1:numel(runStartPos)
+    pos0 = runStartPos(i);
+    pos1 = runEndPos(i);
+    trackedSampleIdx = trackedIdx(pos0:pos1);
+    startIdx = trackedSampleIdx(1);
+    endIdx = trackedSampleIdx(end);
+    intervalTargetId = assignedSample(startIdx);
+    if intervalTargetId == 1
+        intervalTargetX = targetX(:);
+        intervalTargetY = targetY(:);
+    else
+        intervalTargetX = target2X(:);
+        intervalTargetY = target2Y(:);
+    end
+
+    windowStartIdx = max(1, startIdx - preSamples);
+    sampleIdx = (windowStartIdx:endIdx)';
+    nRun = numel(sampleIdx);
+    startTimeRel = tRel(startIdx);
+    endTimeRel = tRel(endIdx);
+    startTimeAbs = tAbs(startIdx);
+    endTimeAbs = tAbs(endIdx);
+    durationSec = endTimeRel - startTimeRel;
+    sampleFromTrackingOnset = sampleIdx - startIdx;
+    tFromTrackingOnset = tRel(sampleIdx) - startTimeRel;
+
+    trackedTargetX = intervalTargetX(sampleIdx);
+    trackedTargetY = intervalTargetY(sampleIdx);
+    targetToPeakX = peakPx(1) - trackedTargetX;
+    targetToPeakY = peakPx(2) - trackedTargetY;
+    targetToPeakNorm = hypot(targetToPeakX, targetToPeakY);
+    unitToPeakX = targetToPeakX ./ targetToPeakNorm;
+    unitToPeakY = targetToPeakY ./ targetToPeakNorm;
+    unitToPeakX(~isfinite(unitToPeakX)) = NaN;
+    unitToPeakY(~isfinite(unitToPeakY)) = NaN;
+
+    targetToScreenCtrX = screenCenterPx(1) - trackedTargetX;
+    targetToScreenCtrY = screenCenterPx(2) - trackedTargetY;
+    targetToScreenCtrNorm = hypot(targetToScreenCtrX, targetToScreenCtrY);
+    unitToScreenCtrX = targetToScreenCtrX ./ targetToScreenCtrNorm;
+    unitToScreenCtrY = targetToScreenCtrY ./ targetToScreenCtrNorm;
+    unitToScreenCtrX(~isfinite(unitToScreenCtrX)) = NaN;
+    unitToScreenCtrY(~isfinite(unitToScreenCtrY)) = NaN;
+
+    peakOnScreenDot = unitToPeakX .* unitToScreenCtrX + unitToPeakY .* unitToScreenCtrY;
+    peakSpecificX = unitToPeakX - peakOnScreenDot .* unitToScreenCtrX;
+    peakSpecificY = unitToPeakY - peakOnScreenDot .* unitToScreenCtrY;
+    peakSpecificNorm = hypot(peakSpecificX, peakSpecificY);
+    unitPeakSpecificX = peakSpecificX ./ peakSpecificNorm;
+    unitPeakSpecificY = peakSpecificY ./ peakSpecificNorm;
+    unitPeakSpecificX(peakSpecificNorm < 1e-6) = NaN;
+    unitPeakSpecificY(peakSpecificNorm < 1e-6) = NaN;
+
+    gazeErrX = xPx(sampleIdx) - trackedTargetX;
+    gazeErrY = yPx(sampleIdx) - trackedTargetY;
+    towardPeakX = sign(peakPx(1) - trackedTargetX);
+    towardPeakY = sign(peakPx(2) - trackedTargetY);
+    signedBiasX = gazeErrX .* towardPeakX;
+    signedBiasY = gazeErrY .* towardPeakY;
+    signedBias = gazeErrX .* unitToPeakX + gazeErrY .* unitToPeakY;
+    signedScreenCenterBias = gazeErrX .* unitToScreenCtrX + gazeErrY .* unitToScreenCtrY;
+    signedGaussSpecificBias = gazeErrX .* unitPeakSpecificX + gazeErrY .* unitPeakSpecificY;
+
+    trackingPieces{i} = table( ...
+        repmat(trialNo, nRun, 1), ...
+        repmat(i, nRun, 1), ...
+        sampleIdx(:), ...
+        repmat(startIdx, nRun, 1), ...
+        repmat(endIdx, nRun, 1), ...
+        repmat(startTimeRel, nRun, 1), ...
+        repmat(endTimeRel, nRun, 1), ...
+        repmat(startTimeAbs, nRun, 1), ...
+        repmat(endTimeAbs, nRun, 1), ...
+        repmat(durationSec, nRun, 1), ...
+        sampleFromTrackingOnset(:), ...
+        tFromTrackingOnset(:), ...
+        stepIdx(sampleIdx), ...
+        repmat(intervalTargetId, nRun, 1), ...
+        xPx(sampleIdx), ...
+        yPx(sampleIdx), ...
+        trackedTargetX(:), ...
+        trackedTargetY(:), ...
+        gazeErrX(:), ...
+        gazeErrY(:), ...
+        hypot(gazeErrX(:), gazeErrY(:)), ...
+        signedBias(:), ...
+        signedScreenCenterBias(:), ...
+        signedGaussSpecificBias(:), ...
+        signedBiasX(:), ...
+        signedBiasY(:), ...
+        targetToPeakNorm(:), ...
+        trackedSeries(sampleIdx), ...
+        'VariableNames', { ...
+            'trial', 'intervalNo', 'sampleIdx', 'startSample', 'endSample', ...
+            'startTimeRelSec', 'endTimeRelSec', 'startTimeAbsSec', 'endTimeAbsSec', 'durationSec', ...
+            'sampleFromTrackingOnset', 'tFromTrackingOnsetSec', 'step', 'trackedTargetId', ...
+            'xPx', 'yPx', 'trackedTargetX', 'trackedTargetY', ...
+            'trackErrXPx', 'trackErrYPx', 'trackErrorPx', ...
+            'trackBiasPx', 'trackScreenCenterBiasPx', 'trackGaussSpecificBiasPx', ...
+            'trackBiasXPx', 'trackBiasYPx', 'trackedTargetDistFromCtrPx', 'isTracking'});
+    trackingPieces{i}.trackedPhaseCode = phaseCodePerSample(sampleIdx);
+end
+
+trackingTable = vertcat(trackingPieces{:});
+end
+
+
+function trackingTable = buildTrialValidTrackingTable(trialNo, tRel, tAbs, stepIdx, xPx, yPx, ...
+    targetX, targetY, target2X, target2Y, inBounds, valid, analysisMask, peakPx, screenCenterPx, dtSec)
+trackingTable = table();
+
+sampleMask = analysisMask(:) & valid(:) & inBounds(:) & ...
+    isfinite(stepIdx(:)) & isfinite(xPx(:)) & isfinite(yPx(:)) & ...
+    isfinite(targetX(:)) & isfinite(targetY(:));
+if ~any(sampleMask)
+    return
+end
+
+% This mode is intended primarily for one-target trials/sessions.
+% If the second target is absent, use target 1 directly. If a second target
+% is present, fall back to the closer target on each sample so downstream
+% code still has a single target trajectory to compare against.
+hasTarget2 = any(isfinite(target2X(sampleMask)) & isfinite(target2Y(sampleMask)));
+if hasTarget2
+    dist1 = hypot(xPx(:) - targetX(:), yPx(:) - targetY(:));
+    dist2 = hypot(xPx(:) - target2X(:), yPx(:) - target2Y(:));
+    useT2 = isfinite(dist2) & ((~isfinite(dist1)) | dist2 < dist1);
+    trackedTargetXAll = targetX(:);
+    trackedTargetYAll = targetY(:);
+    trackedTargetXAll(useT2) = target2X(useT2);
+    trackedTargetYAll(useT2) = target2Y(useT2);
+    trackedTargetIdAll = ones(size(sampleMask));
+    trackedTargetIdAll(useT2) = 2;
+else
+    trackedTargetXAll = targetX(:);
+    trackedTargetYAll = targetY(:);
+    trackedTargetIdAll = ones(size(sampleMask));
+end
+
+validIdx = find(sampleMask);
+runBreak = [true; diff(validIdx) > 1];
+runStartPos = find(runBreak);
+runEndPos = [runStartPos(2:end) - 1; numel(validIdx)];
+trackingPieces = cell(numel(runStartPos), 1);
+
+for i = 1:numel(runStartPos)
+    sampleIdx = validIdx(runStartPos(i):runEndPos(i));
+    nRun = numel(sampleIdx);
+    startIdx = sampleIdx(1);
+    endIdx = sampleIdx(end);
+    startTimeRel = tRel(startIdx);
+    endTimeRel = tRel(endIdx);
+    startTimeAbs = tAbs(startIdx);
+    endTimeAbs = tAbs(endIdx);
+    durationSec = endTimeRel - startTimeRel;
+    sampleFromTrackingOnset = sampleIdx - startIdx;
+    tFromTrackingOnset = tRel(sampleIdx) - startTimeRel;
+
+    trackedTargetX = trackedTargetXAll(sampleIdx);
+    trackedTargetY = trackedTargetYAll(sampleIdx);
+    targetToPeakX = peakPx(1) - trackedTargetX;
+    targetToPeakY = peakPx(2) - trackedTargetY;
+    targetToPeakNorm = hypot(targetToPeakX, targetToPeakY);
+    unitToPeakX = targetToPeakX ./ targetToPeakNorm;
+    unitToPeakY = targetToPeakY ./ targetToPeakNorm;
+    unitToPeakX(~isfinite(unitToPeakX)) = NaN;
+    unitToPeakY(~isfinite(unitToPeakY)) = NaN;
+
+    targetToScreenCtrX = screenCenterPx(1) - trackedTargetX;
+    targetToScreenCtrY = screenCenterPx(2) - trackedTargetY;
+    targetToScreenCtrNorm = hypot(targetToScreenCtrX, targetToScreenCtrY);
+    unitToScreenCtrX = targetToScreenCtrX ./ targetToScreenCtrNorm;
+    unitToScreenCtrY = targetToScreenCtrY ./ targetToScreenCtrNorm;
+    unitToScreenCtrX(~isfinite(unitToScreenCtrX)) = NaN;
+    unitToScreenCtrY(~isfinite(unitToScreenCtrY)) = NaN;
+
+    peakOnScreenDot = unitToPeakX .* unitToScreenCtrX + unitToPeakY .* unitToScreenCtrY;
+    peakSpecificX = unitToPeakX - peakOnScreenDot .* unitToScreenCtrX;
+    peakSpecificY = unitToPeakY - peakOnScreenDot .* unitToScreenCtrY;
+    peakSpecificNorm = hypot(peakSpecificX, peakSpecificY);
+    unitPeakSpecificX = peakSpecificX ./ peakSpecificNorm;
+    unitPeakSpecificY = peakSpecificY ./ peakSpecificNorm;
+    unitPeakSpecificX(peakSpecificNorm < 1e-6) = NaN;
+    unitPeakSpecificY(peakSpecificNorm < 1e-6) = NaN;
+
+    gazeErrX = xPx(sampleIdx) - trackedTargetX;
+    gazeErrY = yPx(sampleIdx) - trackedTargetY;
+    towardPeakX = sign(peakPx(1) - trackedTargetX);
+    towardPeakY = sign(peakPx(2) - trackedTargetY);
+    signedBiasX = gazeErrX .* towardPeakX;
+    signedBiasY = gazeErrY .* towardPeakY;
+    signedBias = gazeErrX .* unitToPeakX + gazeErrY .* unitToPeakY;
+    signedScreenCenterBias = gazeErrX .* unitToScreenCtrX + gazeErrY .* unitToScreenCtrY;
+    signedGaussSpecificBias = gazeErrX .* unitPeakSpecificX + gazeErrY .* unitPeakSpecificY;
+
+    trackingPieces{i} = table( ...
+        repmat(trialNo, nRun, 1), ...
+        repmat(i, nRun, 1), ...
+        sampleIdx(:), ...
+        repmat(startIdx, nRun, 1), ...
+        repmat(endIdx, nRun, 1), ...
+        repmat(startTimeRel, nRun, 1), ...
+        repmat(endTimeRel, nRun, 1), ...
+        repmat(startTimeAbs, nRun, 1), ...
+        repmat(endTimeAbs, nRun, 1), ...
+        repmat(durationSec, nRun, 1), ...
+        sampleFromTrackingOnset(:), ...
+        tFromTrackingOnset(:), ...
+        stepIdx(sampleIdx), ...
+        trackedTargetIdAll(sampleIdx), ...
+        xPx(sampleIdx), ...
+        yPx(sampleIdx), ...
+        trackedTargetX(:), ...
+        trackedTargetY(:), ...
+        gazeErrX(:), ...
+        gazeErrY(:), ...
+        hypot(gazeErrX(:), gazeErrY(:)), ...
+        signedBias(:), ...
+        signedScreenCenterBias(:), ...
+        signedGaussSpecificBias(:), ...
+        signedBiasX(:), ...
+        signedBiasY(:), ...
+        targetToPeakNorm(:), ...
+        ones(nRun, 1), ...
+        'VariableNames', { ...
+            'trial', 'intervalNo', 'sampleIdx', 'startSample', 'endSample', ...
+            'startTimeRelSec', 'endTimeRelSec', 'startTimeAbsSec', 'endTimeAbsSec', 'durationSec', ...
+            'sampleFromTrackingOnset', 'tFromTrackingOnsetSec', 'step', 'trackedTargetId', ...
+            'xPx', 'yPx', 'trackedTargetX', 'trackedTargetY', ...
+            'trackErrXPx', 'trackErrYPx', 'trackErrorPx', ...
+            'trackBiasPx', 'trackScreenCenterBiasPx', 'trackGaussSpecificBiasPx', ...
+            'trackBiasXPx', 'trackBiasYPx', 'trackedTargetDistFromCtrPx', 'isTracking'});
+    trackingPieces{i}.trackedPhaseCode = NaN(nRun, 1);
+end
+
+trackingTable = vertcat(trackingPieces{:});
+end
+
+
+function rewardSwitchTable = buildRewardTriggeredSwitchTable(trialNo, tRel, stepIdx, distPx1, distPx2, inBounds, betweenMarginPx, T, analysisStartStep, backgroundNoiseLvl, windowSec)
+rewardSwitchTable = table();
+if nargin < 10 || isempty(windowSec)
+    windowSec = [-0.5, 0.5];
+end
+
+if ~isfield(T, 'times') || ~isfield(T.times, 'reward') || isempty(T.times.reward)
+    return
+end
+
+assign = assignTargetIdentityCoPs(distPx1, distPx2, inBounds, betweenMarginPx, stepIdx);
+uStep = assign.step(:);
+assignedStep = assign.assignedStep(:);
+if isempty(uStep) || isempty(assignedStep)
+    return
+end
+
+stepTimes = NaN(size(uStep));
+for k = 1:numel(uStep)
+    m = isfinite(stepIdx) & (stepIdx == uStep(k)) & isfinite(tRel);
+    if any(m)
+        stepTimes(k) = min(tRel(m));
+    end
+end
+
+validStep = isfinite(uStep) & isfinite(stepTimes) & (uStep >= analysisStartStep) & (assignedStep > 0);
+seqAssigned = assignedStep(validStep);
+seqTimes = stepTimes(validStep);
+seqSteps = uStep(validStep);
+if isempty(seqAssigned)
+    return
+end
+
+switchMask = [false; diff(seqAssigned) ~= 0];
+switchIdx = find(switchMask);
+switchTimes = seqTimes(switchIdx);
+switchSteps = seqSteps(switchIdx);
+targetBefore = seqAssigned(switchIdx - 1);
+targetAfter = seqAssigned(switchIdx);
+
+rewardTimes = T.times.reward(:);
+rewardTimes = rewardTimes(isfinite(rewardTimes));
+if isempty(rewardTimes)
+    return
+end
+if isfield(T, 'TrialStart') && isfinite(T.TrialStart)
+    rewardTimes = rewardTimes - T.TrialStart;
+end
+analysisStartTime = min(tRel(isfinite(tRel) & isfinite(stepIdx) & stepIdx >= analysisStartStep), [], 'omitnan');
+if isfinite(analysisStartTime)
+    rewardTimes = rewardTimes(rewardTimes >= analysisStartTime);
+end
+trialEndTime = max(tRel, [], 'omitnan');
+if isfinite(trialEndTime)
+    rewardTimes = rewardTimes(rewardTimes <= trialEndTime);
+end
+if isempty(rewardTimes)
+    return
+end
+
+rows = cell(numel(rewardTimes), 1);
+for r = 1:numel(rewardTimes)
+    rel = switchTimes - rewardTimes(r);
+    keep = rel >= windowSec(1) & rel <= windowSec(2);
+    if any(keep)
+        rows{r} = table( ...
+            repmat(trialNo, sum(keep), 1), ...
+            repmat(r, sum(keep), 1), ...
+            rewardTimes(r) * ones(sum(keep), 1), ...
+            switchIdx(keep), ...
+            switchSteps(keep), ...
+            switchTimes(keep), ...
+            rel(keep), ...
+            targetBefore(keep), ...
+            targetAfter(keep), ...
+            repmat(backgroundNoiseLvl, sum(keep), 1), ...
+            true(sum(keep), 1), ...
+            'VariableNames', { ...
+                'trial', 'rewardNo', 'rewardTimeRelSec', 'switchNo', 'switchStep', ...
+                'switchTimeRelSec', 'tFromRewardSec', 'targetBefore', 'targetAfter', ...
+                'backgroundNoiseLvl', 'hasSwitch'});
+    else
+        rows{r} = table( ...
+            trialNo, ...
+            r, ...
+            rewardTimes(r), ...
+            NaN, ...
+            NaN, ...
+            NaN, ...
+            NaN, ...
+            NaN, ...
+            NaN, ...
+            backgroundNoiseLvl, ...
+            false, ...
+            'VariableNames', { ...
+                'trial', 'rewardNo', 'rewardTimeRelSec', 'switchNo', 'switchStep', ...
+                'switchTimeRelSec', 'tFromRewardSec', 'targetBefore', 'targetAfter', ...
+                'backgroundNoiseLvl', 'hasSwitch'});
+    end
+end
+
+rewardSwitchTable = vertcat(rows{:});
+end
+
+
+function mask = analysisMaskFromStep(stepIdx, analysisStartStep)
+mask = isfinite(stepIdx(:)) & stepIdx(:) >= analysisStartStep;
+end
+
+
+function [rowX, rowY, rowVelX, rowVelY] = computeTrialCrossCorrRows(xPx, yPx, targetX, targetY, stepIdx, analysisMask, valid, inBounds, dtSec, ccgWindowSec, ccgSmoothSteps, ccgInterpBlinkSec)
+rowX = [];
+rowY = [];
+rowVelX = [];
+rowVelY = [];
+if nargin < 9 || isempty(ccgWindowSec)
+    ccgWindowSec = [-0.5 2];
+end
+if nargin < 10 || isempty(ccgSmoothSteps)
+    ccgSmoothSteps = 1;
+end
+if nargin < 11 || isempty(ccgInterpBlinkSec)
+    ccgInterpBlinkSec = 0;
+end
+if ~isfinite(dtSec) || dtSec <= 0
+    return
+end
+
+ccgWindowSec = double(ccgWindowSec(:)');
+if numel(ccgWindowSec) ~= 2 || any(~isfinite(ccgWindowSec)) || ccgWindowSec(1) > ccgWindowSec(2)
+    error('processCoPsEye:BadCcgWindow', ...
+        'opts.ccgWindowSec must be a finite 1x2 vector [minLagSec maxLagSec].');
+end
+ccgSmoothSteps = max(1, round(double(ccgSmoothSteps)));
+ccgInterpBlinkSec = double(ccgInterpBlinkSec);
+
+if isfinite(ccgInterpBlinkSec) && ccgInterpBlinkSec > 0
+    maxGapSamples = max(1, round(ccgInterpBlinkSec / dtSec));
+    xPx = localInterpShortNaNGaps(double(xPx(:)), maxGapSamples);
+    yPx = localInterpShortNaNGaps(double(yPx(:)), maxGapSamples);
+else
+    xPx = double(xPx(:));
+    yPx = double(yPx(:));
+end
+
+sampleMaskX = analysisMask(:) & valid(:) & inBounds(:) & isfinite(xPx(:)) & isfinite(targetX(:));
+sampleMaskY = analysisMask(:) & valid(:) & inBounds(:) & isfinite(yPx(:)) & isfinite(targetY(:));
+sampleMaskX = sampleMaskX & isfinite(stepIdx(:));
+sampleMaskY = sampleMaskY & isfinite(stepIdx(:));
+
+[xStep, txStep, stepDtSecX] = aggregateToStepsLocal(double(xPx(:)), double(targetX(:)), double(stepIdx(:)), sampleMaskX, dtSec);
+[yStep, tyStep, stepDtSecY] = aggregateToStepsLocal(double(yPx(:)), double(targetY(:)), double(stepIdx(:)), sampleMaskY, dtSec);
+stepDtSec = localResolveStepDt(stepDtSecX, stepDtSecY, dtSec);
+
+maxLagSteps = max(1, round(max(abs(ccgWindowSec)) / stepDtSec));
+lagSamplesAll = (-maxLagSteps:maxLagSteps);
+lagSecAll = lagSamplesAll * stepDtSec;
+keepLag = lagSecAll >= ccgWindowSec(1) & lagSecAll <= ccgWindowSec(2);
+lagSamples = lagSamplesAll(keepLag);
+lagSec = lagSamples * stepDtSec;
+
+rowX = struct('lagSamples', lagSamples, 'lagSec', lagSec, 'corr', NaN(1, numel(lagSamples)));
+rowY = struct('lagSamples', lagSamples, 'lagSec', lagSec, 'corr', NaN(1, numel(lagSamples)));
+rowVelX = struct('lagSamples', lagSamples, 'lagSec', lagSec, 'corr', NaN(1, numel(lagSamples)));
+rowVelY = struct('lagSamples', lagSamples, 'lagSec', lagSec, 'corr', NaN(1, numel(lagSamples)));
+
+if numel(xStep) >= 2
+    x = xStep - mean(xStep, 'omitnan');
+    tx = txStep - mean(txStep, 'omitnan');
+    if any(isfinite(x)) && any(isfinite(tx)) && any(abs(x) > 0) && any(abs(tx) > 0)
+        corrAll = xcorr(x, tx, maxLagSteps, 'coeff')';
+        rowX.corr = corrAll(keepLag);
+    end
+
+    if numel(xStep) >= 3
+        xStepSm = xStep;
+        txStepSm = txStep;
+        if ccgSmoothSteps > 1
+            xStepSm = movmean(xStepSm, ccgSmoothSteps, 'omitnan');
+            txStepSm = movmean(txStepSm, ccgSmoothSteps, 'omitnan');
+        end
+        vx = diff(xStepSm) ./ stepDtSec;
+        vtx = diff(txStepSm) ./ stepDtSec;
+        vx = vx - mean(vx, 'omitnan');
+        vtx = vtx - mean(vtx, 'omitnan');
+        if any(isfinite(vx)) && any(isfinite(vtx)) && any(abs(vx) > 0) && any(abs(vtx) > 0)
+            corrAll = xcorr(vx, vtx, maxLagSteps, 'coeff')';
+            rowVelX.corr = corrAll(keepLag);
+        end
+    end
+end
+
+if numel(yStep) >= 2
+    y = yStep - mean(yStep, 'omitnan');
+    ty = tyStep - mean(tyStep, 'omitnan');
+    if any(isfinite(y)) && any(isfinite(ty)) && any(abs(y) > 0) && any(abs(ty) > 0)
+        corrAll = xcorr(y, ty, maxLagSteps, 'coeff')';
+        rowY.corr = corrAll(keepLag);
+    end
+
+    if numel(yStep) >= 3
+        yStepSm = yStep;
+        tyStepSm = tyStep;
+        if ccgSmoothSteps > 1
+            yStepSm = movmean(yStepSm, ccgSmoothSteps, 'omitnan');
+            tyStepSm = movmean(tyStepSm, ccgSmoothSteps, 'omitnan');
+        end
+        vy = diff(yStepSm) ./ stepDtSec;
+        vty = diff(tyStepSm) ./ stepDtSec;
+        vy = vy - mean(vy, 'omitnan');
+        vty = vty - mean(vty, 'omitnan');
+        if any(isfinite(vy)) && any(isfinite(vty)) && any(abs(vy) > 0) && any(abs(vty) > 0)
+            corrAll = xcorr(vy, vty, maxLagSteps, 'coeff')';
+            rowVelY.corr = corrAll(keepLag);
+        end
+    end
+end
+end
+
+
+function [gazeStep, targetStep, stepDtSec] = aggregateToStepsLocal(gazePos, targetPos, stepIdx, sampleMask, fallbackDtSec)
+gazeStep = [];
+targetStep = [];
+stepDtSec = fallbackDtSec;
+if ~any(sampleMask)
+    return
+end
+
+steps = unique(stepIdx(sampleMask));
+steps = steps(:);
+nSteps = numel(steps);
+if nSteps == 0
+    return
+end
+
+gazeStep = NaN(nSteps, 1);
+targetStep = NaN(nSteps, 1);
+stepCounts = NaN(nSteps, 1);
+for i = 1:nSteps
+    m = sampleMask & stepIdx == steps(i);
+    gazeStep(i) = mean(gazePos(m), 'omitnan');
+    targetStep(i) = mean(targetPos(m), 'omitnan');
+    stepCounts(i) = sum(m);
+end
+
+good = isfinite(gazeStep) & isfinite(targetStep);
+gazeStep = gazeStep(good);
+targetStep = targetStep(good);
+stepCounts = stepCounts(good);
+if ~isempty(stepCounts)
+    stepDtSec = median(stepCounts, 'omitnan') * fallbackDtSec;
+end
+end
+
+
+function stepDtSec = localResolveStepDt(stepDtSecX, stepDtSecY, fallbackDtSec)
+vals = [stepDtSecX, stepDtSecY];
+vals = vals(isfinite(vals) & vals > 0);
+if isempty(vals)
+    stepDtSec = fallbackDtSec;
+else
+    stepDtSec = median(vals, 'omitnan');
+end
+end
+
+
+function x = localInterpShortNaNGaps(x, maxGapSamples)
+x = x(:);
+if isempty(x) || maxGapSamples < 1
+    return
+end
+
+nanMask = ~isfinite(x);
+if ~any(nanMask)
+    return
+end
+
+d = diff([false; nanMask; false]);
+gapStarts = find(d == 1);
+gapEnds = find(d == -1) - 1;
+for i = 1:numel(gapStarts)
+    g0 = gapStarts(i);
+    g1 = gapEnds(i);
+    gapLen = g1 - g0 + 1;
+    if gapLen > maxGapSamples || g0 <= 1 || g1 >= numel(x)
+        continue
+    end
+    if ~isfinite(x(g0 - 1)) || ~isfinite(x(g1 + 1))
+        continue
+    end
+    fillVals = linspace(x(g0 - 1), x(g1 + 1), gapLen + 2);
+    x(g0:g1) = fillVals(2:end-1);
+end
+end
+
+
+function T = buildCrossCorrTable(trialIds, rowCells, lagSamples)
+if nargin < 3
+    lagSamples = [];
+end
+
+if isempty(trialIds)
+    T = table();
+    return
+end
+
+trialIds = trialIds(:);
+if isempty(lagSamples)
+    T = table(trialIds, 'VariableNames', {'trial'});
+    return
+end
+
+nLag = numel(lagSamples);
+nRows = numel(trialIds);
+ccg = NaN(nRows, nLag);
+for i = 1:nRows
+    if ~isempty(rowCells{i}) && isfield(rowCells{i}, 'corr') && numel(rowCells{i}.corr) == nLag
+        ccg(i, :) = rowCells{i}.corr(:)';
+    end
+end
+
+varNames = cell(1, nLag + 1);
+varNames{1} = 'trial';
+for k = 1:nLag
+    lag = lagSamples(k);
+    if lag < 0
+        varNames{k + 1} = sprintf('lag_m%d', abs(lag));
+    elseif lag > 0
+        varNames{k + 1} = sprintf('lag_p%d', lag);
+    else
+        varNames{k + 1} = 'lag_0';
+    end
+end
+
+T = array2table([double(trialIds), ccg], 'VariableNames', varNames);
+end
+
+
+function trackingField = iResolveTrackingFieldLocal(trackingVar, requireTrackingSaccade)
+trackingVar = char(string(trackingVar));
+switch trackingVar
+    case 'isTracking'
+        if requireTrackingSaccade
+            trackingField = 'isTrackingSacc';
+        else
+            trackingField = 'isTracking';
+        end
+    case 'isTracking_conserv'
+        trackingField = 'isTrackingConserv';
+    case 'isTracking_lib'
+        trackingField = 'isTrackingLib';
+    otherwise
+        error('processCoPsEye:BadTrackingVar', ...
+            'opts.trackingVar must be ''isTracking'', ''isTracking_conserv'', or ''isTracking_lib''.');
+end
+end
+
+
+function name = basenameStringLocal(pathValue)
+name = "";
+if ~(ischar(pathValue) || isstring(pathValue))
+    return
+end
+pathStr = char(string(pathValue));
+if isempty(pathStr)
+    return
+end
+[~, baseName, ext] = fileparts(pathStr);
+if isempty(baseName) && isempty(ext)
+    return
+end
+if isempty(baseName)
+    name = string(ext);
+else
+    name = string(baseName);
+end
+end
+
+
+function value = getNestedValue(s, fields)
+value = NaN;
+cur = s;
+for i = 1:numel(fields)
+    field = fields{i};
+    if ~isstruct(cur) || ~isfield(cur, field)
+        return
+    end
+    cur = cur.(field);
+end
+value = cur;
+end
+
+
+function value = getNestedNumeric(s, fields)
+value = getNestedValue(s, fields);
+if isempty(value)
+    value = NaN;
+elseif ~isscalar(value) || ~isnumeric(value)
+    value = NaN;
+end
+end
+
+
+function value = getFirstAvailableNestedNumeric(s, fieldSets)
+value = NaN;
+for i = 1:numel(fieldSets)
+    value = getNestedNumeric(s, fieldSets{i});
+    if isfinite(value)
+        return
+    end
+end
+end
+
+
+function value = getNestedNumericOrLogical(s, fields)
+value = getNestedValue(s, fields);
+if isempty(value)
+    value = NaN;
+elseif ~isscalar(value) || ~(isnumeric(value) || islogical(value))
+    value = NaN;
+else
+    value = double(value);
+end
+end
+
+
+function value = summarizeNumericValue(x)
+if isempty(x) || ~isnumeric(x)
+    value = NaN;
+elseif isscalar(x)
+    value = x;
+else
+    value = mean(x(:), 'omitnan');
+end
+end
+
+
+function value = preserveNumericValue(x)
+if isempty(x) || ~isnumeric(x)
+    value = NaN;
+else
+    value = double(x);
+end
+end
+
+
+function [targetX, targetY, target2X, target2Y] = canonicalizeTargetOrder(targetX, targetY, target2X, target2Y)
+swapMask = (targetX > target2X) | ((targetX == target2X) & (targetY > target2Y));
+
+tmpX = targetX(swapMask);
+tmpY = targetY(swapMask);
+targetX(swapMask) = target2X(swapMask);
+targetY(swapMask) = target2Y(swapMask);
+target2X(swapMask) = tmpX;
+target2Y(swapMask) = tmpY;
+end
+
+
+function meanDist = meanDistanceToCloserTarget(gazeX, gazeY, targetX, targetY, target2X, target2Y, mask)
+gazeX = gazeX(:);
+gazeY = gazeY(:);
+targetX = targetX(:);
+targetY = targetY(:);
+target2X = target2X(:);
+target2Y = target2Y(:);
+mask = mask(:);
+
+n = min([numel(gazeX), numel(gazeY), numel(targetX), numel(targetY), ...
+    numel(target2X), numel(target2Y), numel(mask)]);
+if n == 0
+    meanDist = NaN;
+    return
+end
+
+gazeX = gazeX(1:n);
+gazeY = gazeY(1:n);
+targetX = targetX(1:n);
+targetY = targetY(1:n);
+target2X = target2X(1:n);
+target2Y = target2Y(1:n);
+mask = mask(1:n);
+
+d1 = hypot(gazeX - targetX, gazeY - targetY);
+d2 = hypot(gazeX - target2X, gazeY - target2Y);
+d = d1;
+useT2 = isfinite(d2) & ((~isfinite(d1)) | d2 < d1);
+d(useT2) = d2(useT2);
+keep = mask & isfinite(d);
+if ~any(keep)
+    meanDist = NaN;
+else
+    meanDist = mean(d(keep), 'omitnan');
+end
+end
+
+
+function trialSummary = assignPermutedDistanceControl(trialSummary, permControlData)
+eligibleIdx = find(~cellfun(@isempty, permControlData));
+if numel(eligibleIdx) < 2
+    return
+end
+
+permOrder = eligibleIdx(randperm(numel(eligibleIdx)));
+if any(permOrder == eligibleIdx)
+    permOrder = eligibleIdx([2:end, 1]);
+end
+
+for i = 1:numel(eligibleIdx)
+    srcIdx = eligibleIdx(i);
+    permIdx = permOrder(i);
+    if srcIdx == permIdx
+        continue
+    end
+
+    src = permControlData{srcIdx};
+    perm = permControlData{permIdx};
+    [permX, permY] = resampleGazeTrajectory(perm.xPx, perm.yPx, numel(src.xPx));
+    trialSummary.distPerm(srcIdx) = meanDistanceToCloserTarget( ...
+        permX, permY, src.targetX, src.targetY, src.target2X, src.target2Y, src.analysisMask);
+end
+end
+
+
+function [xOut, yOut] = resampleGazeTrajectory(xIn, yIn, nOut)
+if numel(xIn) == nOut
+    xOut = xIn;
+    yOut = yIn;
+    return
+end
+
+tIn = linspace(0, 1, numel(xIn));
+tOut = linspace(0, 1, nOut);
+xOut = interpFinite1(tIn, xIn, tOut);
+yOut = interpFinite1(tIn, yIn, tOut);
+end
+
+
+function yOut = interpFinite1(xIn, yIn, xOut)
+valid = isfinite(yIn);
+if sum(valid) < 2
+    yOut = NaN(size(xOut));
+    return
+end
+yOut = interp1(xIn(valid), yIn(valid), xOut, 'linear', NaN);
+end
