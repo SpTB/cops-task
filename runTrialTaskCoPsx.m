@@ -27,6 +27,14 @@ arguments
     rewOn {mustBeNumericOrLogical} = true
 end
 
+if isfield(ex, 'setup') && isfield(ex.setup, 'inputMode') && ~isempty(ex.setup.inputMode)
+    inputMode = lower(strtrim(char(ex.setup.inputMode)));
+elseif eyeOn
+    inputMode = 'eye';
+else
+    inputMode = 'mouse';
+end
+
 %temp
 
 %debugging vars (filled with timestamps each time event happened)
@@ -534,8 +542,11 @@ end
 ex.Trials(ex.j).posT = posT;
 
 
-% assign colors for eye and mouse positions (overlay dots: ol)
-if ~isempty(ex.eyeCal.LXPos)
+% Assign colors for the active input overlay.
+if strcmp(inputMode, 'mouse')
+    olColBinoc = ex.idx.overlay * ones(1, 3);
+    olPSz = 16;
+elseif ~isempty(ex.eyeCal.LXPos)
     if ~ ex.setup.stereo.Display
         olColBinoc = [ex.idx.overlayRed,ex.idx.overlayGreen,ex.idx.overlayBlue, ex.idx.overlayGreen]; % right,left,binoc, mouse
         olColBinoc = [olColBinoc'*ones(1,3)];
@@ -617,9 +628,13 @@ StimStart = NaN*ones(1,ceil(ex.setup.refreshRate*ex.fix.stimDuration));
 flip_info_grow_chunk = ceil(10 * ex.setup.refreshRate); % grow by ~10s if trial runs longer than expected
 stimstart_grow_chunk = ceil(2 * ex.setup.refreshRate);  % grow by ~2s as needed
 
-% Initialize eye-related variables
+% Initialize input-related variables. trEye remains empty in mouse mode,
+% while mousePositions stores the simulated-gaze samples explicitly.
+centerEye_t0 = GetSecs; % debounce eye re-centering
+trEye = struct('v', [], 't', [], 'n', 0, 'sacc', []);
+lastEyePos = [NaN NaN];
+lasteyeposttime = 0;
 if eyeOn
-    centerEye_t0 = GetSecs; % hack to prevent several re-centerings of eye position per key-press
     trEye.v = NaN(length(ex.setup.adc.Channels),ceil(maxTrialDur*ex.setup.adc.Rate)); % pre-allocate memory
     trEye.t = NaN(1,ceil(maxTrialDur*ex.setup.adc.Rate));
     trEye.n = 0; % nAcquiredFrames
@@ -629,7 +644,6 @@ if eyeOn
         lastEyePos = [0 0];
     else lastEyePos = [0 0; 0 0];
     end
-    lasteyeposttime = 0;
 end
 rewardCenterOverlayToggle_t0 = -Inf; % debounce reward-center overlay toggle (F6)
 targetCircleOverlayToggle_t0 = -Inf; % debounce target-circle overlay toggle (F8)
@@ -645,6 +659,7 @@ pass_eye_accum = 0; %number of eye frames that were passed in a row
 %freeViewing = 0; % for checkEye, 0 for assessing fixation (switched off for GO state); 1 for skipping fixation assesment
 mousePositions = [];
 olPos = [NaN,NaN];
+inputSample = struct('position', [NaN NaN], 'inBounds', false);
 closeness_vec = [];
 reward_vec = [];
 scaled_reward_vec = [];
@@ -793,7 +808,7 @@ while state ~= ex.states.BREAKFIX &&...
         elseif ttime > time_startTrial + ex.fix.duration && pass_eye_accum>500
             % current_step = current_step + 1;
             state = ex.states.PREGO;
-            if ~rew.alwaysOnEyeInBounds
+            if rewOn && ~rew.alwaysOnEyeInBounds
                 Datapixx('SetDoutValues',1);
                 Datapixx('RegWr');
             end
@@ -820,7 +835,7 @@ while state ~= ex.states.BREAKFIX &&...
             time_goSyncPulseStart = GetSecs - trstart;
             time_goSyncPulseEndPlanned = time_goSyncPulseStart + goSyncPulseDuration;
             goSyncPulseEndTime = trstart + time_goSyncPulseEndPlanned;
-            if ~rew.alwaysOnEyeInBounds
+            if rewOn && ~rew.alwaysOnEyeInBounds
                 Datapixx('SetDoutValues',0);
                 Datapixx('RegWr');
             end
@@ -836,48 +851,29 @@ while state ~= ex.states.BREAKFIX &&...
     % --------------------------------------------------------------------
     % FRAME UPDATE SECTION -----------------------------------------------
     % --------------------------------------------------------------------
-    % update eye position (fast)
+    % Update the selected behavioral input (hardware gaze or mouse gaze).
     ttime = GetSecs-trstart;
-    if eyeOn
+    if strcmp(inputMode, 'eye') || strcmp(inputMode, 'mouse')
         if ttime > lasteyepostime + eyetimestep
 
-            [x,y] = GetMouse;
-            %Prepare single screen call for all onscreen dots ( fp, eyepos, mousepos)
-                if isempty(ex.eyeCal.LXPos) %monocular eye position
-                    olPos = [lastEyePos;mousePos]; % eye pos; mouse pos
-                    
-                else %overlay dot positions: binocular eye positions; mouse
-                    olPos = [lastEyePos;
-                        mean(lastEyePos,1); ... % mean R/L eye position;
-                        mousePos]; % mouse positions
-                end
-            % pass_eye =1;
-            %xxsimEyes(trEye, lastEyePos)
-            % simulate eye position here..
-            if current_step == 5
-                % fprintf('here')
+            [pass_eye, trEye, lastEyePos, inputSample] = sampleCoPsInputx( ...
+                inputMode, trEye, ex, pass_eye, freeViewing, lastEyePos, tolerance_scalar);
+            current_xy_abs = inputSample.position;
+            currentEyeInBounds = inputSample.inBounds;
+            olPos = inputSample.overlayPositions;
+            mousePos = inputSample.pointerPosition;
+            if strcmp(inputMode, 'mouse')
+                mousePositions(end+1, :) = [current_xy_abs inputSample.timestamp]; %#ok<AGROW>
+            end
+
+            if pass_eye == 1
+                pass_eye_accum = pass_eye_accum + 1;
+            else
+                pass_eye_accum = 0;
             end
             
             %calc rew
             if state == ex.states.GO && reward_active
-                % Get current mouse position
-                % [current_x, current_y] = GetMouse();
-                eyePts = lastEyePos(:,1:2);
-                validEyeRows = all(isfinite(eyePts), 2);
-                if any(validEyeRows)
-                    % Use both eyes when available; fallback to single valid eye.
-                    current_xy_abs = mean(eyePts(validEyeRows, :), 1);
-                else
-                    current_xy_abs = [NaN NaN];
-                end
-
-                currentEyeInBounds = all(isfinite(current_xy_abs)) && ...
-                    current_xy_abs(1) >= ex.setup.screenRect(1) && current_xy_abs(1) <= ex.setup.screenRect(3) && ...
-                    current_xy_abs(2) >= ex.setup.screenRect(2) && current_xy_abs(2) <= ex.setup.screenRect(4);
-                % fprintf('current_xy = [%f %f]\n', current_xy(1), current_xy(2));
-                % mousePositions = [mousePositions; current_x, current_y, GetSecs()];
-
-
                 % Calculate closeness to targets ( [0-1] bound )
                 if ctl.target_num == 1
                     closeness = calc_closeness(current_xy_abs, ...
@@ -986,48 +982,12 @@ while state ~= ex.states.BREAKFIX &&...
                 xi = xi+1;
             end
             
-            % fprintf('Mouse X: %4d   Y: %4d\n', current_x, current_y);
-            % fprintf('gauss_reward: %4d\n', gauss_reward);
-            if state == ex.states.FPON
-               %keyboard
-            end
-            % [pass_eye,trEye,lastEyePos] = checkEyex(trEye,ex,pass_eye,freeViewing, lastEyePos);
-            [pass_eye,trEye,lastEyePos] = checkEyex(trEye,ex,pass_eye,freeViewing, lastEyePos, 0, 0, tolerance_scalar);
-            if pass_eye==1
-               pass_eye_accum = pass_eye_accum +1;
-               % sprintf('were adding')
-               % sprintf(pass_eye_accum);
-            else
-                pass_eye_accum = 0;
-            end
             lasteyepostime = ttime;
             ei = ei+1;
         end
-    else
-        if ttime > .2 pass_eye = 1; end
     end
     
-     % Check whether at least one tracked eye is visible and within display bounds.
-    if eyeOn
-        if isempty(ex.eyeCal.LXPos)
-            eyePts = lastEyePos(1,1:2);
-            validEyeRows = all(isfinite(eyePts), 2);
-            eyeInBounds = any(validEyeRows) && ...
-                all(eyePts(validEyeRows,1) >= ex.setup.screenRect(1) & eyePts(validEyeRows,1) <= ex.setup.screenRect(3)) && ...
-                all(eyePts(validEyeRows,2) >= ex.setup.screenRect(2) & eyePts(validEyeRows,2) <= ex.setup.screenRect(4));
-        else
-            eyePts = lastEyePos(:,1:2);
-            validEyeRows = all(isfinite(eyePts), 2);
-            eyeInBounds = any(validEyeRows) && ...
-                all(eyePts(validEyeRows,1) >= ex.setup.screenRect(1) & eyePts(validEyeRows,1) <= ex.setup.screenRect(3)) && ...
-                all(eyePts(validEyeRows,2) >= ex.setup.screenRect(2) & eyePts(validEyeRows,2) <= ex.setup.screenRect(4));
-        end
-        %eyeInBounds = all(isfinite(eyePts(:))) && ...
-         %   all(eyePts(:,1) >= ex.setup.screenRect(1) & eyePts(:,1) <= ex.setup.screenRect(3)) && ...
-          %  all(eyePts(:,2) >= ex.setup.screenRect(2) & eyePts(:,2) <= ex.setup.screenRect(4));
-    else
-        eyeInBounds = false;
-    end
+    eyeInBounds = inputSample.inBounds;
 
 
 
@@ -1401,7 +1361,7 @@ while state ~= ex.states.BREAKFIX &&...
     %F7: recenter
     elseif strcmpi(KbName(keyCode),'F7')
         % to make sure we only re-center once per keyboard press
-        if GetSecs - centerEye_t0 > .5
+        if eyeOn && GetSecs - centerEye_t0 > .5
             ex=centerEye(ex);
             ex.Trials(ex.j).eyeRecenterCount = ex.Trials(ex.j).eyeRecenterCount + 1;
             if isfield(ex, 'eyeCal') && isfield(ex.eyeCal, 'Delta') && ~isempty(ex.eyeCal.Delta) && ...
@@ -1454,8 +1414,10 @@ while state ~= ex.states.BREAKFIX &&...
     % Check for trial completion
     if state == ex.states.GO && current_step > ctl.nsteps
         state = ex.states.TRIALCOMPLETE;
-        Datapixx('SetDoutValues',0);
-        Datapixx('RegWr');
+        if rewOn
+            Datapixx('SetDoutValues',0);
+            Datapixx('RegWr');
+        end
         % been_here2(end+1) = GetSecs() - trstart;
         stimulus_active = false;
         reward_active = false;
@@ -1477,6 +1439,7 @@ Screen('Flip', ex.setup.window);
 ex.Trials(ex.j).ID = fix(clock);
 ex.Trials(ex.j).Eye = trEye;
 ex.Trials(ex.j).adcChannels = ex.setup.adc.Channels;
+ex.Trials(ex.j).inputSource = inputMode;
 
 % Store trial times
 ex.Trials(ex.j).TrialEnd = GetSecs();
@@ -1499,7 +1462,7 @@ ex.Trials(ex.j).times.goSyncPulseStart = time_goSyncPulseStart + trstart;
 ex.Trials(ex.j).times.goSyncPulseEndPlanned = time_goSyncPulseEndPlanned + trstart;
 
 % Store CoPs specific data
-% ex.Trials(ex.j).mousePositions = mousePositions;
+ex.Trials(ex.j).mousePositions = mousePositions;
 % ex.Trials(ex.j).current_x = current_x_vec;
 % ex.Trials(ex.j).current_y = current_y_vec;
 ex.Trials(ex.j).closeness = closeness_vec;

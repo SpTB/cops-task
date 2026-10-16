@@ -1,4 +1,4 @@
-function ex = getDefaultSettingsx(ex, skipQuests, defaults)
+function ex = getDefaultSettingsx(ex, skipQuests, defaults, options)
 
 % modified version of getDefaultSettings with added arg skipQuests for skipping the innitional questionnaire during testing.
 
@@ -21,6 +21,7 @@ arguments
         'binoc', 1,... % binocular defaults, 'false' for monocular
         'motionDetector', false... %whether to initiate motion detection
         );
+    options.initializeAdc {mustBeNumericOrLogical} = true
     
 end
 
@@ -251,9 +252,19 @@ elseif strcmpi(ex.setup.computerName,'hns-mac-pro-2.cin.medizin.uni-tuebingen.de
         ex.setup.Clut.monkey(1:5,:) = ex.setup.Clut.monkey(ex.idx.bg+1,1);  % make overlaycolor is same as bg
     end
 else
-    warndlg([ex.setup.computerName ': host machine not known, viewing distance not calibrated'])
-    ex.setup.viewingDistance = 100; % prelim values during development; measure these
-    ex.setup.monitorWidth = 50;
+    isTestMode = isfield(ex.setup, 'testMode') && ex.setup.testMode;
+    hasTestGeometry = isfield(ex.setup, 'viewingDistance') && ...
+        isfield(ex.setup, 'monitorWidth');
+
+    if isTestMode && hasTestGeometry
+        fprintf(['CoPs test display geometry (not calibrated): %.1f cm viewing ' ...
+            'distance, %.1f cm monitor width.\n'], ...
+            ex.setup.viewingDistance, ex.setup.monitorWidth);
+    else
+        warndlg([ex.setup.computerName ': host machine not known, viewing distance not calibrated'])
+        ex.setup.viewingDistance = 100; % preliminary values; measure these
+        ex.setup.monitorWidth = 50;
+    end
 end
 
 %%%%%%%%%%%%%%%%%%%%%% ask user whether we are recording, check connection, get grid location
@@ -479,8 +490,11 @@ end
 % for more information: http://docs.psychtoolbox.org/SetAdcSchedule
 ex.setup.adc.BufferBaseAddress = 0;  % our default AdcBufferAddress
 
-% %% initialize Adc Channels to make sure it works  % need to include some checks
-resetAdcBuffer(ex)
+% Initialize ADC channels only when an eye-input configuration needs them.
+% Hardware-free test profiles still retain the channel metadata above.
+if options.initializeAdc
+    resetAdcBuffer(ex)
+end
 
 % hn 05/05/24   : uncommented iontophoresis and motion detection for
 % convenience

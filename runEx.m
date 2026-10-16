@@ -1,25 +1,64 @@
-function ex = runEx(eyeStr, overlayOn, pixOn, rewOn, eyeOn,skipQuest)
-% with full questionnaire...
+function ex = runEx(eyeStr, overlayOn, pixOn, rewOn, eyeOn, skipQuest, options)
+% Run the CoPs task.
+%
+% Hardware-free test examples:
+%   runEx('test1')
+%   runEx('test1', testTrials=5)
+%   runEx('test1', viewingDistanceCm=60, monitorWidthCm=53)
+%   runEx('test1', fullscreen=true)  % opt in to fullscreen
 
 arguments
-    eyeStr {mustBeText} = 't' % 'y' for 'yes, calibrate', 'l' for load, 't' for test
+    eyeStr {mustBeText} = 't' % calibration mode, or 'test1' for the portable mouse test
     overlayOn  {mustBeNumericOrLogical} = 1
     pixOn  {mustBeNumericOrLogical} = true
     rewOn {mustBeNumericOrLogical} = true
     eyeOn  {mustBeNumericOrLogical} = true
     skipQuest {mustBeNumericOrLogical} = true
+    options.testTrials (1,1) double {mustBeInteger, mustBePositive} = 1
+    options.viewingDistanceCm (1,1) double {mustBePositive} = 100
+    options.monitorWidthCm (1,1) double {mustBePositive} = 50
+    options.fullscreen (1,1) logical = false
+    options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = [1280 720]
 end
 
-Datapixx('Close')
-Eyelink('Shutdown');
+dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn);
+pixOn = dependencies.pixOn;
+eyeOn = dependencies.eyeOn;
+rewOn = dependencies.rewOn;
+
+if dependencies.datapixxOn
+    Datapixx('Close')
+end
+if dependencies.eyelinkOn
+    Eyelink('Shutdown');
+end
 ex = struct();
-if ~Datapixx('Open')
+if dependencies.datapixxOn && ~Datapixx('Open')
     initDatapixx(ex);
 end
 
 ex = setDefaultsCoPs(ex);
 
-ex=getDefaultSettingsx(ex, skipQuest);
+if strcmp(dependencies.profile, 'test1')
+    % Make the portable display geometry explicit before the host-specific
+    % defaults are resolved. These values affect degrees-to-pixels
+    % conversions and should be replaced with measured values when known.
+    ex.setup.testMode = true;
+    ex.setup.viewingDistance = options.viewingDistanceCm;
+    ex.setup.monitorWidth = options.monitorWidthCm;
+    ex.setup.fullscreen = options.fullscreen;
+    ex.setup.windowSizePx = options.windowSizePx;
+end
+
+ex = getDefaultSettingsx(ex, skipQuest, initializeAdc=eyeOn);
+if strcmp(dependencies.profile, 'test1')
+    [ex, testConfig] = configureCoPsTestRunx(ex, options.testTrials);
+    ex.setup.testConfig = testConfig;
+    fprintf('CoPs test1: %d trial(s), mouse input, no DataPixx/EyeLink/reward hardware.\n', ...
+        options.testTrials);
+end
+ex.setup.dependencies = dependencies;
+ex.setup.inputMode = dependencies.inputMode;
 ex.states.PREGO = 5.95
 
 if eyeOn
@@ -27,6 +66,7 @@ if eyeOn
 else
     ex = initDisplayx(ex );%can run initDisplayx for normal view
 end
+displayCleanup = onCleanup(@closeCoPsDisplayx); %#ok<NASGU>
 pause(1)
 
 if eyeOn
@@ -113,6 +153,10 @@ if eyeOn
     end
 end
 
+if ~eyeOn && ~isfield(ex, 'eyeCal')
+    ex.eyeCal = makeCoPsMouseEyeCalx();
+end
+
 if ex.setup.el.binoc==0
     ex.eyeCal.LXPos = [];
     ex.eyeCal.LYPos = [];
@@ -152,7 +196,9 @@ ex = resetEyeDelta(ex);
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% store unique experiment ID
 clocktime = fix(clock);
-sendStrobes([ex.strobe.FILE_ID,clocktime,ex.strobe.EXPERIMENT_START]);
+if pixOn
+    sendStrobes([ex.strobe.FILE_ID,clocktime,ex.strobe.EXPERIMENT_START]);
+end
 
 ex.Header.fileID = clocktime;
 
@@ -197,7 +243,7 @@ if isfield(ex,'fileName')
 end
 
 % start recording ET
-if Eyelink('IsConnected') == 1
+if eyeOn && Eyelink('IsConnected') == 1
     
     Eyelink('SetOfflineMode')
     Eyelink('CloseFile');
@@ -213,7 +259,9 @@ if Eyelink('IsConnected') == 1
     end
 end
 
-PsychDataPixx('GetPreciseTime'); % synchronizes Datapixx and PTB clocks (takes about .5sec)
+if pixOn
+    PsychDataPixx('GetPreciseTime'); % synchronize Datapixx and PTB clocks
+end
 
 % save initial state of ex structure to recover the data in case of a crash
 cur_dir = cd (trDir);
@@ -253,10 +301,12 @@ while ex.j <= ex.finish && ex.quit~=4
     if ex.quit == 0
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%%%%%%%%%%%%%%% run Trial
-        resetAdcBuffer(ex);  %% reset AdcBuffer for EyeSignals
+        if eyeOn
+            resetAdcBuffer(ex);  %% reset AdcBuffer for EyeSignals
+        end
         
         try
-            ex = runTrialTaskCoPsx(ex);
+            ex = runTrialTaskCoPsx(ex, pixOn, eyeOn, rewOn);
         catch err
                         fprintf(2,'Error during trial execution (trial %d): %s\n', ex.j, err.message);
             fprintf(2,'%s\n', getReport(err, 'extended'));
@@ -333,11 +383,13 @@ end
 playRandomLines(ex);
 
 % signal end of experiment
-sendStrobe(ex.strobe.EXPERIMENT_END);
+if pixOn
+    sendStrobe(ex.strobe.EXPERIMENT_END);
+end
 
 % iknew 06.08.2022
 % close edf file
-if Eyelink('IsConnected') == 1
+if eyeOn && Eyelink('IsConnected') == 1
     Eyelink('StopRecording')
     Eyelink('SetOfflineMode')
     Eyelink('CloseFile');
@@ -346,7 +398,7 @@ end
 % get GetSecs timestamps remapped onto Datapixx TrialStart and TrialEnd
 sd = NaN;
 ratio = NaN;
-if isfield(ex, 'Trials') && ~isempty(ex.Trials) && ...
+if pixOn && isfield(ex, 'Trials') && ~isempty(ex.Trials) && ...
         all(isfield(ex.Trials, {'TrialStartDatapixx', 'TrialEndDatapixx'}))
     TrStartDP = [ex.Trials.TrialStartDatapixx];
     TrEndDP = [ex.Trials.TrialEndDatapixx];
@@ -401,7 +453,7 @@ cd(cur_dir);
 
 % iknew 06.08.2022
 % copy edf file to data foler if Eyelink is on
-if Eyelink('IsConnected') == 1 && strcmpi(ex.setup.eyeTracker,'Eyelink')
+if eyeOn && Eyelink('IsConnected') == 1 && strcmpi(ex.setup.eyeTracker,'Eyelink')
     fprintf('Transferring EDF file: %s...\n',ex.Header.edfFileName);
     % xx new (clean)
     Eyelink('ReceiveFile',ex.Header.edfFileName,edfDir,1);
