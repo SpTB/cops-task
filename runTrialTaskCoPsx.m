@@ -384,9 +384,10 @@ ex.Trials(ex.j).mainRewardRadiusDeg = main_reward_radius_px / ppd;
 gauss_dim = graph.texture_dims(1)*graph.size_mult; % based on texture size
 
 %reward_mat = gauss_rew_land(gauss_dim, [gauss_dim/2, gauss_dim/2], rew.gauss_sigma); % reward matrix
-% Pick Gaussian reward center once per session: indexed center or free center.
+% Resolve the session center or the current rewSwitches block center.
 [ctr, max_peak_dist_norm] = resolveMaxPeakDistanceNormLocal(ctr, gauss_dim, ppd, rew);
 ex.exp.CoPs.ctr = ctr;
+[rew, jointBlockIdx, jointBlockTrialIdx] = applyCoPsJointBlockx(ex, rew, blockInfo);
 [rew, gaussCenterCache] = loadDailyGaussCenterCoordsLocal(ex, rew, ctr, max_peak_dist_norm);
 [rew, selected_center_norm, center_px] = selectGaussRewardCenterCoPsx(rew, gauss_dim, max_peak_dist_norm);
 [rew, gaussCenterCache] = saveDailyGaussCenterCoordsLocal(ex, rew, selected_center_norm, ctr, max_peak_dist_norm, gaussCenterCache);
@@ -410,6 +411,8 @@ ex.Trials(ex.j).maxPeakDistDeg = ctr.max_peak_dist_deg;
 ex.Trials(ex.j).maxPeakDistNorm = max_peak_dist_norm;
 ex.Trials(ex.j).gaussCenterCachePath = gaussCenterCache.path;
 ex.Trials(ex.j).gaussCenterCacheStatus = gaussCenterCache.status;
+ex.Trials(ex.j).jointBlockIdx = jointBlockIdx;
+ex.Trials(ex.j).jointBlockTrialIdx = jointBlockTrialIdx;
 ex.Trials(ex.j).gaussSigmaPx = gaussSigmaInfo.sigmaPx;
 ex.Trials(ex.j).gaussSigmaDeg = gaussSigmaInfo.sigmaDeg;
 ex.Trials(ex.j).gaussSigmaUnits = char(gaussSigmaInfo.units);
@@ -599,6 +602,8 @@ if ~isPursuitTrial
         graph.trialLogBackgroundNoiseLvl = ex.Trials(ex.j).background_noise_lvl;
         graph.trialLogTargetVisibility = ex.Trials(ex.j).target_visibility;
         graph.trialLogRunPhase = run_phase_label;
+        graph.trialLogJointBlockIdx = jointBlockIdx;
+        graph.trialLogJointBlockTrialIdx = jointBlockTrialIdx;
         [stimTextures, targPositions, stimTiming] = makeStimulusCoPsx(ex.setup, ctl, ex.stim.seq{ex.j}, posT, graph, ex.j);
     catch err
         fprintf(2, '%s\n', getReport(err, 'extended'));

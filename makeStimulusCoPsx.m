@@ -56,6 +56,8 @@ background_noise_lvl = graph.background_noise_lvl;
 trial_log_background_noise_lvl = localGetNumericScalarField(graph, 'trialLogBackgroundNoiseLvl', background_noise_lvl);
 trial_log_target_visibility = localGetNumericScalarField(graph, 'trialLogTargetVisibility', target_visibility);
 trial_log_run_phase = localGetTextField(graph, 'trialLogRunPhase', '');
+trial_log_joint_block_idx = localGetNumericScalarField(graph, 'trialLogJointBlockIdx', NaN);
+trial_log_joint_block_trial_idx = localGetNumericScalarField(graph, 'trialLogJointBlockTrialIdx', NaN);
 full_as_background = graph.full_as_background;
 fixed_background_trial = (background_noise_lvl == 0);
 no_background_trial = (background_noise_lvl == -1);
@@ -522,9 +524,15 @@ for j = 1:nsteps+1 %add last image being same as first but with circles
     
     if mod(j, 100) == 0
         if isfinite(trialNo)
-            fprintf('Step %d/%d created (trial %d; bg %g; vis %g; %s)\n', ...
-                j, nsteps, trialNo, trial_log_background_noise_lvl, ...
-                trial_log_target_visibility, trial_log_run_phase);
+            if isfinite(trial_log_joint_block_idx) && isfinite(trial_log_joint_block_trial_idx)
+                fprintf('Step %d/%d created (block %d, trial %d; bg %g; vis %g; %s)\n', ...
+                    j, nsteps, trial_log_joint_block_idx, trial_log_joint_block_trial_idx, ...
+                    trial_log_background_noise_lvl, trial_log_target_visibility, trial_log_run_phase);
+            else
+                fprintf('Step %d/%d created (trial %d; bg %g; vis %g; %s)\n', ...
+                    j, nsteps, trialNo, trial_log_background_noise_lvl, ...
+                    trial_log_target_visibility, trial_log_run_phase);
+            end
         else
             fprintf('Step %d/%d created\n', j, nsteps);
         end

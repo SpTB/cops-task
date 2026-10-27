@@ -166,6 +166,7 @@ ex.j = 1;  % current trial number
 ex.goodtrial = 0;  % counter for successful trials
 ex.loopcnt = zeros(1, ex.finish);  % loop counter for each trial
 ex.changedBlock = 0;  % keeps track of whether we changed blocks
+ex = prepareCoPsJointBlocksx(ex);
 ex.exp.total_nreps = getCoPsTotalRepsx(ex);
 ex.finish = ex.exp.total_nreps;
 ex = prepareCoPsTrialParamSchedules(ex);
@@ -205,7 +206,12 @@ ex.Header.fileID = clocktime;
 sfx = makeFilenameSuffixCoPsx(ex);
 [fname,dirName,trDir] = makeFilenameAndDirx(ex, sfx); % no difference right now... (as in v2.7)
 % new: separate dirs to reduce mess
-expDir = fullfile(dirName,'experimental');
+saveSubfolder = 'experimental';
+if isfield(ex.exp.CoPs.ctl, 'jointBlocks') && ...
+        ~isempty(ex.exp.CoPs.ctl.jointBlocks) && logical(ex.exp.CoPs.ctl.jointBlocks(1))
+    saveSubfolder = 'rewSwitches';
+end
+expDir = fullfile(dirName, saveSubfolder);
 edfDir = fullfile(dirName,'edf');
 if ~exist(expDir,'dir')
     mkdir(expDir);

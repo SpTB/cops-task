@@ -25,7 +25,6 @@ if isfield(ex.exp.CoPs.graph, 'sequenceMode_im') && ~isempty(ex.exp.CoPs.graph.s
 elseif isfield(ex.exp.CoPs.graph, 'sequenceMode') && ~isempty(ex.exp.CoPs.graph.sequenceMode)
     sequenceModeIm = ex.exp.CoPs.graph.sequenceMode;
 end
-ex.stim.seq = makeSequencex(ex.exp.CoPs.dirs.all, 1, 1, ex.exp.CoPs.graph.imgs, sequenceModeIm);% can use ex.exp.nreps if want more than 1 trial ex=getDefaultSettingsx(ex, skipQuest);
 ex=getDefaultSettingsx(ex, skipQuest);
 ex.states.PREGO = 5.95
 
@@ -68,6 +67,11 @@ if eyeOn
 end
 
 %run Expt fill-ins
+ex = prepareCoPsJointBlocksx(ex);
+ex.exp.total_nreps = getCoPsTotalRepsx(ex);
+ex.finish = ex.exp.total_nreps;
+ex = prepareCoPsTrialParamSchedules(ex);
+ex.stim.seq = buildCoPsStimulusSequencex(ex, sequenceModeIm);
 ex.j = 1;  % current trial number
 ex.goodtrial = 0;  % counter for successful trials
 ex.loopcnt = zeros(1, ex.finish);  % loop counter for each trial

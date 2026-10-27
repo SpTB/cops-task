@@ -91,6 +91,7 @@ ex.j = 1;  % trial counter
 ex.goodtrial = 0;
 ex.changedBlock = 0;  % keeps track of whether we changed blocks
 
+ex = prepareCoPsJointBlocksx(ex);
 ex.exp.total_nreps = getCoPsTotalRepsx(ex);
 ex.finish = ex.exp.total_nreps;
 ex = prepareCoPsTrialParamSchedules(ex);

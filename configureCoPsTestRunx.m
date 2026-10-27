@@ -56,6 +56,7 @@ ex.setup.stereo.Multisampling = 0;
 ex.setup.dirRoot = outputRoot;
 
 ex.exp.nreps = nTrials;
+ex.exp.CoPs.ctl.jointBlocks = false; % keep testTrials independent of session block defaults
 ex.finish = nTrials;
 ex.exp.CoPs.pre.nreps = 0;
 ex.exp.CoPs.tut.nreps = 0;
