@@ -2,6 +2,7 @@ function [passEye, trEye, lastEyePos, sample] = sampleCoPsInputx( ...
     inputMode, trEye, ex, passEye, freeViewing, lastEyePos, toleranceScalar)
 % Sample the active CoPs behavioral input through one common interface.
 %
+%unputMode = 'eyelink' reads native eyelink gaze in display pixels
 % inputMode='eye' reads the DataPixx-backed eye signal through checkEyex.
 % inputMode='mouse' treats the Psychtoolbox pointer as simulated gaze.
 
@@ -25,9 +26,14 @@ sample = struct( ...
     'timestamp', GetSecs);
 
 switch mode
-    case 'eye'
-        [passEye, trEye, lastEyePos] = checkEyex( ...
-            trEye, ex, passEye, freeViewing, lastEyePos, 0, 0, toleranceScalar);
+    case {'eye', 'eyelink'}
+        if strcmp(mode, 'eyelink')
+            [passEye, trEye, lastEyePos] = checkCoPsEyelinkx(...
+                trEye, ex, freeViewing, toleranceScalar);
+        else
+            [passEye, trEye, lastEyePos] = checkEyex( ...
+                trEye, ex, passEye, freeViewing, lastEyePos, 0, 0, toleranceScalar);
+        end
         [mouseX, mouseY] = GetMouse(ex.setup.window);
         sample.pointerPosition = [mouseX mouseY];
 

@@ -5,6 +5,7 @@ function sync = extractVideoSyncFromTrial(trial, scheduledChannels, varargin)
 %
 % Inputs
 %   trial               struct with fields:
+%                       - Analog.v / Analog.t for native eyelink trials, or
 %                       - Eye.v : [nChannels x nSamples] ADC voltages
 %                       - Eye.t : [1 x nSamples] Datapixx timestamps
 %                       - TrialStartDatapixx (optional)
@@ -37,8 +38,15 @@ if ~isfield(trial, 'Eye') || ~isfield(trial.Eye, 'v') || ~isfield(trial.Eye, 't'
     error('trial must contain Eye.v and Eye.t.');
 end
 
-v = trial.Eye.v;
-t = trial.Eye.t(:)';
+if isfield(trial, 'Analog')
+    v = trial.Analog.v;
+    t = trial.Analog.t(:)';
+else
+    v = trial.Eye.v;
+    t = trial.Eye.t(:)';
+end
+
+
 
 
 rowIdx = find(scheduledChannels == opt.PhysicalChannel, 1, 'first');

@@ -13,11 +13,14 @@ Screen('Preference', 'SkipSyncTests', 1);
 availableScreens = Screen('Screens');
 ex.setup.availableScreens = availableScreens;
 isTestMode = isfield(ex.setup, 'testMode') && ex.setup.testMode;
+useLabOutputMapping = ~isTestMode && ...
+    (~isfield(ex.setup, 'showExperimenterOverlay') || ex.setup.showExperimenterOverlay);
 
-if ~isTestMode && ismember(1, availableScreens)
+
+if useLabOutputMapping && ismember(1, availableScreens)
     Screen('Preference', 'ScreenToHead', 1, 1, 2);
     Screen('Preference', 'ScreenToHead', 1, 1, 2);
-elseif ~isTestMode
+elseif useLabOutputMapping
     warning('initDisplayx:ScreenToHeadSkipped', ...
         ['Skipping the lab ScreenToHead mapping because Psychtoolbox ' ...
         'screen 1 is unavailable. Available screen IDs: %s'], ...
@@ -46,6 +49,8 @@ try
     end
 
     % Open a basic window without stereo or special features.
+    % discard pending stereo/DataPixx imaging tasks from earlier attempts
+    PsychImaging('PrepareConfiguration');
     [ex.setup.window, ex.setup.screenRect] = PsychImaging( ...
         'OpenWindow', ex.setup.screenNum, 128, openRect);
     
