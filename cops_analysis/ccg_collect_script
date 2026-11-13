@@ -1,0 +1,32 @@
+o = struct();
+  o.dateFrom = 'May02';
+  o.dateTo = 'May05';
+  o.targetNum = 2;
+  o.backgroundNoiseLvl =1;
+  %o.waitHz = 10;
+  %o.ccgOpts = opts;   % your usual plotCCG2/ccg opts
+  %o.groupLevels = [0.5 0.7 0.8 0.9 1];
+  A = collectCCG2('ka', 'visLvl3', o);      % all selected trials as one group
+  plotCCG2Aggregate(A)
+
+
+  table(A.groupLabels, ...
+      cellfun(@(g) g.nSessions, A.groups), ...
+      cellfun(@(g) g.nTrials, A.groups), ...
+      'VariableNames', {'group','nSessions','nTrials'})
+
+
+  for s = 1:numel(A.sessionOutputs)
+      U = A.sessionOutputs{s};
+      fprintf('\nSession %d: %s\n', s, U.collect.fileName);
+      fprintf('lag n=%d, dt=%.4g\n', numel(U.lagSec),median(diff(U.lagSec),'omitnan'));
+
+      for g = 1:numel(U.groups)
+          fprintf('  %s: trials=%d finite=%d chunks=%g support=%g\n', ...
+              U.groupLabels(g), ...
+              numel(U.groups{g}.trials), ...
+              sum(isfinite(U.groups{g}.aggregate2D)), ...
+              sum(U.groups{g}.nChunks2D,'omitnan'), ...
+              sum(U.groups{g}.support2D,'omitnan'));
+      end
+  end

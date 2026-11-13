@@ -1,0 +1,334 @@
+CoPs settings reference
+
+2 TASK variants:
+	exp1: fixed reward peak within block;	
+	rewSwitch: unexpected changed in reward peak.
+
+Usage desciptors:
+	- "in use": used for both tasks.
+	- "deprecated, usable":  older option that is currently substituted by a different one, 		but still works
+	- "deprecated, no longer works": self-explanatory
+
+
+ctl - Experimental control
+
+IN USE:
+ctl.jointBlocks: <true/false> Select rewSwitch when true and exp1 when false
+
+ctl.nsteps: <positive integer> Number of target updates per ordinary trial; divided by timing.waitHz gives nominal duration
+
+ctl.target_num: <1, 2, or vector of these> Number of targets (dynamic noise background); repeats set proportions
+
+ctl.target_numNULL: <1, 2, or vector of these> Number of targets on no-background trials; repeats set proportions
+
+ctl.step_size_mult: <positive number or vector> Overall target step-size multiplier
+
+ctl.stepNoiseType: <'gaussian', 'normal', or 'uniform'> Distribution used to draw target movement steps
+
+ctl.stepNoiseSigma: <positive number> Gaussian step SD before step_size_mult; ignored in uniform mode
+
+ctl.stepNoiseCapSigma: <positive number> Maximum Gaussian step size, measured in SDs
+
+ctl.boundaryMode: <'reject' or 'clip'> Redraw steps that leave the allowed area, or clamp them to its edge
+
+ctl.boundaryRejectMaxAttempts: <positive integer> Maximum redraw attempts before clamping an out-of-bounds step
+
+ctl.targetHiddenBoundsFrac: <nonnegative number> Fraction of the nominal target diameter allowed outside the visible image
+
+ctl.randomize_start_pos: <true/false> Randomize target 1's starting angle and place target 2 opposite it
+
+ctl.circle_target_loc_overlay: <true/false> Show target outlines on the overlay, or on the stimulus window if no overlay exists
+
+ctl.max_dist_mult: <positive number> Reward-distance radius as a multiple of target radius; also applies to pursuit task
+
+ctl.independent_accumulation: <true/false> Keep separate reward accumulators for two targets instead of one shared accumulator
+
+ctl.reward_type: <'mult' or 'add'> Combine target closeness and Gaussian reward; 'add' also requires precision_weight
+
+ctl.gauss_scalar: <number at least 1> Reward multiplier at the Gaussian peak; 1 means a flat, uniform landscape
+
+ctl.next_fixation_trial: <true/false> Make the next trial a stationary center-target trial, then reset the flag; also set by F3
+
+
+
+REWSWITCHES:
+ctl.numBlocks: <positive integer> Number of  blocks in session.
+
+ctl.blockMeanTrials: <positive integer> Average number of trials per reward block
+
+ctl.blockTransRange: <nonnegative integer> controls variability in block length: block length = blockMeanTrials +- blockTransRange
+
+ctl.rewPeakDistFromPrev: <nonnegative number> Minimum distance in visual degrees between consecutive reward peaks
+
+EXP1: (none)
+
+DEPRECATED, USABLE:
+ctl.coherence: <number or vector in [0,1]> Target coherence. !!CONFUSING NAME: currently, for 'coherence' we use 'visibility' (linear mixing with noise) Here, 'coherence' is defined based on mixing on the level of texture generation parameters. Requires additional stimulus folders to work.
+
+ctl.precision_weight: <number in [0,1]> Closeness weight for additive rewards; currently commented out; ctl.requires reward_type='add', but we don't use additive rewards anymore!
+
+ctl.circle_target_loc: <true/false> Draw target outlines into the stimulus textures. ONLY FOR TESTING
+
+ctl.tolerance_scalar: <positive number> Size multiplier for the fixation window and its displayed rectangle. Used when forcing animals to fixate at the start of the trial to start (no longer used).
+
+
+graph - Graphical settings
+
+IN USE:
+graph.texture_root: <path string> Parent folder containing the pregenerated stimuli (textures)
+
+graph.texture_folder: <path string> Stimulus collection to load, relative to texture_root or given as a full path
+
+graph.background_noise_lvl: <number or vector> Background conditions: -1 = none, 0 = fixed, positive = noise folder number; repeats set proportions
+
+graph.target_visibility: <number or vector in [0,1]> Target visibility (coherence) on dynamic backgrounds
+
+graph.target_visibility0: <number or vector in [0,1]> Target visibility (coherence) on fixed backgrounds
+
+graph.target_visibilityNull: <number or vector in [0,1]> Target visibility (coherence) on no background trials
+
+graph.target_mask_sigma_mult: <positive number or vector> Multiplier for the width of the Gaussian target mask
+
+graph.target_mean_normalization: <'none' or 'localBackgroundMean3SD'> Match the target-region mean to the whole background mean, or disable matching
+
+graph.target_mean_normalization_sd: <positive number> Radius of the target region used for mean matching, measured in mask SDs
+
+graph.dynamic_background_normalization: <'none', 'backgroundStats', 'compositeStats', or 'compositeRange'> Brightness and contrast normalization for changing backgrounds
+
+graph.balanceStimulusSchedule: <true/false> Balance background, target count, visibility, image and rotation across the main session
+
+graph.shuffleStimulusSchedule: <true/false> Shuffle trials while keeping the balanced factors aligned
+
+graph.texture_rotation_levels_deg: <numeric vector> Allowed texture rotations in degrees, rounded to multiples of 90
+
+graph.autoTextureDims: <true/false> Detect source image dimensions automatically while preserving displayed image size
+
+graph.texture_dim: <positive integer> Initial square source-image size in pixels, used to calculate other defaults
+
+graph.texture_dims: <two positive integers> Source image dimensions [height width]; normally replaced by auto-detection
+
+graph.size_mult: <positive number> Scale from source pixels to displayed pixels; auto-detection may adjust it
+
+graph.scaleTextureOnDraw: <true/false> Scale textures during drawing instead of resizing each texture beforehand
+
+graph.full_as_background: <true/false> Swap full and scrambled images: false = full targets, true = full background
+
+graph.radius: <positive number> Nominal target radius in texture pixels; degree mode uses radiusDeg instead
+
+graph.radiusUnits: <'deg' or 'texturePx'> Choose angular or texture-pixel units for target radius
+
+graph.radiusDeg: <positive number> Target radius (3SD) in visual degrees when radiusUnits is 'deg'. NOTE: the calculation is not really necessary; can set it to 1.614 to replicate current settings
+
+graph.radiusReferenceMonitorWidth: <positive number> Reference monitor width in cm used to calculate the initial radiusDeg
+
+graph.radiusReferenceViewingDistance: <positive number> Reference viewing distance in cm used to calculate the initial radiusDeg
+
+graph.radiusReferenceScreenWidthPx: <positive integer> Reference screen width in pixels used to calculate the initial radiusDeg
+
+
+DEPRECATED, USABLE:
+graph.imgs: <string vector or cell array> Names of stimulus images to use; empty selects all available images. Used with previous stimulus generation method.
+
+graph.normalize_dynamic_background: <true/false> Older normalization switch; only used when dynamic_background_normalization is absent or empty
+
+graph.sequenceMode_vis: <true/false> Present visibility levels in order; disable balanceStimulusSchedule first
+
+graph.sequenceMode_im: <true/false> Cycle through images in order; disable balanceStimulusSchedule first
+
+
+DEPRECATED, NO LONGER WORKS:
+graph.texture_folder_resolved: <path string> Informational path copy; changing it does not redirect texture loading
+
+
+
+rew - Reward settings
+
+IN USE:
+rew.threshold: <positive number> Accumulated reward needed for a reward event on ordinary (dynamic background) trials
+
+rew.threshold_noiseNull: <positive number> Reward threshold for no-background trials
+
+rew.threshold_noise0: <positive number> Reward threshold for fixed-background trials
+
+rew.duration: <positive number> Duration in seconds of each threshold-triggered reward pulse
+
+rew.gauss_sigma: <positive number> Gaussian reward width in the chosen units; gauss_sigmaDeg takes priority in degree mode
+
+rew.gauss_sigmaUnits: <'deg' or 'px'> Units of Gaussian reward width
+
+rew.gauss_sigmaDeg: <positive number> Gaussian reward width in visual degrees when degree mode is selected
+
+rew.show_gauss_center_marker_overlay: <true/false> Show the reward-peak marker on an existing experimenter overlay; toggled with F6
+
+rew.show_gauss_center_marker: <true/false> Show a white X at the reward peak on the stimulus display
+
+rew.gauss_center_marker_psz: <positive number> Reward-peak marker size in pixels
+
+
+EXP1:
+rew.gauss_center_free: <true/false> Use free [x y] coordinates instead of an indexed center; rewSwitch forces this true
+
+rew.gauss_center_coords: <[x y] in [0,1], or empty> Fixed reward-peak coordinates; empty loads or samples a center; rewSwitch replaces them
+
+rew.gauss_center_mode: <'manual' or 'random'> Indexed center selection when gauss_center_free=false; random also requires an empty center index
+
+DEPRECATED, USABLE: 
+
+rew.alwaysOnEyeInBounds: <true/false> Give continuous reward while gaze is within the screen instead of using threshold-based pulses. Used for initial Lychee training, when he didn't want to look at the screen.
+
+(USED FOR OLDER VERSION, WHERE REWARD PEAK COULD BE ONLY WITHIN FEW DISCRETE LOCATIONS)
+rew.gauss_center_positions_norm: <N-by-2 numeric matrix in [0,1]> Center positions used by indexed rewards, tutorial and pursuit
+
+rew.gauss_center_idx: <positive integer or empty> Row of the center-position matrix; also helps build the tutorial sequence
+
+
+DEPRECATED, NO LONGER WORKS:
+rew.accum_len_fp: <positive integer> Former performance-window length; no longer controls reward accumulation or trial termination
+
+
+
+ctr - misspelled ctl...
+
+IN USE:
+ctr.max_peak_dist_deg: <nonnegative number> Maximum distance of a reward peak from image center, in visual degrees
+
+
+
+timing - Timing settings
+
+IN USE:
+timing.waitHz: <positive number> Target update rate in Hz
+
+timing.prego_delay: <nonnegative number> Delay in seconds before the final go delay; contributes to the initial fixation reward duration
+
+timing.go_delay: <nonnegative number> Final delay in seconds before movement starts; contributes to the initial fixation reward duration
+
+DEPRECATED, USABLE:
+timing.wait_secs: <positive number> Older update interval in seconds; only used when waitHz is absent or invalid
+
+
+pos - Target positions and uniform step limits in normalized coordinates
+
+IN USE:
+pos.initx1: <number> Target 1's initial horizontal coordinate; randomized starts preserve only the starting distance from center
+
+pos.inity1: <number> Target 1's initial vertical coordinate; randomized starts preserve only the starting distance from center
+
+pos.initx2: <number> Target 2's initial horizontal coordinate, used when randomize_start_pos=false
+
+pos.inity2: <number> Target 2's initial vertical coordinate, used when randomize_start_pos=false
+
+REWSWITCHES: (none)
+
+EXP1: (none)
+
+DEPRECATED, USABLE:
+pos.dxmin1: <number> Minimum horizontal step for target 1 in uniform mode; ignored in Gaussian mode
+
+pos.dxmax1: <number> Maximum horizontal step for target 1 in uniform mode; ignored in Gaussian mode
+
+pos.dymin1: <number> Minimum vertical step for target 1 in uniform mode; ignored in Gaussian mode
+
+pos.dymax1: <number> Maximum vertical step for target 1 in uniform mode; ignored in Gaussian mode
+
+pos.dxmin2: <number> Minimum horizontal step for target 2 in uniform mode; ignored in Gaussian mode
+
+pos.dxmax2: <number> Maximum horizontal step for target 2 in uniform mode; ignored in Gaussian mode
+
+pos.dymin2: <number> Minimum vertical step for target 2 in uniform mode; ignored in Gaussian mode
+
+pos.dymax2: <number> Maximum vertical step for target 2 in uniform mode; ignored in Gaussian mode
+
+DEPRECATED, NO LONGER WORKS: (none)
+
+
+
+pre - Optional preblock (used to 'introduce' new textures: presenting each at full coherence; idea being for the monkey to get used to them and not discourage them from the start with very difficult trials and new textures; currently set to 0)
+
+IN USE:
+pre.nreps: <nonnegative integer or 'all'> Number of preblock trials; 0 disables them and 'all' uses one per selected image
+
+
+
+tut - Optional tutorial trials
+
+IN USE:
+tut.nreps: <nonnegative integer> Number of tutorial trials before the other phases; 0 disables them
+
+tut.threshold: <positive number> Reward threshold for tutorial trials
+
+tut.background_noise_lvl: <number or vector> Background conditions for tutorial trials, separate from the main task
+
+tut.inplace: <true/false> Keep the tutorial target stationary at the selected position
+
+tut.corner_mode: <'random', 'fixed', or 'sequence'> Choose tutorial positions randomly, by fixed index, or from a sequence
+
+tut.corner_idx: <integer 1 to 5> Fixed tutorial position: 1=center, 2=TL, 3=TR, 4=BL, 5=BR; edit the last assignment in defaults
+
+tut.corner_sequence: <integer vector> Position indices to cycle through when corner_mode='sequence'
+
+tut.bias_strength: <number in [0,1]> Strength of the moving tutorial target's attraction toward the selected position
+
+tut.jitter_std: <nonnegative number> Extra random jitter added to tutorial movement
+
+tut.sequence_counter: <nonnegative integer> Starting counter for stepping through the tutorial position sequence
+
+tut.step_size_mult: <positive number or vector> Tutorial movement step-size multiplier
+
+tut.stepNoiseType: <'gaussian', 'normal', or 'uniform'> Tutorial step distribution; initially copied from ctl
+
+tut.stepNoiseSigma: <positive number> Tutorial Gaussian step SD; initially copied from ctl
+
+tut.stepNoiseCapSigma: <positive number> Tutorial Gaussian step cap in SDs; initially copied from ctl
+
+tut.boundaryMode: <'reject' or 'clip'> Tutorial boundary handling; initially copied from ctl
+
+tut.boundaryRejectMaxAttempts: <positive integer> Tutorial boundary redraw limit; initially copied from ctl
+
+tut.targetHiddenBoundsFrac: <nonnegative number> Tutorial allowance for target diameter outside the image; initially copied from ctl
+
+
+
+pur - Optional pursuit trials
+
+IN USE:
+pur.nreps: <nonnegative integer> Number of pursuit trials; 0 disables them
+
+pur.threshold: <positive number> Reward threshold for pursuit trials
+
+pur.speed: <positive number> Pursuit dot speed in visual degrees per second
+
+pur.size: <positive number> Pursuit dot radius in visual degrees; does not set reward tolerance
+
+pur.lenSec: <positive number> Pursuit trial duration in seconds
+
+pur.priority: <true/false> Run pursuit before preblock/main trials when true, or after main trials when false
+
+
+
+analysis - Offline analysis settings
+
+IN USE:
+analysis.photodiodePulsePhysicalChannel: <nonnegative integer> Physical ADC channel used to detect the GO pulse during analysis
+
+analysis.photodiodePulseThresholdV: <number> Voltage threshold for detecting the pulse during analysis
+
+analysis.photodiodePulseWindowSec: <positive number> Pulse search window in seconds during analysis; does not change the live pulse duration
+
+
+DEPRECATED, USABLE:
+analysis.eyeTimeGoPulsePhysicalChannel: <nonnegative integer> Older channel alias, used only if photodiodePulsePhysicalChannel is unavailable
+
+analysis.goPulsePhysicalChannel: <nonnegative integer> Oldest channel alias, used only if both newer channel fields are unavailable
+
+
+Other settings
+
+IN USE:
+ex.exp.CoPs.freeViewing: <true/false> Skip fixation checking at trial start
+
+EXP1:
+ex.exp.nreps: <nonnegative integer> Number of main trials; rewSwitch replaces it with the total generated block length
+
+DEPRECATED, NO LONGER WORKS:
+ex.stim.type: <string> Saved framework label; changing it does not select a different stimulus builder in current CoPs

@@ -1,0 +1,249 @@
+function plotCoPsEyeQC(out, opts)
+TS = out.trialSummary;
+S = out.samples;
+
+if opts.savePlots && ~exist(opts.plotDir, 'dir')
+    mkdir(opts.plotDir);
+end
+
+% 1) Distance histogram.
+%vdeg=px2deg(S.distPx, ex.setup);
+f1 = figure('Name', 'CoPs eye distance histogram', 'Color', 'w');
+histogram(S.distPx, 60);
+%histogram(vdeg, 60);
+xlabel('Distance to active target (px)');
+ylabel('Count');
+title('All trials: gaze-target distance');
+
+% 2) Trial-wise mean distance and valid fraction. xx zeros to nans
+
+f2 = figure('Name', 'Trial summary', 'Color', 'w');
+
+x = TS.trial;
+bad = TS.good == 0;
+
+% --- helper: find contiguous "bad" segments ---
+d = diff([0; bad(:); 0]);
+startIdx = find(d == 1);
+endIdx   = find(d == -1)-1;
+
+% ---------- Subplot 1 ----------
+ax1 = subplot(2,1,1); hold on
+
+% get y-limits AFTER plotting (or set manually)
+
+plot(x, TS.meanDistPx, '-o');
+yl = ylim;
+
+% draw gray patches
+dx = median(diff(x));  % robust spacing (usually 1)
+
+for i = 1:numel(startIdx)
+    x_start = x(startIdx(i)) - dx/2;
+    x_end   = x(endIdx(i))   + dx/2;
+
+    xs = [x_start x_end x_end x_start];
+    ys = [yl(1) yl(1) yl(2) yl(2)];
+
+    p = patch(xs, ys, [0.8 0.8 0.8], ...
+        'EdgeColor', 'none', 'FaceAlpha', 0.4);
+    uistack(p, 'bottom');
+end
+
+ylabel('Mean dist (px)');
+
+% ---------- Subplot 2 ----------
+ax2 = subplot(2,1,2); hold on
+
+plot(x, TS.inBoundsFrac, '-o');
+yl = ylim;
+
+for i = 1:numel(startIdx)
+    x_start = x(startIdx(i)) - dx/2;
+    x_end   = x(endIdx(i))   + dx/2;
+
+    xs = [x_start x_end x_end x_start];
+    ys = [yl(1) yl(1) yl(2) yl(2)];
+
+    p = patch(xs, ys, [0.8 0.8 0.8], ...
+        'EdgeColor', 'none', 'FaceAlpha', 0.4);
+    uistack(p, 'bottom');
+end
+
+ylabel('Valid frac');
+xlabel('Trial');
+
+
+% 3) Example trajectory (first trial with samples).
+% xx pick 3...
+trialList = unique(S.trial);
+trialList = trialList(~isnan(trialList));
+if ~isempty(trialList)
+    j = trialList(1);
+    SJ = S(S.trial == j, :);
+    f3 = figure('Name', sprintf('Trajectory trial %d', j), 'Color', 'w');
+    plot(SJ.targetX, SJ.targetY, 'k-', 'LineWidth', 1.2); hold on;
+    plot(SJ.xPx, SJ.yPx, 'r-');
+    axis equal;
+    set(gca, 'YDir', 'reverse');
+    legend({'Target', 'Gaze'}, 'Location', 'best');
+    xlabel('X (px)'); ylabel('Y (px)');
+    title(sprintf('Trial %d trajectory', j));
+else
+    f3 = [];
+end
+
+% 4) Switching and target-comparison diagnostics.
+% Box
+f4b = figure('Name', 'Switching diagnostics', 'Color', 'w');
+
+% Extract variables safely
+if ismember('targetSwitchRateHz', TS.Properties.VariableNames)
+    y1 = TS.targetSwitchRateHz;
+else
+    y1 = nan(size(TS.trial));
+end
+
+if ismember('bothFrac', TS.Properties.VariableNames)
+    y2 = TS.bothFrac;
+else
+    y2 = nan(size(TS.trial));
+end
+
+subplot(1,2,1);
+boxplot(y1);
+ylabel('Switch rate (Hz)');
+title('Per-trial switching frequency');
+
+subplot(1,2,2);
+boxplot(y2);
+ylabel('Both-frac');
+ylim([0 1]);
+title('Tracking both targets equally');
+
+% alt: by trial
+f4 = figure('Name', 'Switching diagnostics', 'Color', 'w'); 
+distAll = S.distPx; 
+distMean = TS.meanDistPx; 
+distMean1 = TS.meanDistPx1; 
+distMean2 = TS.meanDistPx2; distUnitLabel = 'px'; 
+distTitleSuffix = 'px'; subplot(2,1,1); 
+if ismember('targetSwitchRateHz', TS.Properties.VariableNames) 
+    plot(TS.trial, TS.targetSwitchRateHz, '-o'); 
+else 
+    plot(TS.trial, nan(size(TS.trial)), '-o'); 
+end 
+ylabel('Switch rate (Hz)'); 
+title('Per-trial switching frequency'); % xx there needs to be exclusion of bad tps for this... 
+subplot(2,1,2); 
+if ismember('bothFrac', TS.Properties.VariableNames) 
+    plot(TS.trial, TS.bothFrac, '-o'); 
+else 
+    plot(TS.trial, nan(size(TS.trial)), '-o'); 
+end 
+ylabel('Both-frac'); 
+ylim([0 1]);
+
+
+f5 = figure('Name', 'Target_preference', 'Color', 'w');
+
+scatter(distMean1, distMean2, 30, TS.trial, 'filled');
+hold on;
+mn = min([distMean1(:); distMean2(:)], [], 'omitnan');
+mx = max([distMean1(:); distMean2(:)], [], 'omitnan');
+if isfinite(mn) && isfinite(mx)
+    plot([mn mx], [mn mx], '--k', 'LineWidth', 1);
+end
+xlabel(sprintf('Mean distance to target 1 (%s)', distUnitLabel));
+ylabel(sprintf('Mean distance to target 2 (%s)', distUnitLabel));
+title('Target 1 vs Target 2 distance comparison');
+cb = colorbar;
+ylabel(cb, 'Trial');
+axis square;
+
+
+%
+% 6) Center-tracking bias diagnostics. xx different x axis
+f6 = figure('Name', 'Center tracking diagnostics', 'Color', 'w');
+
+subplot(2,1,1);
+if ismember('centerTrackFrac', TS.Properties.VariableNames)
+    plot(TS.trial, TS.centerTrackFrac, '-o', 'LineWidth', 1.2); hold on;
+else
+    plot(TS.trial, nan(size(TS.trial)), '-o', 'LineWidth', 1.2); hold on;
+end
+yline(0.5, '--k');
+ylabel('Tracking fraction');
+ylim([0 1]);
+legend({'Center-closer target', 'Outer target', 'Chance (0.5)'}, 'Location', 'best');
+title('Per-trial tracking center-closer target');
+
+subplot(2,1,2);
+if ismember('switchToCenterFrac', TS.Properties.VariableNames)
+    plot(TS.trial, TS.switchToCenterFrac, '-o', 'LineWidth', 1.2); hold on;
+else
+    plot(TS.trial, nan(size(TS.trial)), '-o', 'LineWidth', 1.2); hold on;
+end
+
+yline(0.5, '--k');
+ylabel('Switch fraction');
+ylim([0 1]);
+legend({'Switch-to-center fraction', 'Other-center at switch fraction', 'Chance (0.5)'}, 'Location', 'best');
+title('Per-trial center-related switch fractions');
+
+% box version
+f6b = figure('Name', 'Center tracking diagnostics', 'Color', 'w');
+
+% Extract variables safely
+if ismember('centerTrackFrac', TS.Properties.VariableNames)
+    y1 = TS.centerTrackFrac;
+else
+    y1 = nan(size(TS.trial));
+end
+
+if ismember('switchToCenterFrac', TS.Properties.VariableNames)
+    y2 = TS.switchToCenterFrac;
+else
+    y2 = nan(size(TS.trial));
+end
+% -------- Left panel --------
+subplot(1,2,1);
+boxplot(y1);
+ylabel('Tracking fraction');
+ylim([0 1]);
+yline(0.5, '--k');
+title('Center-closer tracking');
+
+hold on
+scatter(ones(size(y1)), y1, 10, 'k', 'filled', ...
+    'jitter','on', 'jitterAmount',0.05, ...
+    'MarkerFaceAlpha', 0.2, ...
+    'MarkerEdgeAlpha', 0.2);
+
+% -------- Right panel --------
+subplot(1,2,2);
+boxplot(y2);
+ylabel('Switch fraction');
+ylim([0 1]);
+yline(0.5, '--k');
+title('Switch-to-center');
+
+hold on
+scatter(ones(size(y2)), y2, 10, 'k', 'filled', ...
+    'jitter','on', 'jitterAmount',0.05, ...
+    'MarkerFaceAlpha', 0.2, ...
+    'MarkerEdgeAlpha', 0.2);
+
+if opts.savePlots
+    exportgraphics(f1, fullfile(opts.plotDir, 'dist_hist.png'), 'Resolution', 160);
+    exportgraphics(f2, fullfile(opts.plotDir, 'trial_summary.png'), 'Resolution', 160);
+    if ~isempty(f3)
+        exportgraphics(f3, fullfile(opts.plotDir, 'trajectory_example.png'), 'Resolution', 160);
+    end
+    exportgraphics(f4b, fullfile(opts.plotDir, 'switching.png'), 'Resolution', 160);
+    exportgraphics(f5, fullfile(opts.plotDir, 'targ_pref.png'), 'Resolution', 160);
+    exportgraphics(f6b, fullfile(opts.plotDir, 'center_bias.png'), 'Resolution', 160);
+    
+end
+
+end

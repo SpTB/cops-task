@@ -1,0 +1,22 @@
+function valid = getDefaultsValid()
+
+valid = struct();
+valid.nRepeat = 3;
+valid.targetWin = [120 120]; %[width height]
+valid.fixDur = .2; % fixation duration
+valid.rewTime = .35; %   
+valid.background_color = 80;%128; % 
+valid.offsetsDeg = [-8:4:8];%-2.5,0,2.5, 5];%-10:5:10; % this is the more flexible version, but can 
+%also use the scaling par instead (below)
+valid.distance_scaling = 1;
+valid.iti = .1;
+valid.plot = 0;
+valid.plot_summary = 1;
+valid.recenterFirst = 1; % recenters on first validation trial
+valid.update = 1; % whether to update the values at the end of validation
+valid.img=''%'/home/vpixx/Downloads/butt.jpg';
+%valid.img = '/home/vpixx/Downloads/rhe1.jpg'; % reuses calib setting
+valid.rotSpeedDegPerSec = 0;%120; % reuses calib setting, but can be set
+%independently as well
+
+end

@@ -1,0 +1,553 @@
+function ex = runEx(eyeStr, varargin)
+% Run the CoPs task.
+%
+% usage examples:
+%   runEx() native eyelink gaze and tracker calibration (default)
+%   runEx('t', 0) disable the experimenter overlay
+%   runEx('t', 1, 1) windowed desktop overlay with DataPixx enabled
+%   runEx('t', 1, 1, overlayScreen=0, overlayWindowSizePx=[960 540])
+%   runEx('t', eyeSource='analog') legacy analog eye calibration
+%   runEx('t', nativeValidation=false) save tracker calibration, skip custom validation
+%   runEx('test1')
+%   runEx('test1', testTrials=5)
+%   runEx('test1', viewingDistanceCm=60, monitorWidthCm=53)
+%   runEx('test1', fullscreen=true)  % opt in to fullscreen
+
+% Supply the default before validation so an explicit calibration mode is
+% required by the inner function. Otherwise MATLAB parses 't', 0 as the
+% abbreviated name-value pair testTrials=0.
+if nargin == 0
+    eyeStr = 't';
+end
+ex = runCoPsWithOptions(eyeStr, varargin{:});
+end
+
+
+function ex = runCoPsWithOptions(eyeStr, overlayOn, pixOn, rewOn, eyeOn, skipQuest, options)
+arguments
+    eyeStr {mustBeText} % calibration mode, or 'test1' for the portable mouse test
+    overlayOn  {mustBeNumericOrLogical} = 1
+    pixOn  {mustBeNumericOrLogical} = 1
+    rewOn {mustBeNumericOrLogical} = false
+    eyeOn  {mustBeNumericOrLogical} = true
+    skipQuest {mustBeNumericOrLogical} = true
+    options.eyeSource {mustBeMember(options.eyeSource,{'eyelink','analog'})} = 'eyelink'
+    options.nativeValidation (1,1) logical = true % custom validation after tracker setup
+    options.testTrials (1,1) double {mustBeInteger, mustBePositive} = 3
+    options.viewingDistanceCm (1,1) double {mustBePositive} = 55 %100
+    options.monitorWidthCm (1,1) double {mustBePositive} = 54 %50
+    options.fullscreen (1,1) logical = true %false
+    options.overlayScreen (1,:) double {mustBeInteger, mustBeNonnegative} = []
+    options.overlayWindowSizePx (1,2) double {mustBeInteger, mustBePositive} = [960 540]
+    options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = [2560 1440] %[1280 720]
+end
+
+dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn, options.eyeSource);
+pixOn = dependencies.pixOn;
+eyeOn = dependencies.eyeOn;
+rewOn = dependencies.rewOn;
+
+% close any display left by a previous run before resetting hardware handles
+closeCoPsDisplayx();
+if dependencies.datapixxOn
+    Datapixx('Close')
+end
+if dependencies.eyelinkOn
+    Eyelink('Shutdown');
+end
+ex = struct();
+if dependencies.datapixxOn && ~Datapixx('Open')
+    initDatapixx(ex);
+end
+
+ex = setDefaultsCoPs(ex);
+
+if strcmp(dependencies.profile, 'test1')
+    % Make the portable display geometry explicit before the host-specific
+    % defaults are resolved. These values affect degrees-to-pixels
+    % conversions and should be replaced with measured values when known.
+    ex.setup.testMode = true;
+    ex.setup.viewingDistance = options.viewingDistanceCm;
+    ex.setup.monitorWidth = options.monitorWidthCm;
+    ex.setup.fullscreen = options.fullscreen;
+    ex.setup.windowSizePx = options.windowSizePx;
+end
+
+ex = getDefaultSettingsx(ex, skipQuest, initializeAdc=false); %eyeOn
+if strcmp(dependencies.profile, 'test1')
+    [ex, testConfig] = configureCoPsTestRunx(ex, options.testTrials);
+    ex.setup.testConfig = testConfig;
+    fprintf('CoPs test1: %d trial(s), mouse input, no DataPixx/EyeLink/reward hardware.\n', ...
+        options.testTrials);
+end
+ex.setup.dependencies = dependencies;
+ex.setup.inputMode = dependencies.inputMode;
+ex.setup.showExperimenterOverlay = logical(overlayOn);
+ex.setup.overlayScreen = options.overlayScreen;
+ex.setup.overlayWindowSizePx = options.overlayWindowSizePx;
+if strcmp(dependencies.inputMode, 'eyelink')
+    % ADC is retained only for independent photodiode/camera sync signals
+    ex.setup.adc.Channels = [6 7];
+    ex.setup.adc.DiffChannels = [0 0];
+end
+if dependencies.adcOn
+    resetAdcBuffer(ex);
+end
+
+ex.states.PREGO = 5.95
+
+% install cleanup before initialization, including partially opened windows
+displayCleanup = onCleanup(@closeCoPsDisplayx); %ok<NASGU>
+% The desktop overlay must not change stimulus colors or display mode.
+% DataPixx input, strobes, and reward remain controlled by the hardware flags.
+ex = initDisplayx(ex);
+pause(1)
+
+if eyeOn && strcmp(dependencies.inputMode, 'eyelink')
+    ex.calib = setDefaultsCalib();
+    ex.calib.file = ''; % native calibration is provided by the tracker
+    ex.valid = setDefaultsValid();
+    % valid.update optionally fits a separate native pixel correction.
+    ex.valid.onlineUpdate = false;
+    ex.valid.recenterFirst = false;
+    ex = resolveCalibrationValidationDisplaySizes(ex);
+    ex.setup.el.edfFileName = ['c' datestr(now,'HHMMSS') '.edf'];
+    ex = initCoPsEyelinkx(ex);
+    ex = saveCoPsNativeEyeCalx(ex);
+    if options.nativeValidation && ex.calib.validate
+        ex = validateCoPsNativeEyelinkx(ex);
+    end
+    ex = saveCoPsNativeEyeCalx(ex, true);
+    if ex.quit == 4
+        return
+    end
+elseif eyeOn
+    
+    ex.setup.VSdirRoot = pwd;
+    % handles = initEyeHandlesx(ex);
+    % ex = initEyelink(ex, handles);
+    ex = initEyelink(ex);
+    ex.eyeCal = [];
+    % ex.idx.bg = 0; % black test
+    ex.calib = setDefaultsCalib(); % default eye calibration settings
+    ex.valid = setDefaultsValid(); % default eye validation settings
+    ex = resolveCalibrationValidationDisplaySizes(ex);
+
+    switch lower(eyeStr)
+        
+        case 'y' % legacy calibration
+            %ex = calibrateEye_rev(ex);
+            ex = calibrateEyex(ex);
+            disp('eye calibration done')
+        case 't'
+               ex = calibrateEye2vx(ex);
+        case 'l' % long version
+               ex = calibrateEyexx(ex);
+        case 'mix'
+               ex = calibrateEyex_mix(ex);       
+        case 'm2' % monocular mouse sim case
+            exTemp=load('/home/vpixx/Desktop/t.mat')
+            if isfield(exTemp, 'ex') % whole ex struct case
+                ex.eyeCal = exTemp.ex.eyeCal;
+            elseif isfield (exTemp, 'eyeCal')
+                ex.eyeCal = exTemp.eyeCal;
+            else
+                error('eyeCal field not found')
+            end
+            if ~isfield(ex.eyeCal,'Delta') || isempty(ex.eyeCal.Delta)
+              ex.eyeCal.Delta.cnt = 1;
+              ex.eyeCal.Delta.RX0 = 0;
+              ex.eyeCal.Delta.RY0 = 0;
+              ex.eyeCal.Delta.LX0 = 0;
+              ex.eyeCal.Delta.LY0 = 0;
+            end
+
+        case 'm1' % monocular mouse sim case
+            exTemp=load('/home/vpixx/data/test/2026.03.09/t_12.19.EyeCal/t_12.19.EyeCal.mat')
+            if isfield(exTemp, 'ex') % whole ex struct case
+                ex.eyeCal = exTemp.ex.eyeCal;
+            elseif isfield (exTemp, 'eyeCal')
+                ex.eyeCal = exTemp.eyeCal;
+            else
+                error('eyeCal field not found')
+            end
+            
+        case 'ka1' % kaki case: rigth eye only
+            exTemp=load('/home/vpixx/Desktop/ka1.mat')
+            if isfield(exTemp, 'ex') % whole ex struct case
+                ex.eyeCal = exTemp.ex.eyeCal;
+            elseif isfield (exTemp, 'eyeCal')
+                ex.eyeCal = exTemp.eyeCal;
+            else
+                error('eyeCal field not found')
+            end
+        case 'ka' % kaki case
+            exTemp=load('/home/vpixx/Desktop/ka.mat')
+            if isfield(exTemp, 'ex') % whole ex struct case
+                ex.eyeCal = exTemp.ex.eyeCal;
+            elseif isfield (exTemp, 'eyeCal')
+                ex.eyeCal = exTemp.eyeCal;
+            else
+                error('eyeCal field not found')
+            end
+
+        case 'ly' % lychee case
+            exTemp=load('/home/vpixx/Desktop/ly.mat')
+            if isfield(exTemp, 'ex') % whole ex struct case
+                ex.eyeCal = exTemp.ex.eyeCal;
+            elseif isfield (exTemp, 'eyeCal')
+                ex.eyeCal = exTemp.eyeCal;
+            else
+                error('eyeCal field not found')
+            end
+
+        otherwise
+    end
+end
+
+if ~eyeOn && ~isfield(ex, 'eyeCal')
+    ex.eyeCal = makeCoPsMouseEyeCalx();
+end
+
+if ex.setup.el.binoc==0
+    ex.eyeCal.LXPos = [];
+    ex.eyeCal.LYPos = [];
+end
+%run Expt starts
+ex.j = 1;  % current trial number
+ex.goodtrial = 0;  % counter for successful trials
+ex.totalPoints = 0; % counter for total points earned
+ex.loopcnt = zeros(1, ex.finish);  % loop counter for each trial
+ex.changedBlock = 0;  % keeps track of whether we changed blocks
+ex.exp.total_nreps = getCoPsTotalRepsx(ex);
+ex.finish = ex.exp.total_nreps;
+ex = prepareCoPsTrialParamSchedules(ex);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%  make stimulus/trial sequence
+if isfield(ex.stim,'seq')
+    ex.stim = rmfield(ex.stim,'seq');
+end
+sequenceModeIm = false;
+if isfield(ex.exp.CoPs.graph, 'sequenceMode_im') && ~isempty(ex.exp.CoPs.graph.sequenceMode_im)
+    sequenceModeIm = ex.exp.CoPs.graph.sequenceMode_im;
+elseif isfield(ex.exp.CoPs.graph, 'sequenceMode') && ~isempty(ex.exp.CoPs.graph.sequenceMode)
+    sequenceModeIm = ex.exp.CoPs.graph.sequenceMode;
+end
+activeTrialMask = [];
+if isfield(ex.exp.CoPs, 'trialParamSchedules') && ...
+        isfield(ex.exp.CoPs.trialParamSchedules, 'target_visibility')
+    activeTrialMask = isfinite(ex.exp.CoPs.trialParamSchedules.target_visibility);
+end
+ex.stim.seq = buildCoPsStimulusSequencex(ex, sequenceModeIm, activeTrialMask);
+ex.exp.CoPs.stimValidation = validateCoPsStimulusSelection(ex);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% if there are several changes of eye position offset (delta x, delta y)
+%%% stored from a previous experiment, use only the last one
+ex = resetEyeDelta(ex);
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%% store unique experiment ID
+clocktime = fix(clock);
+if pixOn
+    sendStrobes([ex.strobe.FILE_ID,clocktime,ex.strobe.EXPERIMENT_START]);
+end
+
+ex.Header.fileID = clocktime;
+
+sfx = makeFilenameSuffixCoPsx(ex);
+[fname,dirName,trDir] = makeFilenameAndDirx(ex, sfx); % no difference right now... (as in v2.7)
+% new: separate dirs to reduce mess
+expDir = fullfile(dirName,'experimental');
+edfDir = fullfile(dirName,'edf');
+if ~exist(expDir,'dir')
+    mkdir(expDir);
+end
+if ~exist(edfDir,'dir')
+    mkdir(edfDir);
+end
+
+% create Trials
+ex.loopcnt =[];
+if isfield(ex,'Trials')
+    ex = rmfield(ex,'Trials');
+    fnames = fieldnames(ex);
+    for n = 1:length(fnames)
+        if findstr(fnames{n},'tocs')
+            ex = rmfield(ex,fnames{n});
+        end
+    end
+end
+
+% Always reinitialize Trials so downstream cleanup/save code can handle
+% sessions that end before the first trial completes.
+ex.Trials = struct('ID', {}, 'TrialStart', {}, 'TrialEnd', {}, ...
+    'posT', {}, 'mousePositions', {}, 'closeness', {}, ...
+    'reward', {}, 'scaledReward', {}, 'targetPositions', {}, ...
+    'nsteps', {}, 'Reward', {}, 'RewardSize', {}, ...
+    'flip_info', {}, 'times', struct(), ...
+    'eyeRecenterCount', {}, 'eyeDeltaCntStart', {}, 'eyeDeltaCntEnd', {});
+
+
+ex.nCorrectChoice = 0;
+ex.nErrorChoice=0;
+if isfield(ex,'fileName')
+    ex = rmfield(ex,'fileName');
+end
+
+% start recording ET
+if eyeOn && Eyelink('IsConnected') == 1
+    
+    Eyelink('SetOfflineMode')
+    Eyelink('CloseFile');
+    
+    % only when Eyelink is used to record eye positions
+    if strcmpi(ex.setup.eyeTracker,'Eyelink')
+        % maximum length of an edf file name = 8
+        ex.Header.edfFileName = sprintf('%02d%02d%02d%02d.edf',clocktime(2),clocktime(3),...
+            clocktime(4),clocktime(5));
+        Eyelink('OpenFile',ex.Header.edfFileName);
+        if strcmp(dependencies.inputMode, 'eyelink')
+            r = ex.setup.screenRect;
+            Eyelink('Message', 'DISPLAY_COORDS 0 0 %d %d', r(3)-r(1)-1, r(4)-r(2)-1);
+        end
+        Eyelink('Message','exFileName: %s',fname);
+        Eyelink('StartRecording');
+    end
+end
+
+if pixOn
+    PsychDataPixx('GetPreciseTime'); % synchronize Datapixx and PTB clocks
+end
+
+% save initial state of ex structure to recover the data in case of a crash
+cur_dir = cd (trDir);
+save(fname, 'ex');
+cd(cur_dir);
+
+% get daily Log (number of trials, number of correct trials)
+cur_dir = cd(dirName);
+
+if exist('dailyLog.mat') ==2
+    load('dailyLog.mat');
+else 
+    %dailyLog.nTrialsPerDay = 0;
+    %dailyLog.nCorrectTrialsPerDay = 0;
+     dailyLog = struct( ...
+        'nTrialsPerDay', 0, ...
+        'nCorrectTrialsPerDay', 0, ...
+        'sessionHistory', {{}}, ...
+        'lastSessionSummary', struct([]));
+end
+cd(cur_dir);
+
+dailyLog_old = dailyLog;
+
+% keep track of hte number of trials after a shake for which we scale down
+% the rewards after shakes and keep track of the number of
+ex.reward.nTrialsAfterShake = inf; % default baseline
+
+while ex.j <= ex.finish && ex.quit~=4
+    HideCursor
+    dailyLog.nTrialsPerDay = dailyLog_old.nTrialsPerDay+ex.goodtrial;
+    cur_dir = cd(dirName);
+    save('dailyLog','dailyLog');
+    cd(cur_dir);
+    % updateGuiLogs(dailyLog);
+    
+    if ex.quit == 0
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        %%%%%%%%%%%%%%%%% run Trial
+        if dependencies.adcOn %eyeOn
+            resetAdcBuffer(ex);  %% reset AdcBuffer for EyeSignals
+        end
+        
+        try
+            ex = runTrialTaskCoPsx(ex, pixOn, eyeOn, rewOn);
+        catch err
+                        fprintf(2,'Error during trial execution (trial %d): %s\n', ex.j, err.message);
+            fprintf(2,'%s\n', getReport(err, 'extended'));
+
+            % Save immediately so data are preserved as in a normal quit.
+            ex.lastError = err;
+            ex.quit = 4;
+            cur_dir = cd(dirName);
+            whosEx = whos('ex');
+            if whosEx.bytes < 1e+9
+                save(fname, 'ex');
+            else
+                save(fname,'ex','-v7.3');
+            end
+            cd(cur_dir);
+
+            % Also keep a copy of the latest completed trial when available.
+            if ex.j > 1 && isfield(ex,'Trials') && numel(ex.Trials) >= (ex.j - 1)
+                cur_dir = cd (trDir);
+                Trials = ex.Trials(ex.j-1);
+                save(['tr' num2str(ex.j-1)],'Trials');
+                cd(cur_dir);
+            end
+            break
+        end
+
+        
+        cur_dir = cd (trDir);
+        Trials = ex.Trials(ex.j-1);
+        save(['tr' num2str(ex.j-1)],'Trials');
+        cd(cur_dir)
+        
+    elseif ex.quit ==1
+        disp('in pause')
+        cur_dir = cd (trDir);
+        Trials = ex.Trials(ex.j-1);
+        save(['tr' num2str(ex.j-1)],'Trials')
+        cd(cur_dir)
+        playRandomLines(ex);
+        %sca
+        keyboard
+        ex.quit = 0;
+        ShowCursor
+    elseif ex.quit ==2
+        disp('in pause with timeout')
+        if ex.setup.stereo.Display
+            % right eye
+            Screen('SelectStereoDrawBuffer', ex.setup.window, 0);
+            Screen('FillRect',ex.setup.window,0);  % black background
+            % Select left-eye image buffer for drawing:
+            Screen('SelectStereoDrawBuffer', ex.setup.window, 1);
+            % Draw left stim:
+            Screen('FillRect',ex.setup.window,0);  % black background
+        else
+            % black screen
+            Screen('FillRect', ex.setup.overlay,ex.idx.black);
+        end
+        Screen('Flip', ex.setup.window);
+        presentCoPsOverlayx(ex);
+        cur_dir = cd (trDir);
+        Trials = ex.Trials(ex.j-1);
+        save(['tr' num2str(ex.j-1)],'Trials')
+        cd(cur_dir)
+        
+        keyboard
+        ex.quit = 0;
+        ShowCursor
+    elseif ex.quit ==3
+        % 11/19/24
+        % for future use if needed
+    end
+end
+
+% end experiment
+% playRandomLines(ex);
+
+% signal end of experiment
+if pixOn
+    sendStrobe(ex.strobe.EXPERIMENT_END);
+end
+
+% iknew 06.08.2022
+% close edf file
+if eyeOn && Eyelink('IsConnected') == 1
+    Eyelink('StopRecording')
+    Eyelink('SetOfflineMode')
+    Eyelink('CloseFile');
+end
+
+% get GetSecs timestamps remapped onto Datapixx TrialStart and TrialEnd
+sd = NaN;
+ratio = NaN;
+if pixOn && isfield(ex, 'Trials') && ~isempty(ex.Trials) && ...
+        all(isfield(ex.Trials, {'TrialStartDatapixx', 'TrialEndDatapixx'}))
+    TrStartDP = [ex.Trials.TrialStartDatapixx];
+    TrEndDP = [ex.Trials.TrialEndDatapixx];
+    if ~isempty(TrStartDP) && ~isempty(TrEndDP)
+        [tgetsecs, sd, ratio] = PsychDataPixx('BoxsecsToGetsecs',[TrStartDP,TrEndDP]);
+        TrStartgetsecs = tgetsecs(1:length(TrStartDP));
+        TrEndgetsecs = tgetsecs(length(TrStartDP)+1:end);
+        for n = 1:length(TrStartDP)
+            ex.Trials(n).TrialStart_remappedGetSecs = TrStartgetsecs(n);
+            ex.Trials(n).TrialEnd_remappedGetSecs = TrEndgetsecs(n);
+        end
+    end
+end
+% ex.times.timelog = PsychDataPixx('GetTimestampLog',1);
+ex.times.remappingSD = sd;
+ex.times.PTBvsDatapixxClockRatio = ratio;
+% PsychDataPixx('ClearTimestampLog');
+ex.quit = 0;
+
+% make sure to switch off fixed Seed if it was turned on
+if isfield(ex.stim.vals,'fixedSeed')
+    ex.stim.vals.fixedSeed = false;
+end
+
+% save file
+ex.Header.onlineDirName = dirName;
+ex.Header.onlineExperimentalDirName = expDir;
+ex.Header.onlineEdfDirName = edfDir;
+cur_dir = cd(ex.Header.onlineExperimentalDirName);
+
+%cur_dir = cd(ex.Header.onlineDirName);
+ex.Header.onlineFileName = fname;
+disp('saving...')
+
+% 2021.03.08 ik: check the size of ex, if it exceeds 2GB, use '-v7.3' flag
+whosEx = whos('ex');
+if whosEx.bytes < 1e+9
+    save(fname, 'ex');
+else
+    save(fname,'ex','-v7.3');
+end
+cd(cur_dir)
+
+%update log
+% dailyLog.nTrialsPerDay = dailyLog_old.nTrialsPerDay+ex.goodtrial;
+% dailyLog.nCorrectTrialsPerDay = dailyLog_old.nTrialsPerDay + ex.goodtrial;
+dailyLog = finalizeDailyLogSessionx(dailyLog, dailyLog_old, ex, fname);
+cur_dir = cd(dirName);
+save('dailyLog','dailyLog');
+cd(cur_dir);
+% updateGuiLogs(dailyLog);
+
+% iknew 06.08.2022
+% copy edf file to data foler if Eyelink is on
+if eyeOn && Eyelink('IsConnected') == 1 && strcmpi(ex.setup.eyeTracker,'Eyelink')
+    fprintf('Transferring EDF file: %s...\n',ex.Header.edfFileName);
+    % xx new (clean)
+    Eyelink('ReceiveFile',ex.Header.edfFileName,edfDir,1);
+    % make a copy of edf file
+    edfLocalName = sprintf('%s/%s',edfDir,regexprep(fname,'.mat','.edf'));
+    copyfile(sprintf('%s/%s',edfDir,ex.Header.edfFileName),edfLocalName)
+    % x old:
+    % Eyelink('ReceiveFile',ex.Header.edfFileName,dirName,1);
+    % % make a copy of edf file
+    % edfLocalName = sprintf('%s/%s',dirName,regexprep(fname,'.mat','.edf'));
+    % copyfile(sprintf('%s/%s',dirName,ex.Header.edfFileName),edfLocalName)
+
+    fprintf('%s transferred and copied as %s\n',ex.Header.edfFileName,...
+        edfLocalName);
+    Eyelink('StartRecording')
+    playRandomLines(ex);
+end
+
+% remove temporary trial folder
+cur_dir = cd(trDir);
+delete('*.mat');
+a = dir;
+cd(cur_dir);
+subDirs = 0;
+for n = 1:length(a)
+    if a(n).isdir && a(n).bytes>0
+        subDirs = 1;
+        break
+    end
+end
+
+if ~subDirs
+    rmdir(trDir);
+else
+    warndlg('Trial directory contains subdirectories: there is likely a bug, check!')
+end
+
+ShowCursor
+end

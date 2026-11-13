@@ -1,0 +1,15 @@
+% save settings
+data_dir='/run/user/1000/gvfs/smb-share:server=lsr-isilon.nei.nih.gov,share=lsr-nienborg/projects/ongoing/CoPs/'
+local_dir = '/home/vpixx/vsgui/vsg/cops_analysis/poster/' 
+
+fontsize=14;
+fig_pos=[100 100 500 200];
+
+%% gazeHeat: example
+load...
+
+
+
+%% gazeHeatTraj: example
+
+ka = gazeHeatTrajectory(ex)
