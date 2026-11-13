@@ -34,6 +34,24 @@ if nS == 0
     return
 end
 
+% native gaze already contains calibrated pixels and tracker timestamps
+% always preserve these timestamps, including gaps, even when
+% useEyeTime=false
+if isfield(T.Eye, 'source') && strcmp(T.Eye.source, 'eyelink')
+    if T.Eye.n == 0
+        return
+    end
+    [xPx, yPx, eyeInfo] = localCombineBinocularEyes( ...
+        V(1,:)', V(2,:)', V(4,:)', V(5,:)', ex, opts);
+    tAbs = T.Eye.ptbStart + T.Eye.t(1:nS)' - T.Eye.trackerStart;
+    tRel = tAbs - T.TrialStart;
+    eyeInfo.timing = struct('modeUsed', 'eyelink', ...
+        'source', 'tracker_seconds', 'ptbAnchor', T.Eye.ptbStart);
+    valid = isfinite(xPx) & isfinite(yPx);
+    return
+end
+
+
 % Apply horizontal sign rule used online.
 horSign = 1;
 if isfield(ex, 'setup') && isfield(ex.setup, 'horEyeSign')
