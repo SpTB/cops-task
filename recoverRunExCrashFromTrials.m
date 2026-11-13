@@ -8,8 +8,8 @@ function ex = recoverRunExCrashFromTrials(sessionDir, outFile)
 %   - <sessionName>.mat   initial checkpoint written before trials started
 %   - tr1.mat, tr2.mat, ... per-trial saves written after each completed trial
 %
-% If outFile is omitted, the recovered file is written to the session's
-% normal output subfolder: experimental, or rewSwitches for joint blocks.
+% If outFile is omitted, the recovered file is written to:
+%   <parent(sessionDir)>/experimental/<sessionName>.mat
 
 if nargin < 2
     outFile = '';
@@ -94,13 +94,7 @@ end
 ex.times.remappingSD = struct('norm', NaN, 'delta', NaN(1, numel(ex.Trials)));
 ex.times.PTBvsDatapixxClockRatio = NaN;
 
-saveSubfolder = 'experimental';
-if isfield(ex, 'exp') && isfield(ex.exp, 'CoPs') && ...
-        isfield(ex.exp.CoPs, 'ctl') && isfield(ex.exp.CoPs.ctl, 'jointBlocks') && ...
-        ~isempty(ex.exp.CoPs.ctl.jointBlocks) && logical(ex.exp.CoPs.ctl.jointBlocks(1))
-    saveSubfolder = 'rewSwitches';
-end
-expDir = fullfile(parentDir, saveSubfolder);
+expDir = fullfile(parentDir, 'experimental');
 edfDir = fullfile(parentDir, 'edf');
 if isempty(outFile)
     outFile = fullfile(expDir, [sessionName '.mat']);

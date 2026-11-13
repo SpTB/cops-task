@@ -1,25 +1,17 @@
 function ex = setDefaultsCoPs(ex)
 
-% rewSwitches: block lengths and reward centers are generated at session
-% start. Set jointBlocks=false to use the fixed-center task and exp.nreps.
-ctl.jointBlocks = true;
-ctl.numBlocks = 12;
-ctl.blockMeanTrials = 30;
-ctl.blockTransRange = 6; % integer uniform range: blockMeanTrials +/- this value
-ctl.rewPeakDistFromPrev = 5; % minimum consecutive-peak distance in visual degrees
-
 % do a intro minisession for Kaki: 5 pur; 10 normal (lo thresh) 5 Null (lo thresh) 
-
+ctl.advance_trial_with_space = true; % requires space between trials, f4 to quit
 %drawRewPeak(6,10)
 
 %main params
-graph.texture_root = '/home/vpixx/stim';%;
+projectRoot = fileparts(mfilename('fullpath'));
+graph.texture_root = fullfile(projectRoot, 'test_data');
 %'/run/user/1000/gvfs/smb-share:server=lsr-isilon.nei.nih.gov,share=lsr-nienborg/data/CoPs'
-graph.texture_folder = 'jul11_stim2';% -> /home/vpixx/stim/ly_jun5_stim
+graph.texture_folder = 'test_stim';% -> /home/vpixx/stim/ly_jun5_stim
 
-pre.nreps = 0; % numeric = total pre trials; 'all' = one trial per selected texture
-pur.nreps = 0;
-ex.exp.nreps = 120; % replaced by total block lengths when jointBlocks=true
+pre.nreps = 'all'; % numeric = total pre trials; 'all' = one trial per selected texture
+pur.nreps = 0;ex.exp.nreps = 120; %
 
 %pur specific
 pur.threshold = 250;
@@ -28,13 +20,19 @@ pur.size = .25; % radius in deg
 pur.lenSec = 10; % fixed pursuit-trial duration
 pur.priority = true; % true: run pursuit block before main trials
 
+% points display
+rew.points_feedbackOn = true; %show trial/session points and wait for space
+rew.points_feedback_every_n_trials = 10; % shows feedback every 10 trials
+rew.points_feedback_text_size = 48;
+rew.points_feedback_decimals = 0; % number of decimal points displayed on the point total
+
 %thresholding
 rew.threshold = 250; % kaki: 250->260bler; Lychee: 250 (at waitHz=20/30)
 rew.threshold_noiseNull=325;%kaki: 300; Lychee: 325
 rew.threshold_noise0 = 250;%kaki:300; Lychee: 350 % threshold for fixed-background (noise=0) trials
 %0.8402, 0.5661
 rew.gauss_center_free = true; % true: sample free [x y] center within current center radius
-rew.gauss_center_coords = []; % resolved [x y] normalized coords when gauss_center_free=true
+rew.gauss_center_coords = [0.8099  0.6289]; % resolved [x y] normalized coords when gauss_center_free=true
 ctr.max_peak_dist_deg = 10; % max reward-peak eccentricity from image center, in visual degrees (8.77: where the original ones were)
 ctl.gauss_scalar = 2.25; % [1,max], ly:2.25; ka: 2.25 valid for multiplicative rewards
 
@@ -131,7 +129,7 @@ graph.radiusReferenceViewingDistance = 58; % cm
 graph.radiusReferenceScreenWidthPx = 1920;
 graph.radiusDeg = graph.radius * graph.size_mult * ...
     atan((graph.radiusReferenceMonitorWidth / 2) / graph.radiusReferenceViewingDistance) * ...
-    180 / pi / (graph.radiusReferenceScreenWidthPx / 2); 
+    180 / pi / (graph.radiusReferenceScreenWidthPx / 2);
 %graph.background_noise_lvl = 5; % how much does the background change from one step to the next
 
 % reward parameters

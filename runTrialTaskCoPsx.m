@@ -35,6 +35,9 @@ else
     inputMode = 'mouse';
 end
 
+showExperimenterOverlay = ~isfield(ex.setup, 'showExperimenterOverlay') || ...
+    logical(ex.setup.showExperimenterOverlay);
+
 %temp
 
 %debugging vars (filled with timestamps each time event happened)
@@ -60,7 +63,16 @@ dirs = ex.exp.CoPs.dirs;
 pos = ex.exp.CoPs.pos;
 graph = ex.exp.CoPs.graph;
 ctl = ex.exp.CoPs.ctl;
+if ~isfield(ctl, 'advance_trial_with_space'), ctl.advance_trial_with_space = true; end
 rew = ex.exp.CoPs.rew;
+% allow older saved settings to use the feedback defaults
+if ~isfield(rew, 'points_feedback_on'), rew.points_feedback_on = true; end
+if ~isfield(rew, 'points_feedback_every_n_trials'), rew.points_feedback_every_n_trials = 10; end
+validateattributes(rew.points_feedback_every_n_trials, {'numeric'}, ...
+    {'scalar', 'real', 'finite', 'integer', 'positive'}, ...
+    mfilename, 'rew.points_feedback_every_n_trials');
+if ~isfield(rew, 'points_feedback_text_size'), rew.points_feedback_text_size = 48; end
+if ~isfield(rew, 'points_feedback_decimals'), rew.points_feedback_decimals = 0; end
 if isfield(ex.exp.CoPs, 'ctr')
     ctr = ex.exp.CoPs.ctr;
 else
@@ -384,10 +396,9 @@ ex.Trials(ex.j).mainRewardRadiusDeg = main_reward_radius_px / ppd;
 gauss_dim = graph.texture_dims(1)*graph.size_mult; % based on texture size
 
 %reward_mat = gauss_rew_land(gauss_dim, [gauss_dim/2, gauss_dim/2], rew.gauss_sigma); % reward matrix
-% Resolve the session center or the current rewSwitches block center.
+% Pick Gaussian reward center once per session: indexed center or free center.
 [ctr, max_peak_dist_norm] = resolveMaxPeakDistanceNormLocal(ctr, gauss_dim, ppd, rew);
 ex.exp.CoPs.ctr = ctr;
-[rew, jointBlockIdx, jointBlockTrialIdx] = applyCoPsJointBlockx(ex, rew, blockInfo);
 [rew, gaussCenterCache] = loadDailyGaussCenterCoordsLocal(ex, rew, ctr, max_peak_dist_norm);
 [rew, selected_center_norm, center_px] = selectGaussRewardCenterCoPsx(rew, gauss_dim, max_peak_dist_norm);
 [rew, gaussCenterCache] = saveDailyGaussCenterCoordsLocal(ex, rew, selected_center_norm, ctr, max_peak_dist_norm, gaussCenterCache);
@@ -411,8 +422,6 @@ ex.Trials(ex.j).maxPeakDistDeg = ctr.max_peak_dist_deg;
 ex.Trials(ex.j).maxPeakDistNorm = max_peak_dist_norm;
 ex.Trials(ex.j).gaussCenterCachePath = gaussCenterCache.path;
 ex.Trials(ex.j).gaussCenterCacheStatus = gaussCenterCache.status;
-ex.Trials(ex.j).jointBlockIdx = jointBlockIdx;
-ex.Trials(ex.j).jointBlockTrialIdx = jointBlockTrialIdx;
 ex.Trials(ex.j).gaussSigmaPx = gaussSigmaInfo.sigmaPx;
 ex.Trials(ex.j).gaussSigmaDeg = gaussSigmaInfo.sigmaDeg;
 ex.Trials(ex.j).gaussSigmaUnits = char(gaussSigmaInfo.units);
@@ -546,10 +555,11 @@ ex.Trials(ex.j).posT = posT;
 
 
 % Assign colors for the active input overlay.
-if strcmp(inputMode, 'mouse')
+if strcmp(inputMode, 'mouse') || ~showExperimenterOverlay
     olColBinoc = ex.idx.overlay * ones(1, 3);
     olPSz = 16;
-elseif ~isempty(ex.eyeCal.LXPos)
+%elseif ~isempty(ex.eyeCal.LXPos)
+elseif strcmp(inputMode, 'eyelink') || ~isempty(ex.eyeCal.LXPos);
     if ~ ex.setup.stereo.Display
         olColBinoc = [ex.idx.overlayRed,ex.idx.overlayGreen,ex.idx.overlayBlue, ex.idx.overlayGreen]; % right,left,binoc, mouse
         olColBinoc = [olColBinoc'*ones(1,3)];
@@ -602,8 +612,6 @@ if ~isPursuitTrial
         graph.trialLogBackgroundNoiseLvl = ex.Trials(ex.j).background_noise_lvl;
         graph.trialLogTargetVisibility = ex.Trials(ex.j).target_visibility;
         graph.trialLogRunPhase = run_phase_label;
-        graph.trialLogJointBlockIdx = jointBlockIdx;
-        graph.trialLogJointBlockTrialIdx = jointBlockTrialIdx;
         [stimTextures, targPositions, stimTiming] = makeStimulusCoPsx(ex.setup, ctl, ex.stim.seq{ex.j}, posT, graph, ex.j);
     catch err
         fprintf(2, '%s\n', getReport(err, 'extended'));
@@ -615,9 +623,18 @@ ex.Trials(ex.j).stimTiming = stimTiming;
 % Stimulus generation can take substantial time. Clear the ADC buffer here
 % so trial eye data begin close to the actual trial start, not at the
 % earlier generic pretrial reset in runEx/runExptx.
-if eyeOn
+%if eyeOn
+adcOn = strcmp(inputMode,'eye') || (isfield(ex.setup, 'dependancies') && ex.setup.dependencies.adcOn);
+if adcOn
     resetAdcBuffer(ex);
 end
+if strcmp(inputMode, 'eyelink')
+    drained = false;
+    while ~drained
+        [~,~,drained] = Eyelink('GetQueuedData');
+    end
+end
+
 
 % PRE-ALLOCATE MEMORY FOR TIMING AND DATA
 frametimestep = 1/ex.setup.refreshRate;
@@ -639,7 +656,15 @@ centerEye_t0 = GetSecs; % debounce eye re-centering
 trEye = struct('v', [], 't', [], 'n', 0, 'sacc', []);
 lastEyePos = [NaN NaN];
 lasteyeposttime = 0;
-if eyeOn
+%if eyeOn
+if strcmp(inputMode, 'eyelink')
+    trEye.source = 'eyelink';
+    trEye.units = 'pixels';
+    trEye.timebase = 'eyelink_seconds';
+    trEye.v = NaN(6, ceil(maxTrialDur * ex.setup.adc.Rate));
+    trEye.t = NaN(1, size(trEye.v,2));
+    trEye.analog = struct('v',[],'t',[],'n',0);
+elseif eyeOn
     trEye.v = NaN(length(ex.setup.adc.Channels),ceil(maxTrialDur*ex.setup.adc.Rate)); % pre-allocate memory
     trEye.t = NaN(1,ceil(maxTrialDur*ex.setup.adc.Rate));
     trEye.n = 0; % nAcquiredFrames
@@ -737,10 +762,16 @@ if pixOn
     tocSENDSTROBES = toc;
 end
 if eyeOn
+    trackerQueryBefore = GetSecs;
     trstart_Eyelink = Eyelink('TrackerTime');
+    trackerQueryAfter = GetSecs;
     toc_trstartEYELINK = toc;
 end
 trstart = GetSecs;  % start of trial time
+if strcmp(inputMode,'eyelink')
+    trEye.trackerStart = trstart_Eyelink / 1000;
+    trEye.ptbStart = (trackerQueryBefore + trackerQueryAfter) / 2;
+end
 toc_trstartGETSECS = toc;
 
 % this synchronizes the ripple and the datapixOnx clocks
@@ -858,7 +889,8 @@ while state ~= ex.states.BREAKFIX &&...
     % --------------------------------------------------------------------
     % Update the selected behavioral input (hardware gaze or mouse gaze).
     ttime = GetSecs-trstart;
-    if strcmp(inputMode, 'eye') || strcmp(inputMode, 'mouse')
+    %if strcmp(inputMode, 'eye') || strcmp(inputMode, 'mouse')
+    if ismember(inputMode, {'eye', 'eyelink', 'mouse'})
         if ttime > lasteyepostime + eyetimestep
 
             [pass_eye, trEye, lastEyePos, inputSample] = sampleCoPsInputx( ...
@@ -993,9 +1025,6 @@ while state ~= ex.states.BREAKFIX &&...
     end
     
     eyeInBounds = inputSample.inBounds;
-
-
-
 
     % give reward
     if rewOn
@@ -1181,7 +1210,7 @@ while state ~= ex.states.BREAKFIX &&...
             
             % NEW: draw eye position
             %Screen('DrawDots', ex.setup.window, olPos, olPSz, olCol, [], 2);   % dot type 2 = anti-aliased circle% draw eye dots, mouse position
-            if true
+            if showExperimenterOverlay
                 % clear overlay
                % Screen('FillRect', ex.setup.overlay, ex.idx.bg);
                
@@ -1294,7 +1323,7 @@ while state ~= ex.states.BREAKFIX &&...
 
         
         % Draw reward indicator if reward was given XX (can this be only on experimenter screen?)
-        if ~isnan(time_reward(1)) && ttime > time_reward(reward_cnt) && ttime < time_reward(reward_cnt) + 0.5
+        if showExperimenterOverlay && ~isnan(time_reward(1)) && ttime > time_reward(reward_cnt) && ttime < time_reward(reward_cnt) + 0.5
             %Screen('DrawText', ex.setup.window, 'REWARD', 100, 100, ex.idx.white);
             if isempty(ex.setup.overlay)
                 Screen('DrawText', ex.setup.window, 'REWARD', 100, 100, ex.idx.white);
@@ -1366,7 +1395,9 @@ while state ~= ex.states.BREAKFIX &&...
     %F7: recenter
     elseif strcmpi(KbName(keyCode),'F7')
         % to make sure we only re-center once per keyboard press
-        if eyeOn && GetSecs - centerEye_t0 > .5
+        if strcmp(inputMode, 'eyelink')
+            disp('Native Eyelink gaze: use tracker calibration/validation before the run');
+        elseif eyeOn && GetSecs - centerEye_t0 > .5
             ex=centerEye(ex);
             ex.Trials(ex.j).eyeRecenterCount = ex.Trials(ex.j).eyeRecenterCount + 1;
             if isfield(ex, 'eyeCal') && isfield(ex.eyeCal, 'Delta') && ~isempty(ex.eyeCal.Delta) && ...
@@ -1442,6 +1473,13 @@ Screen('Flip', ex.setup.window);
 
 % Store trial information
 ex.Trials(ex.j).ID = fix(clock);
+if strcmp(inputMode, 'eyelink')
+    [~,trEye] = checkCoPsEyelinkx(trEye, ex, false, 1);
+    trEye.v = trEye.v(:, 1:trEye.n);
+    trEye.t = trEye.t(1:trEye.n);
+    ex.Trials(ex.j).Analog = trEye.analog;
+    trEye = rmfield(trEye,'analog');
+end
 ex.Trials(ex.j).Eye = trEye;
 ex.Trials(ex.j).adcChannels = ex.setup.adc.Channels;
 ex.Trials(ex.j).inputSource = inputMode;
@@ -1456,7 +1494,7 @@ else
     ex.Trials(ex.j).TrialEndDatapixx = NaN;
 end
 if eyeOn ex.Trials(ex.j).TrialStarteyelink = trstart_Eyelink; end
-if eyeOn ex.Trials(ex.j).TrialEndEyelink = NaN; end % Would need actual eyelink time
+if eyeOn ex.Trials(ex.j).TrialEndEyelink = Eyelink('Trackertime'); end
 
 ex.Trials(ex.j).times.startTrial = time_startTrial + trstart;
 ex.Trials(ex.j).times.stimOn = time_stimOn + trstart;
@@ -1499,6 +1537,10 @@ if isfield(ex, 'eyeCal') && isfield(ex.eyeCal, 'Delta') && ~isempty(ex.eyeCal.De
     ex.Trials(ex.j).eyeDeltaCntEnd = ex.eyeCal.Delta(1).cnt;
 end
 
+ex = finalizeCoPsPointsx(ex, scaled_reward_vec, reward_threshold, ...
+    state == ex.states.TRIALCOMPLETE, ex.quit == 0);
+
+
 % number of successfully completed trials
 ex.goodtrial = ex.goodtrial + abs(good);
 
@@ -1508,6 +1550,31 @@ ex.Trials(ex.j).frameStep = frameStep(1:fi-1);
 ex.Trials(ex.j).frameState = frameState(1:fi-1);
 ex.Trials(ex.j).frameSyncPulse = frameSyncPulse(1:fi-1);
 ex.Trials(ex.j).frameStateLookup = ex.states;
+
+% feedback is outside the recorded trial interval and stimulus flip stream
+ex.Trials(ex.j).pointsFeedbackOn = NaN;
+ex.Trials(ex.j).pointsFeedbackOff = NaN;
+ex.Trials(ex.j).trialAdvanceWaitOn = NaN;
+ex.Trials(ex.j).trialAdvanceWaitOff = NaN;
+showPoints = rew.points_feedback_on && ex.Trials(ex.j).trialScored && ...
+    mod(ex.j, rew.points_feedback_every_n_trials) == 0;
+waitForNextTrial = ctl.advance_trial_with_space && ex.j < ex.finish;
+if ex.quit == 0 && (showPoints || waitForNextTrial)
+    [feedbackOn, feedbackOff, quitRequested] = showTrialAdvanceLocal(...
+        ex.setup.window, window_background_color, ex.idx.white, ...
+        ex.Trials(ex.j).pointsEarned, ex.totalPoints, ...
+        rew.points_feedback_text_size, rew.points_feedback_decimals, showPoints);
+    ex.Trials(ex.j).trialAdvanceWaitOn = feedbackOn;
+    ex.Trials(ex.j).trialAdvanceWaitOff = feedbackOff;
+    if showPoints
+        ex.Trials(ex.j).pointsFeedbackOn = feedbackOn;
+        ex.Trials(ex.j).pointsFeedbackOff = feedbackOff;
+    end
+    if quitRequested
+        ex.quit = 4;
+    end
+end
+
 
 % -------------------------------------------------------------------------
 % TRIAL ONLINE OUTPUT FOR EXPERIMENTER
@@ -1526,6 +1593,56 @@ if ~isempty(stimTextures)
 end
 
 end
+
+    function [feedbackOn, feedbackOff, quitRequested] = showTrialAdvanceLocal(window, backgroundColor, textColor, trialPoints, totalPoints, textSize, decimals, showPoints)
+quitRequested = false;
+        textSize = double(textSize);
+if ~isscalar(textSize) || ~isfinite(textSize) || textSize <= 0
+    textSize = 48;
+end
+textSize = round(textSize);
+decimals = double(decimals);
+if ~isscalar(decimals) || ~isfinite(decimals) || decimals < 0
+    decimals = 1;
+end
+decimals = min(6, round(decimals));
+oldTextSize = Screen('TextSize', window);
+Screen('TextSize', window, textSize);
+Screen('FillRect', window, backgroundColor);
+if showPoints
+    numberFormat = ['%.' num2str(decimals) 'f'];
+    feedbackText = sprintf([numberFormat 'points\n\nTotal:' numberFormat ...
+        'points\n\nPress SPACE to continue\nF4 to quit'], ...
+        trialPoints, totalPoints);
+else
+    feedbackText = sprintf('Press SPACE to start the next trial\n\nF4 to quit');
+end
+DrawFormattedText(window, feedbackText, 'center', 'center', textColor, [], [], [], 1.5);
+feedbackOn = Screen('Flip', window);
+Screen('TextSize', window, oldTextSize);
+
+% require a new space press: discard any key held when the trial ended,
+% then wait for SPACE and its release to carry into next trial
+KbName('UnifyKeyNames');
+spaceKey = KbName('space');
+quitKey = KbName('F4');
+KbReleaseWait;
+while true
+    [keyIsDown, ~, keyCode] = KbCheck;
+    if keyIsDown && any(keyCode(quitKey))
+        quitRequested = true;
+        break
+    elseif keyIsDown && any(keyCode(spaceKey))
+        break
+    end
+    WaitSecs('YieldSecs', 0.01);
+end
+KbReleaseWait;
+
+Screen('FillRect', window, backgroundColor);
+feedbackOff = Screen('Flip', window);
+end
+
 
 
 function [nsteps, meta] = computeSmoothPursuitTrialMetaLocal(pursuitTrialIdx, rew, window_size, gauss_dim, xshift, yshift, ppd, step_wait_secs, pur)

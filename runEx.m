@@ -1,7 +1,9 @@
 function ex = runEx(eyeStr, overlayOn, pixOn, rewOn, eyeOn, skipQuest, options)
 % Run the CoPs task.
 %
-% Hardware-free test examples:
+% usage examples:
+%   runEx() native eyelink gaze and tracker calibration (default)
+%   runEx('t', eyeSource='analog') legacy analog eye calibration
 %   runEx('test1')
 %   runEx('test1', testTrials=5)
 %   runEx('test1', viewingDistanceCm=60, monitorWidthCm=53)
@@ -11,21 +13,24 @@ arguments
     eyeStr {mustBeText} = 't' % calibration mode, or 'test1' for the portable mouse test
     overlayOn  {mustBeNumericOrLogical} = 1
     pixOn  {mustBeNumericOrLogical} = true
-    rewOn {mustBeNumericOrLogical} = true
+    rewOn {mustBeNumericOrLogical} = false
     eyeOn  {mustBeNumericOrLogical} = true
     skipQuest {mustBeNumericOrLogical} = true
-    options.testTrials (1,1) double {mustBeInteger, mustBePositive} = 1
-    options.viewingDistanceCm (1,1) double {mustBePositive} = 100
-    options.monitorWidthCm (1,1) double {mustBePositive} = 50
-    options.fullscreen (1,1) logical = false
-    options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = [1280 720]
+    options.eyeSource {mustBeMember(options.eyeSource,{'eyelink','analog'})} = 'eyelink'
+    options.testTrials (1,1) double {mustBeInteger, mustBePositive} = 3
+    options.viewingDistanceCm (1,1) double {mustBePositive} = 55 %100
+    options.monitorWidthCm (1,1) double {mustBePositive} = 54 %50
+    options.fullscreen (1,1) logical = true %false
+    options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = [2560 1440] %[1280 720]
 end
 
-dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn);
+dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn, options.eyeSource);
 pixOn = dependencies.pixOn;
 eyeOn = dependencies.eyeOn;
 rewOn = dependencies.rewOn;
 
+% close any display left by a previous run before resetting hardware handles
+closeCoPsDisplayx();
 if dependencies.datapixxOn
     Datapixx('Close')
 end
@@ -50,7 +55,7 @@ if strcmp(dependencies.profile, 'test1')
     ex.setup.windowSizePx = options.windowSizePx;
 end
 
-ex = getDefaultSettingsx(ex, skipQuest, initializeAdc=eyeOn);
+ex = getDefaultSettingsx(ex, skipQuest, initializeAdc=false); %eyeOn
 if strcmp(dependencies.profile, 'test1')
     [ex, testConfig] = configureCoPsTestRunx(ex, options.testTrials);
     ex.setup.testConfig = testConfig;
@@ -59,17 +64,37 @@ if strcmp(dependencies.profile, 'test1')
 end
 ex.setup.dependencies = dependencies;
 ex.setup.inputMode = dependencies.inputMode;
+ex.setup.showExperimenterOverlay = logical(overlayOn);
+if strcmp(dependencies.inputMode, 'eyelink')
+    % ADC is retained only for independent photodiode/camera sync signals
+    ex.setup.adc.Channels = [6 7];
+    ex.setup.adc.DiffChannels = [0 0];
+end
+if dependencies.adcOn
+    resetAdcBuffer(ex);
+end
+
 ex.states.PREGO = 5.95
 
-if eyeOn
+% install cleanup before initialization, including partially opened windows
+displayCleanup = onCleanup(@closeCoPsDisplayx); %ok<NASGU>
+if ~overlayOn
+    ex.setup.stereo.Display = false;
+    ex.setup.stereo.Mode = 0;
+    ex = initDisplayx(ex);
+elseif eyeOn && pixOn
     ex = initDisplayxx(ex, overlayOn);
+elseif eyeOn
+    ex.setup.stereo.Display = false;
+    ex = initDisplayx(ex);
 else
-    ex = initDisplayx(ex );%can run initDisplayx for normal view
+    ex = initDisplayx(ex);%can run initDisplayx for normal view
 end
-displayCleanup = onCleanup(@closeCoPsDisplayx); %#ok<NASGU>
 pause(1)
 
-if eyeOn
+if eyeOn && strcmp(dependencies.inputMode, 'eyelink')
+    ex = initCoPsEyelinkx(ex)
+elseif eyeOn
     
     ex.setup.VSdirRoot = pwd;
     % handles = initEyeHandlesx(ex);
@@ -164,9 +189,9 @@ end
 %run Expt starts
 ex.j = 1;  % current trial number
 ex.goodtrial = 0;  % counter for successful trials
+ex.totalPoints = 0; % counter for total points earned
 ex.loopcnt = zeros(1, ex.finish);  % loop counter for each trial
 ex.changedBlock = 0;  % keeps track of whether we changed blocks
-ex = prepareCoPsJointBlocksx(ex);
 ex.exp.total_nreps = getCoPsTotalRepsx(ex);
 ex.finish = ex.exp.total_nreps;
 ex = prepareCoPsTrialParamSchedules(ex);
@@ -206,12 +231,7 @@ ex.Header.fileID = clocktime;
 sfx = makeFilenameSuffixCoPsx(ex);
 [fname,dirName,trDir] = makeFilenameAndDirx(ex, sfx); % no difference right now... (as in v2.7)
 % new: separate dirs to reduce mess
-saveSubfolder = 'experimental';
-if isfield(ex.exp.CoPs.ctl, 'jointBlocks') && ...
-        ~isempty(ex.exp.CoPs.ctl.jointBlocks) && logical(ex.exp.CoPs.ctl.jointBlocks(1))
-    saveSubfolder = 'rewSwitches';
-end
-expDir = fullfile(dirName, saveSubfolder);
+expDir = fullfile(dirName,'experimental');
 edfDir = fullfile(dirName,'edf');
 if ~exist(expDir,'dir')
     mkdir(expDir);
@@ -260,6 +280,10 @@ if eyeOn && Eyelink('IsConnected') == 1
         ex.Header.edfFileName = sprintf('%02d%02d%02d%02d.edf',clocktime(2),clocktime(3),...
             clocktime(4),clocktime(5));
         Eyelink('OpenFile',ex.Header.edfFileName);
+        if strcmp(dependencies.inputMode, 'eyelink')
+            r = ex.setup.screenRect;
+            Eyelink('Message', 'DISPLAY_COORDS 0 0 %d %d', r(3)-r(1)-1, r(4)-r(2)-1);
+        end
         Eyelink('Message','exFileName: %s',fname);
         Eyelink('StartRecording');
     end
@@ -307,7 +331,7 @@ while ex.j <= ex.finish && ex.quit~=4
     if ex.quit == 0
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         %%%%%%%%%%%%%%%%% run Trial
-        if eyeOn
+        if dependencies.adcOn %eyeOn
             resetAdcBuffer(ex);  %% reset AdcBuffer for EyeSignals
         end
         
@@ -386,7 +410,7 @@ while ex.j <= ex.finish && ex.quit~=4
 end
 
 % end experiment
-playRandomLines(ex);
+% playRandomLines(ex);
 
 % signal end of experiment
 if pixOn

@@ -1,4 +1,4 @@
-function dependencies = resolveCoPsRunDependenciesx(profileName, pixOn, eyeOn, rewOn)
+function dependencies = resolveCoPsRunDependenciesx(profileName, pixOn, eyeOn, rewOn, eyeSource)
 % Resolve optional hardware dependencies and the behavioral input source.
 %
 % The test1 profile is deliberately hardware-free. Other profiles preserve
@@ -11,6 +11,7 @@ arguments
     pixOn {mustBeNumericOrLogical} = true
     eyeOn {mustBeNumericOrLogical} = true
     rewOn {mustBeNumericOrLogical} = true
+    eyeSource {mustBeMember(eyeSource, {'eyelink','analog'})} = 'eyelink'
 end
 
 dependencies = struct();
@@ -25,12 +26,21 @@ if strcmp(dependencies.profile, 'test1')
     dependencies.rewOn = false;
 end
 
-dependencies.datapixxOn = dependencies.pixOn || ...
-    dependencies.eyeOn || dependencies.rewOn;
+dependencies.eyeSource = char(eyeSource);
+dependencies.adcOn = dependencies.eyeOn && ...
+    (dependencies.pixOn || strcmp(eyeSource, 'analog'));
+dependencies.datapixxOn = dependencies.pixOn || dependencies.adcOn || dependencies.rewOn;
+%dependencies.datapixxOn = dependencies.pixOn || ...
+    %dependencies.eyeOn || dependencies.rewOn;
 dependencies.eyelinkOn = dependencies.eyeOn;
 
 if dependencies.eyeOn
     dependencies.inputMode = 'eye';
+    if strcmp(eyeSource, 'analog')
+        dependencies.inputMode = 'eye';
+    else
+        dependencies.inputMode = 'eyelink';
+    end
 else
     dependencies.inputMode = 'mouse';
 end

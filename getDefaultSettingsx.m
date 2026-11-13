@@ -87,6 +87,17 @@ if strcmpi(ex.setup.computerName,'hn-stim-1')
     
     % for Datapixx the Buffer size has to be <1e6 for binocular signals; for Propixx 1e7 works
     ex.setup.adc.NumBufferFrames = 9e5;  % large number for lots of buffer space
+
+elseif strcmp(ex.setup.computerName, 'nei-op4-Precision-3280-Compact') % op4 human setup
+
+    ex.setup.viewingDistance = 55;
+    ex.setup.monitorWidth = 54;
+
+    ex.setup.mouseXOffset = 0;
+    ex.setup.dirRoot = '/home/nei-op4/Desktop/CoPs';
+    
+    % might have to be changed since we are recording monocular signal
+    ex.setup.adc.NumBufferFrames = 1e7;
     
 elseif strcmpi(ex.setup.computerName,'lab-ms-98h9') % dome in Leopold lab
     
