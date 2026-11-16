@@ -23,7 +23,12 @@ end
 
 desktopRect = Screen('Rect', overlayScreen);
 desktopSize = desktopRect(3:4) - desktopRect(1:2);
-stimulusRect = Screen('Rect', ex.setup.screenNum);
+% Use the opened stimulus window so windowed tests keep their aspect ratio.
+if isfield(ex.setup, 'screenRect') && ~isempty(ex.setup.screenRect)
+    stimulusRect = ex.setup.screenRect;
+else
+    stimulusRect = Screen('Rect', ex.setup.screenNum);
+end
 stimulusSize = stimulusRect(3:4) - stimulusRect(1:2);
 requestedSize = [960 540];
 if isfield(ex.setup, 'overlayWindowSizePx')

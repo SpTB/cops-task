@@ -11,9 +11,6 @@ ex.setup.screenNum = max(Screen('Screens'));
 % initDisplay
 PsychImaging('PrepareConfiguration');
 PsychImaging('AddTask', 'General', 'UseDataPixx');
-if overlayOn
-    ex = configureCoPsOverlayDisplayx(ex);
-end
 
 if ex.setup.stereo.Display
     Datapixx('EnableVideoStereoBlueline');
@@ -50,6 +47,7 @@ else
 end
 ex.setup.overlay = [];
 if overlayOn
+    ex = configureCoPsOverlayDisplayx(ex);
     ex = openCoPsOverlayDisplayx(ex);
 end
 

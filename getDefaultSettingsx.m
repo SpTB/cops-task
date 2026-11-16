@@ -314,12 +314,16 @@ end
 if skipQuests
     ex.setup.filePrefix = defaults.filePrefix;
 else
-    animalPrefix = inputdlg('Enter first two letters of monkey name','Subject');
-    if length(animalPrefix{1})<2
-        animalPrefix{1} = 'xx';
+    animalPrefix = inputdlg('Subject ID / filename prefix (e.g. ka or P001)', 'Subject');
+    if isempty(animalPrefix)
+        error('getDefaultSettingsx:SubjectCancelled', 'Subject entry cancelled.');
     end
-    ex.setup.filePrefix = lower(animalPrefix{1}(1:2));
-    switch lower(ex.setup.filePrefix)
+    ex.Header.subjectID = strtrim(animalPrefix{1});
+    ex.setup.filePrefix = sanitizeCoPsFilePrefixx(ex.Header.subjectID);
+    % Retain legacy animal-folder routing while preserving the full entered
+    % string for filenames and participant metadata.
+    animalCode = lower(ex.setup.filePrefix(1:min(2, numel(ex.setup.filePrefix))));
+    switch animalCode
         case 'ki'
             ex.Header.animal = 'kiwi';
         case 'ma'

@@ -501,6 +501,10 @@ for j = 1:nsteps+1 %add last image being same as first but with circles
     end
     % Store additional info
     targPositions(j).step = j;
+    % Match the rendered null-condition gray for this same source texture.
+    nullGray = mean(double(target_img(:)), 'omitnan');
+    if ~isfinite(nullGray), nullGray = 0; end
+    targPositions(j).nullBackgroundGray = round(min(254, max(1, nullGray)));
     targPositions(j).image_idx = target_idx;
     targPositions(j).targetRotationDeg = 90 * target_rotation_k;
     targPositions(j).backgroundRotationDeg = 90 * background_rotation_k;

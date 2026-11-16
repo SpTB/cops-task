@@ -1,5 +1,10 @@
 # Synchronizing task timestamps to camera video via Datapixx ADC
 
+For the frame-coded photodiode patch, recording options, decoder, and hardware
+test procedure, see [Binary photodiode synchronization](docs/photodiode_sync.md).
+Native EyeLink runs save independent ADC signals in `Trials(i).Analog`; the
+`Eye` fields described below refer to legacy analog-eye acquisition.
+
 This repo already records ADC samples and per-sample Datapixx timestamps into each trial:
 
 - `ex.Trials(i).Eye.v` (channels × samples)

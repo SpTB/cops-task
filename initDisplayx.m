@@ -47,9 +47,10 @@ ex.setup.screenNum = max(availableScreens);
 
 % Basic screen parameters (without hardware dependencies)
 try
-    % Portable tests default to a centered, bounded window so an error does
-    % not take over the whole desktop. Fullscreen remains opt-in.
+    % Windowed tests (including mouse_mini by default) use a centered,
+    % bounded window. Fullscreen tests leave the opening rectangle empty.
     openRect = [];
+    virtualSize = [];
     useWindowedTest = isTestMode && ...
         (~isfield(ex.setup, 'fullscreen') || ~ex.setup.fullscreen);
     if useWindowedTest
@@ -61,18 +62,37 @@ try
         end
         windowSize = min(requestedSize, max([320 240], floor(displaySize .* 0.8)));
         openRect = CenterRect([0 0 windowSize], displayRect);
+        virtualSize = resolvePreviewDisplaySize(ex, displaySize);
     end
 
     % Open a basic window without stereo or special features.
     % discard pending stereo/DataPixx imaging tasks from earlier attempts
     PsychImaging('PrepareConfiguration');
+    if useWindowedTest
+        % Draw the complete task in fullscreen coordinates, then fit it into
+        % the desktop window. Aspect fitting adds borders instead of cropping.
+        PsychImaging('AddTask', 'General', 'UsePanelFitter', virtualSize, 'Aspect');
+    end
+    ex.setup.panelFitterOn = useWindowedTest;
+    ex.setup.guiWindow = useWindowedTest;
+    ex.setup.windowRectPx = openRect;
+    ex.setup.virtualDisplaySizePx = virtualSize;
     useWindowedOverlay = isfield(ex.setup, 'showExperimenterOverlay') && ...
         ex.setup.showExperimenterOverlay;
-    if useWindowedOverlay
-        ex = configureCoPsOverlayDisplayx(ex);
+    if useWindowedTest
+        % Use normal desktop decorations and window-manager behavior.
+        [ex.setup.window, ex.setup.screenRect] = PsychImaging( ...
+            'OpenWindow', ex.setup.screenNum, 128, openRect, ...
+            [], [], [], [], [], kPsychGUIWindow);
+    else
+        [ex.setup.window, ex.setup.screenRect] = PsychImaging( ...
+            'OpenWindow', ex.setup.screenNum, 128, openRect);
     end
-    [ex.setup.window, ex.setup.screenRect] = PsychImaging( ...
-        'OpenWindow', ex.setup.screenNum, 128, openRect);
+    if useWindowedTest
+        % Query the usable drawing rectangle explicitly; it is the virtual
+        % canvas rather than the physical desktop-window rectangle.
+        ex.setup.screenRect = Screen('Rect', ex.setup.window);
+    end
     
     % Set basic screen parameters
     ex.setup.refreshRate = FrameRate(ex.setup.window);
@@ -85,6 +105,7 @@ try
     
     ex.setup.overlay = [];
     if useWindowedOverlay
+        ex = configureCoPsOverlayDisplayx(ex);
         ex = openCoPsOverlayDisplayx(ex);
     end
     
@@ -93,7 +114,8 @@ try
     fprintf('  Refresh rate: %.1f Hz\n', ex.setup.refreshRate);
     fprintf('  Fixation center: [%d, %d]\n', ex.fix.PCtr(1), ex.fix.PCtr(2));
     if useWindowedTest
-        fprintf('  Display mode: windowed test (%dx%d)\n', ...
+        fprintf('  Display mode: windowed preview (%dx%d; logical %dx%d)\n', ...
+            openRect(3) - openRect(1), openRect(4) - openRect(2), ...
             ex.setup.screenRect(3) - ex.setup.screenRect(1), ...
             ex.setup.screenRect(4) - ex.setup.screenRect(2));
     end
@@ -106,5 +128,26 @@ catch err
     fprintf('✗ Failed to open display window: %s\n', err.message);
     rethrow(err);
 end
+end
 
+
+function virtualSize = resolvePreviewDisplaySize(ex, displaySize)
+virtualSize = double(displaySize);
+if ~isfield(ex, 'exp') || ~isfield(ex.exp, 'CoPs') || ...
+        ~isfield(ex.exp.CoPs, 'graph')
+    return
+end
+graph = ex.exp.CoPs.graph;
+if ~isfield(graph, 'texture_dims') || numel(graph.texture_dims) < 2 || ...
+        ~isfield(graph, 'size_mult') || ~isscalar(graph.size_mult)
+    return
+end
+textureSize = double(graph.texture_dims([2 1])) .* double(graph.size_mult);
+textureSize = textureSize(:)';
+if any(~isfinite(textureSize)) || any(textureSize <= 0)
+    return
+end
+% Small laptops may also have a native display shorter than the configured
+% stimulus. Enlarge the logical canvas uniformly so the whole stimulus fits.
+virtualSize = ceil(virtualSize .* max([1, textureSize ./ virtualSize]));
 end

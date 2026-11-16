@@ -1,223 +1,120 @@
-function [fname, dirName, trDir ] = makeFilenameAndDir(ex,fileSuffix)
+function [fname, dirName, trDir] = makeFilenameAndDirx(ex, fileSuffix)
+% Choose a session filename and reserve its per-trial directory.
 
-% makes the filename of the current experiment file and (if needed) creates
-% a new directory where to store it
-
-% history
-% 08/28/14  hn: wrote it
-% 09/02/15  hn: included filePrefixes for kaki and lychee
-% 02/02/16  hn: re-format date string to include a leading 0 in months
-% 12/04/20  hn: included filePrefix for lemieux
-
-if nargin<2
-    fileSuffix = makeFilenameSuffix(ex);
-end
-
-% curr_date = datestr(date,26);
-% dateString = [num2str(curr_date(1)) '.' num2str(curr_date(2)) '.'
-% num2str(curr_date(3))]; % old version
-dateString = strrep(datestr(date,26),'/','.');
-%timeString=strrep(datestr(rem(now,1)),' ', '');
-[a,b] = strtok(datestr(now,21),' ');
-timeString = strrep(b,':','.');
-timeString = strrep(timeString,' ','');
-timeString = timeString(1:5);
-if ~isfield(ex.Header,'animal') 
-    filePrefix = input('please input the file prefix ("ma" for mango, "ki" for kiwi, "ka" for kaki, "ly" for lychee, "t" for testfile):  ','s');
-else
-    switch lower(ex.Header.animal)
-        case 'barnum'
-            filePrefix = 'ba';
-        case 'mango'
-            filePrefix = 'ma';
-        case 'kiwi'
-            filePrefix = 'ki';
-        case 'kaki'
-            filePrefix = 'ka';
-        case 'lychee'
-            filePrefix = 'ly';
-        case 'lemieux'
-            filePrefix = 'le';  
-        case 'tempura'
-            filePrefix = 'te';  
-        case 'hummus'
-            filePrefix = 'hu';  
-        case 'shocktop'
-            filePrefix = 'sh';      
-         case 'jocamo'
-            filePrefix = 'jo';      
-                       
-        case 'test'
-            filePrefix = 't';
-        otherwise 
-            filePrefix = 'xx';
+if nargin < 2
+    if isfield(ex, 'exp') && isfield(ex.exp, 'CoPs')
+        fileSuffix = makeFilenameSuffixCoPsx(ex);
+    else
+        fileSuffix = makeFilenameSuffix(ex);
     end
 end
+fileSuffix = localText(fileSuffix, 'fileSuffix');
+if ~isempty(regexp(fileSuffix, '[<>:"/\\|?*\x00-\x1F\x7F]', 'once'))
+    error('makeFilenameAndDirx:InvalidSuffix', ...
+        'fileSuffix must not contain path separators or invalid filename characters.');
+end
 
-if isfield(ex.Header,'SessionID')
-    timeString = [ex.Header.SessionID '_' timeString];
-end    
-    
-cur_dir = pwd;
-switch filePrefix
-    case 'ki'
-        fname = ['ki_' timeString '.' fileSuffix '.mat'];
-        trDir = ['ki_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/kiwi/' dateString])
-            cd ([ex.setup.dirRoot '/kiwi'])
-            mkdir(dateString)
+header = struct();
+if isfield(ex, 'Header')
+    header = ex.Header;
+end
+hasAnimal = isfield(header, 'animal');
+hasSubjectID = isfield(header, 'subjectID') && ~isempty(header.subjectID);
+hasPrefix = isfield(ex.setup, 'filePrefix') && ~isempty(ex.setup.filePrefix);
 
-        end
-        dirName = [ex.setup.dirRoot '/kiwi/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
-        trDir = [dirName '/' trDir];
-    case 'ma'
-        fname = ['ma_' timeString '.' fileSuffix '.mat'];
-        trDir = ['ma_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/mango/' dateString])
-            cd([ex.setup.dirRoot '/mango'])
-            mkdir(dateString)
-        end
+if hasPrefix && (hasAnimal || hasSubjectID)
+    % Explicit subject input takes priority over the old animal-name mapping.
+    filePrefix = sanitizeCoPsFilePrefixx(ex.setup.filePrefix);
+elseif hasAnimal
+    [filePrefix, ~] = localAnimalIdentity(header.animal);
+else
+    % Preserve the legacy prompt when only the automatic default prefix exists.
+    enteredPrefix = input('Please input the file prefix (e.g. ma, ka, or a participant ID): ', 's');
+    if isempty(strtrim(enteredPrefix))
+        enteredPrefix = 't';
+    end
+    filePrefix = sanitizeCoPsFilePrefixx(enteredPrefix);
+end
 
-        dirName = [ex.setup.dirRoot '/mango/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
+if hasAnimal
+    [~, subjectFolder] = localAnimalIdentity(header.animal);
+else
+    subjectFolder = localFolderForPrefix(filePrefix);
+end
 
-        trDir = [dirName '/' trDir];
-    case 'ka'
-        fname = ['ka_' timeString '.' fileSuffix '.mat'];
-        trDir = ['ka_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/kaki/' dateString])
-            cd([ex.setup.dirRoot '/kaki'])
-            mkdir(dateString)
-        end
+timestamp = now;
+dateString = datestr(timestamp, 'yyyy.mm.dd');
+timeString = datestr(timestamp, 'HH.MM');
+if isfield(header, 'SessionID') && ~isempty(header.SessionID)
+    timeString = [sanitizeCoPsFilePrefixx(header.SessionID) '_' timeString];
+end
+dirName = fullfile(localText(ex.setup.dirRoot, 'setup.dirRoot'), subjectFolder, dateString);
+localMakeDirectory(dirName);
 
-        dirName = [ex.setup.dirRoot '/kaki/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
-
-        trDir = [dirName '/' trDir];
-    case 'ly'
-        fname = ['ly_' timeString '.' fileSuffix '.mat'];
-        trDir = ['ly_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/lychee/' dateString])
-            cd([ex.setup.dirRoot '/lychee'])
-            mkdir(dateString)
-        end
-
-        dirName = [ex.setup.dirRoot '/lychee/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
-
-        trDir = [dirName '/' trDir];
-    case 'le'
-        fname = ['le_' timeString '.' fileSuffix '.mat'];
-        trDir = ['le_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/lemieux/' dateString])
-            cd([ex.setup.dirRoot '/lemieux'])
-            mkdir(dateString)
-        end
-
-        dirName = [ex.setup.dirRoot '/lemieux/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
-
-        trDir = [dirName '/' trDir];
-
-    case 'te'
-        fname = ['te_' timeString '.' fileSuffix '.mat'];
-        trDir = ['te_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/tempura/' dateString])
-            cd([ex.setup.dirRoot '/tempura'])
-            mkdir(dateString)
-        end
-
-        dirName = [ex.setup.dirRoot '/tempura/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
-
-        trDir = [dirName '/' trDir];
-    case 'hu'
-        fname = ['hu_' timeString '.' fileSuffix '.mat'];
-        trDir = ['hu_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/hummus/' dateString])
-            cd([ex.setup.dirRoot '/hummus'])
-            mkdir(dateString)
-        end
-
-        dirName = [ex.setup.dirRoot '/hummus/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
-
-        trDir = [dirName '/' trDir];
-        
-     case 'sh'
-        fname = ['sh_' timeString '.' fileSuffix '.mat'];
-        trDir = ['sh_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/shocktop/' dateString])
-            cd([ex.setup.dirRoot '/shocktop'])
-            mkdir(dateString)
-        end
-
-        dirName = [ex.setup.dirRoot '/shocktop/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
-
-        trDir = [dirName '/' trDir];     
+sessionNumber = 1;
+while true
+    sessionTime = timeString;
+    if sessionNumber > 1
+        sessionTime = sprintf('%s_%02d', timeString, sessionNumber);
+    end
+    stem = [filePrefix '_' sessionTime '.' fileSuffix];
+    fname = [stem '.mat'];
+    trDir = fullfile(dirName, stem);
+    if exist(trDir, 'file') == 0 && ...
+            exist(fullfile(dirName, fname), 'file') == 0 && ...
+            exist(fullfile(dirName, 'experimental', fname), 'file') == 0
+        break
+    end
+    sessionNumber = sessionNumber + 1;
+end
+localMakeDirectory(trDir);
+end
 
 
-    case 'ba'
-        fname = ['ba_' timeString '.' fileSuffix '.mat'];
-        trDir = ['ba_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/barnum/' dateString])
-            cd([ex.setup.dirRoot '/barnum'])
-            mkdir(dateString)
-        end
+function [prefix, folder] = localAnimalIdentity(animal)
+animal = lower(strtrim(localText(animal, 'Header.animal')));
+animals = {'kiwi', 'mango', 'kaki', 'lychee', 'lemieux', ...
+    'tempura', 'hummus', 'shocktop', 'barnum', 'jocamo'};
+prefixes = {'ki', 'ma', 'ka', 'ly', 'le', 'te', 'hu', 'sh', 'ba', 'jo'};
+idx = find(strcmp(animal, animals), 1);
+if isempty(idx)
+    prefix = 't';
+    folder = 'test';
+else
+    prefix = prefixes{idx};
+    folder = animals{idx};
+end
+end
 
-        dirName = [ex.setup.dirRoot '/barnum/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
 
-        trDir = [dirName '/' trDir];
-     case 'jo'
-        fname = ['jo_' timeString '.' fileSuffix '.mat'];
-        trDir = ['jo_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/jocamo/' dateString])
-            cd([ex.setup.dirRoot '/jocamo'])
-            mkdir(dateString)
-        end
+function folder = localFolderForPrefix(prefix)
+prefixes = {'ki', 'ma', 'ka', 'ly', 'le', 'te', 'hu', 'sh', 'ba', 'jo'};
+folders = {'kiwi', 'mango', 'kaki', 'lychee', 'lemieux', ...
+    'tempura', 'hummus', 'shocktop', 'barnum', 'jocamo'};
+idx = find(strcmpi(prefix, prefixes), 1);
+if isempty(idx)
+    folder = 'test';
+else
+    folder = folders{idx};
+end
+end
 
-        dirName = [ex.setup.dirRoot '/jocamo/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
 
-        trDir = [dirName '/' trDir];
-       
-    otherwise
-        fname = ['t_' timeString '.' fileSuffix '.mat'];  
-        trDir = ['t_' timeString '.' fileSuffix ];
-        if ~exist([ex.setup.dirRoot '/test/' dateString])
-            cd ([ex.setup.dirRoot '/test'])            
-            dateString
+function value = localText(value, fieldName)
+if isstring(value) && isscalar(value) && ~ismissing(value)
+    value = char(value);
+elseif ~(ischar(value) && (isrow(value) || isempty(value)))
+    error('makeFilenameAndDirx:InvalidText', '%s must be a text scalar.', fieldName);
+end
+end
 
-            mkdir(dateString)
 
-        end
-        dirName = [ex.setup.dirRoot '/test/' dateString];
-        cd(dirName)
-        mkdir(trDir)
-        cd(cur_dir)
-        trDir = [dirName '/' trDir];
-
+function localMakeDirectory(directory)
+if exist(directory, 'dir') ~= 7
+    [success, message] = mkdir(directory);
+    if ~success
+        error('makeFilenameAndDirx:CreateDirectoryFailed', ...
+            'Could not create output directory %s: %s', directory, message);
+    end
+end
 end

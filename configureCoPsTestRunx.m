@@ -1,9 +1,10 @@
-function [ex, testConfig] = configureCoPsTestRunx(ex, nTrials)
+function [ex, testConfig] = configureCoPsTestRunx(ex, nTrials, profileName)
 % Apply the portable, Psychtoolbox-only CoPs test configuration.
 
 arguments
     ex struct
     nTrials (1,1) double {mustBeInteger, mustBePositive} = 1
+    profileName {mustBeMember(profileName, {'test1','mouse_mini'})} = 'test1'
 end
 
 repoRoot = fileparts(mfilename('fullpath'));
@@ -64,13 +65,13 @@ ex.exp.CoPs.dirs.all = localTrailingSeparator(stimulusRoot);
 ex.exp.CoPs.graph.texture_root = testDataRoot;
 ex.exp.CoPs.graph.texture_folder = 'test_stim';
 ex.exp.CoPs.graph.texture_folder_resolved = ex.exp.CoPs.dirs.all;
-ex.exp.CoPs.graph.background_noise_lvl = 1;
-ex.exp.CoPs.graph.target_visibility = 1;
+%ex.exp.CoPs.graph.background_noise_lvl = 1;
+%ex.exp.CoPs.graph.target_visibility = 1;
 ex.exp.CoPs.graph.shuffleStimulusSchedule = false;
 ex.exp.CoPs.ctl.coherence = 1;
 
 testConfig = struct( ...
-    'profile', 'test1', ...
+    'profile', char(profileName), ...
     'nTrials', nTrials, ...
     'viewingDistanceCm', ex.setup.viewingDistance, ...
     'monitorWidthCm', ex.setup.monitorWidth, ...

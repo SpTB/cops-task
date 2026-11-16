@@ -1,7 +1,8 @@
-function dependencies = resolveCoPsRunDependenciesx(profileName, pixOn, eyeOn, rewOn, eyeSource)
+function dependencies = resolveCoPsRunDependenciesx(profileName, pixOn, eyeOn, rewOn, eyeSource, photodiodeRecord)
 % Resolve optional hardware dependencies and the behavioral input source.
 %
-% The test1 profile is deliberately hardware-free. Other profiles preserve
+% The test1 and mouse_mini profiles are hardware-free unless photodiodeRecord
+% is explicitly enabled (ADC only). Other profiles preserve
 % the caller-provided switches. Keeping this policy in one place makes mixed
 % dependency configurations easier to exercise without adding profile checks
 % throughout the task code.
@@ -12,6 +13,7 @@ arguments
     eyeOn {mustBeNumericOrLogical} = true
     rewOn {mustBeNumericOrLogical} = true
     eyeSource {mustBeMember(eyeSource, {'eyelink','analog'})} = 'eyelink'
+    photodiodeRecord (1,1) logical = false
 end
 
 dependencies = struct();
@@ -20,15 +22,16 @@ dependencies.pixOn = logical(pixOn);
 dependencies.eyeOn = logical(eyeOn);
 dependencies.rewOn = logical(rewOn);
 
-if strcmp(dependencies.profile, 'test1')
+if ismember(dependencies.profile, {'test1', 'mouse_mini'})
     dependencies.pixOn = false;
     dependencies.eyeOn = false;
     dependencies.rewOn = false;
 end
 
 dependencies.eyeSource = char(eyeSource);
-dependencies.adcOn = dependencies.eyeOn && ...
-    (dependencies.pixOn || strcmp(eyeSource, 'analog'));
+dependencies.photodiodeRecord = photodiodeRecord;
+dependencies.adcOn = photodiodeRecord || (dependencies.eyeOn && ...
+    (dependencies.pixOn || strcmp(eyeSource, 'analog')));
 dependencies.datapixxOn = dependencies.pixOn || dependencies.adcOn || dependencies.rewOn;
 %dependencies.datapixxOn = dependencies.pixOn || ...
     %dependencies.eyeOn || dependencies.rewOn;

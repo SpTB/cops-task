@@ -8,6 +8,11 @@ ex.setup.el = EyelinkInitDefaults(ex.setup.window);
 ex.setup.el.edfFileName = elConfig.edfFileName;
 ex.setup.el.binoc = elConfig.binoc;
 ex.setup.el.Cmd_SampleData = elConfig.Cmd_SampleData;
+if isfield(ex.setup, 'keyboards') && ex.setup.keyboards.separate
+    ex.setup.el.devicenumber = ex.setup.keyboards.experimenterIndex;
+    [~, ~, ex.setup.el.lastKeyCodes] = KbCheck(ex.setup.el.devicenumber);
+    EyelinkUpdateDefaults(ex.setup.el);
+end
 Eyelink('SetofflineMode');
 rect = ex.setup.screenRect;
 coords = [0 0 rect(3)-rect(1)-1 rect(4)-rect(2)-1];

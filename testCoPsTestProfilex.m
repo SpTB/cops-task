@@ -26,6 +26,19 @@ verifyEqual(testCase, deps.inputMode, 'mouse');
 end
 
 
+function testMiniProfileDisablesAllHardwareWithAnalogSource(testCase)
+deps = resolveCoPsRunDependenciesx(' Mouse_Mini ', true, true, true, 'analog');
+verifyEqual(testCase, deps.profile, 'mouse_mini');
+verifyFalse(testCase, deps.pixOn);
+verifyFalse(testCase, deps.eyeOn);
+verifyFalse(testCase, deps.rewOn);
+verifyFalse(testCase, deps.adcOn);
+verifyFalse(testCase, deps.datapixxOn);
+verifyFalse(testCase, deps.eyelinkOn);
+verifyEqual(testCase, deps.inputMode, 'mouse');
+end
+
+
 function testFixtureProfileDefaultsToOneTrial(testCase)
 ex = localMinimalDefaults();
 [ex, config] = configureCoPsTestRunx(ex);
@@ -48,6 +61,20 @@ ex = localMinimalDefaults();
 verifyEqual(testCase, ex.exp.nreps, 4);
 verifyEqual(testCase, getCoPsTotalRepsx(ex), 4);
 verifyEqual(testCase, config.nTrials, 4);
+end
+
+
+function testMiniFixturePreservesProfileAndWindowSettings(testCase)
+ex = localMinimalDefaults();
+[ex, config] = configureCoPsTestRunx(ex, 5, 'mouse_mini');
+verifyEqual(testCase, config.profile, 'mouse_mini');
+verifyEqual(testCase, getCoPsTotalRepsx(ex), 5);
+verifyFalse(testCase, config.fullscreen);
+verifyEqual(testCase, config.windowSizePx, [1280 720]);
+verifyEqual(testCase, config.stimulusRoot, ...
+    fullfile(fileparts(mfilename('fullpath')), 'test_data', 'test_stim'));
+verifyEqual(testCase, ex.setup.inputMode, 'mouse');
+verifyFalse(testCase, ex.setup.stereo.Display);
 end
 
 

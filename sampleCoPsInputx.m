@@ -34,7 +34,7 @@ switch mode
             [passEye, trEye, lastEyePos] = checkEyex( ...
                 trEye, ex, passEye, freeViewing, lastEyePos, 0, 0, toleranceScalar);
         end
-        [mouseX, mouseY] = GetMouse(ex.setup.window);
+        [mouseX, mouseY] = localMousePosition(ex.setup);
         sample.pointerPosition = [mouseX mouseY];
 
         eyePoints = lastEyePos(:, 1:2);
@@ -50,7 +50,7 @@ switch mode
         end
 
     case 'mouse'
-        [mouseX, mouseY] = GetMouse(ex.setup.window);
+        [mouseX, mouseY] = localMousePosition(ex.setup);
         sample.position = [mouseX mouseY];
         sample.pointerPosition = sample.position;
         sample.overlayPositions = sample.position;
@@ -69,4 +69,15 @@ rect = ex.setup.screenRect;
 sample.inBounds = all(isfinite(sample.position)) && ...
     sample.position(1) >= rect(1) && sample.position(1) <= rect(3) && ...
     sample.position(2) >= rect(2) && sample.position(2) <= rect(4);
+end
+
+
+function [mouseX, mouseY] = localMousePosition(setup)
+refreshCoPsPreviewWindowx(setup);
+[mouseX, mouseY] = GetMouse(setup.window);
+if isfield(setup, 'panelFitterOn') && setup.panelFitterOn
+    % GetMouse returns physical window pixels; task/reward coordinates use
+    % the full logical canvas, including any aspect-preserving borders.
+    [mouseX, mouseY] = RemapMouse(setup.window, 'AllViews', mouseX, mouseY);
+end
 end

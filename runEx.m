@@ -8,10 +8,26 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('t', 1, 1, overlayScreen=0, overlayWindowSizePx=[960 540])
 %   runEx('t', eyeSource='analog') legacy analog eye calibration
 %   runEx('t', nativeValidation=false) save tracker calibration, skip custom validation
-%   runEx('test1')
+%   runEx('test1')  % fullscreen mouse test
+%   runEx('test1', 0)  % disable the experimenter overlay
+%   runEx('test1', overlayOn=true, overlayScreen=0)
 %   runEx('test1', testTrials=5)
 %   runEx('test1', viewingDistanceCm=60, monitorWidthCm=53)
-%   runEx('test1', fullscreen=true)  % opt in to fullscreen
+%   runEx('mouse_mini')  % full-display preview in a normal desktop window
+%   runEx('mouse_mini', 1)  % enable the overlay on a separate monitor
+%   runEx('mouse_mini', overlayOn=true, overlayWindowSizePx=[960 540])
+%   runEx('mouse_mini', windowSizePx=[960 540], testTrials=5)
+%   runEx('mouse_mini', showCursor=false)  % hide the normally visible cursor
+%   runEx('mouse_mini', filePrefix="P001")  % supply the subject ID without a dialog
+%   runEx('mouse_mini', soundOn=false)  % disable reward-threshold beeps
+%   runEx('mouse_mini', syncMode='binary')  % preview a frame-coded photodiode patch
+%   runEx('test1', syncMode='binary', photodiodeRecord=true, photodiodeSampleRate=2000)
+% See docs/photodiode_sync.md before using photodiode acquisition on the rig.
+%   runEx('t', participantKeyboard=participantID, experimenterKeyboard=operatorID)
+% Separate keyboards require Linux/X11; omit both IDs for shared-keyboard testing.
+%   runEx('test1', fullscreen=false)  % use a window with test1 settings
+% overlayOn can be the second positional argument or a name-value option
+% for every mode. The name-value option takes precedence when both are given.
 
 % Supply the default before validation so an explicit calibration mode is
 % required by the inner function. Otherwise MATLAB parses 't', 0 as the
@@ -23,10 +39,10 @@ ex = runCoPsWithOptions(eyeStr, varargin{:});
 end
 
 
-function ex = runCoPsWithOptions(eyeStr, overlayOn, pixOn, rewOn, eyeOn, skipQuest, options)
+function ex = runCoPsWithOptions(eyeStr, overlayEnabled, pixOn, rewOn, eyeOn, skipQuest, options)
 arguments
-    eyeStr {mustBeText} % calibration mode, or 'test1' for the portable mouse test
-    overlayOn  {mustBeNumericOrLogical} = 1
+    eyeStr {mustBeText} % calibration mode, 'test1', or 'mouse_mini'
+    overlayEnabled {mustBeNumericOrLogical} = 0;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
     pixOn  {mustBeNumericOrLogical} = 1
     rewOn {mustBeNumericOrLogical} = false
     eyeOn  {mustBeNumericOrLogical} = true
@@ -36,13 +52,25 @@ arguments
     options.testTrials (1,1) double {mustBeInteger, mustBePositive} = 3
     options.viewingDistanceCm (1,1) double {mustBePositive} = 55 %100
     options.monitorWidthCm (1,1) double {mustBePositive} = 54 %50
-    options.fullscreen (1,1) logical = true %false
+    options.fullscreen (1,1) logical = ~strcmpi(strtrim(eyeStr), 'mouse_mini')
+    options.showCursor (1,1) logical = strcmpi(strtrim(eyeStr), 'mouse_mini')
+    options.soundOn (1,1) logical = true
+    options.syncMode (1,1) string {mustBeMember(options.syncMode, ["","goPulse","binary","off"])} = ""
+    options.syncFramesPerBit (1,:) double {mustBeInteger, mustBePositive, mustBeFinite} = []
+    options.syncSequence (1,:) double = []
+    options.photodiodeRecord (1,1) logical = false
+    options.photodiodeSampleRate (1,1) double {mustBeInteger, mustBePositive, mustBeFinite, mustBeLessThanOrEqual(options.photodiodeSampleRate,200000)} = 500
+    options.filePrefix (1,1) string = ""
+    options.participantKeyboard (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite} = []
+    options.experimenterKeyboard (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite} = []
+    options.overlayOn (1,1) logical = logical(overlayEnabled)
     options.overlayScreen (1,:) double {mustBeInteger, mustBeNonnegative} = []
     options.overlayWindowSizePx (1,2) double {mustBeInteger, mustBePositive} = [960 540]
-    options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = [2560 1440] %[1280 720]
+    options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = defaultWindowSizePx(eyeStr)
 end
 
-dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn, options.eyeSource);
+dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn, options.eyeSource, options.photodiodeRecord);
+isTestProfile = ismember(dependencies.profile, {'test1', 'mouse_mini'});
 pixOn = dependencies.pixOn;
 eyeOn = dependencies.eyeOn;
 rewOn = dependencies.rewOn;
@@ -61,8 +89,14 @@ if dependencies.datapixxOn && ~Datapixx('Open')
 end
 
 ex = setDefaultsCoPs(ex);
+if strlength(options.syncMode) > 0, ex.exp.CoPs.sync.mode = char(options.syncMode); end
+if ~isempty(options.syncFramesPerBit)
+    validateattributes(options.syncFramesPerBit, {'numeric'}, {'scalar'});
+    ex.exp.CoPs.sync.framesPerBit = options.syncFramesPerBit;
+end
+if ~isempty(options.syncSequence), ex.exp.CoPs.sync.sequence = options.syncSequence; end
 
-if strcmp(dependencies.profile, 'test1')
+if isTestProfile
     % Make the portable display geometry explicit before the host-specific
     % defaults are resolved. These values affect degrees-to-pixels
     % conversions and should be replaced with measured values when known.
@@ -74,23 +108,73 @@ if strcmp(dependencies.profile, 'test1')
 end
 
 ex = getDefaultSettingsx(ex, skipQuest, initializeAdc=false); %eyeOn
-if strcmp(dependencies.profile, 'test1')
-    [ex, testConfig] = configureCoPsTestRunx(ex, options.testTrials);
+if isTestProfile
+    [ex, testConfig] = configureCoPsTestRunx(ex, options.testTrials, dependencies.profile);
     ex.setup.testConfig = testConfig;
-    fprintf('CoPs test1: %d trial(s), mouse input, no DataPixx/EyeLink/reward hardware.\n', ...
-        options.testTrials);
+    if options.photodiodeRecord
+        fprintf('CoPs %s: %d trial(s), mouse input, DataPixx ADC enabled for photodiode recording.\n', ...
+            dependencies.profile, options.testTrials);
+    else
+        fprintf('CoPs %s: %d trial(s), mouse input, no DataPixx/EyeLink/reward hardware.\n', ...
+            dependencies.profile, options.testTrials);
+    end
+    ex.Header.animal = 'test';
+end
+if isTestProfile || strlength(options.filePrefix) > 0
+    subjectID = strtrim(char(options.filePrefix));
+    if isempty(subjectID) && isfield(ex.Header, 'subjectID')
+        subjectID = strtrim(char(ex.Header.subjectID));
+    end
+    if isempty(subjectID)
+        defaultPrefix = 'test';
+        if isfield(ex.setup, 'filePrefix') && ~isempty(ex.setup.filePrefix)
+            defaultPrefix = char(ex.setup.filePrefix);
+        end
+        answer = inputdlg('Subject ID / filename prefix:', 'CoPs subject', ...
+            [1 50], {defaultPrefix});
+        if isempty(answer)
+            ex.quit = 4;
+            return
+        end
+        subjectID = strtrim(answer{1});
+    end
+    ex.setup.filePrefix = sanitizeCoPsFilePrefixx(subjectID);
+    ex.Header.subjectID = subjectID;
 end
 ex.setup.dependencies = dependencies;
 ex.setup.inputMode = dependencies.inputMode;
-ex.setup.showExperimenterOverlay = logical(overlayOn);
+ex.setup.showCursor = options.showCursor;
+ex.setup.soundOn = options.soundOn;
+ex.exp.CoPs.rew.soundOn = options.soundOn;
+ex.setup.showExperimenterOverlay = options.overlayOn;
 ex.setup.overlayScreen = options.overlayScreen;
 ex.setup.overlayWindowSizePx = options.overlayWindowSizePx;
+[ex.setup.keyboards, keyboardCleanup] = initCoPsKeyboardsx( ...
+    options.participantKeyboard, options.experimenterKeyboard); %#ok<NASGU>
+if ex.setup.keyboards.separate
+    fprintf('CoPs keyboards: participant SPACE only; experimenter controls enabled.\n');
+else
+    fprintf('CoPs keyboards: shared test mode (participant keyboard is not isolated).\n');
+end
 if strcmp(dependencies.inputMode, 'eyelink')
     % ADC is retained only for independent photodiode/camera sync signals
     ex.setup.adc.Channels = [6 7];
     ex.setup.adc.DiffChannels = [0 0];
 end
+% Keep behavioral polling independent of the optional photodiode ADC rate.
+ex.setup.inputSampleRate = ex.setup.adc.Rate;
+if options.photodiodeRecord
+    if ~isfield(ex.setup.adc, 'NumBufferFrames')
+        ex.setup.adc.NumBufferFrames = 900000; % conservative existing rig default; validate on new hardware
+    end
+    if ~ismember(ex.exp.CoPs.sync.physicalChannel, ex.setup.adc.Channels)
+        ex.setup.adc.Channels(end+1) = ex.exp.CoPs.sync.physicalChannel;
+        ex.setup.adc.DiffChannels(end+1) = 0;
+    end
+    ex.setup.adc.Rate = options.photodiodeSampleRate;
+end
 if dependencies.adcOn
+    analogCleanup = onCleanup(@stopCoPsAnalogx); %#ok<NASGU>
     resetAdcBuffer(ex);
 end
 
@@ -101,6 +185,18 @@ displayCleanup = onCleanup(@closeCoPsDisplayx); %ok<NASGU>
 % The desktop overlay must not change stimulus colors or display mode.
 % DataPixx input, strobes, and reward remain controlled by the hardware flags.
 ex = initDisplayx(ex);
+flipInterval = 1 / ex.setup.refreshRate;
+if strcmp(ex.exp.CoPs.sync.mode, 'binary')
+    flipInterval = Screen('GetFlipInterval', ex.setup.window);
+end
+ex.exp.CoPs.sync = prepareCoPsSyncx(ex.exp.CoPs.sync, flipInterval);
+if strcmp(ex.exp.CoPs.sync.mode, 'binary')
+    fprintf('CoPs binary sync: %.3f bits/s, %d refresh(es)/bit, same code reset each trial.\n', ...
+        ex.exp.CoPs.sync.bitRateHz, ex.exp.CoPs.sync.framesPerBit);
+end
+if options.showCursor
+    ShowCursor('Arrow', ex.setup.window);
+end
 pause(1)
 
 if eyeOn && strcmp(dependencies.inputMode, 'eyelink')
@@ -213,6 +309,11 @@ if ex.setup.el.binoc==0
     ex.eyeCal.LXPos = [];
     ex.eyeCal.LYPos = [];
 end
+% Preload reward audio after tracker calibration has released its audio device.
+if options.soundOn && eyeOn
+    Snd('Close'); % release any calibration-feedback device before opening ours
+end
+[ex.setup.rewardSound, soundCleanup] = initCoPsRewardSoundx(options.soundOn); %#ok<NASGU>
 %run Expt starts
 ex.j = 1;  % current trial number
 ex.goodtrial = 0;  % counter for successful trials
@@ -221,6 +322,7 @@ ex.loopcnt = zeros(1, ex.finish);  % loop counter for each trial
 ex.changedBlock = 0;  % keeps track of whether we changed blocks
 ex.exp.total_nreps = getCoPsTotalRepsx(ex);
 ex.finish = ex.exp.total_nreps;
+ex = prepareCoPsPauseSchedulex(ex);
 ex = prepareCoPsTrialParamSchedules(ex);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%  make stimulus/trial sequence
@@ -266,6 +368,11 @@ end
 if ~exist(edfDir,'dir')
     mkdir(edfDir);
 end
+ex.Header.onlineDirName = dirName;
+ex.Header.onlineExperimentalDirName = expDir;
+ex.Header.onlineEdfDirName = edfDir;
+ex.Header.onlineFileName = fname;
+fprintf('CoPs output: %s\n', fullfile(expDir, fname));
 
 % create Trials
 ex.loopcnt =[];
@@ -348,7 +455,11 @@ dailyLog_old = dailyLog;
 ex.reward.nTrialsAfterShake = inf; % default baseline
 
 while ex.j <= ex.finish && ex.quit~=4
-    HideCursor
+    if options.showCursor
+        ShowCursor('Arrow', ex.setup.window);
+    else
+        HideCursor
+    end
     dailyLog.nTrialsPerDay = dailyLog_old.nTrialsPerDay+ex.goodtrial;
     cur_dir = cd(dirName);
     save('dailyLog','dailyLog');
@@ -482,13 +593,9 @@ if isfield(ex.stim.vals,'fixedSeed')
 end
 
 % save file
-ex.Header.onlineDirName = dirName;
-ex.Header.onlineExperimentalDirName = expDir;
-ex.Header.onlineEdfDirName = edfDir;
 cur_dir = cd(ex.Header.onlineExperimentalDirName);
 
 %cur_dir = cd(ex.Header.onlineDirName);
-ex.Header.onlineFileName = fname;
 disp('saving...')
 
 % 2021.03.08 ik: check the size of ex, if it exceeds 2GB, use '-v7.3' flag
@@ -550,4 +657,18 @@ else
 end
 
 ShowCursor
+if ex.j > ex.finish && ~isempty(ex.Trials) && ...
+        isfield(ex.Trials, 'endScreenAcknowledged') && ex.Trials(end).endScreenAcknowledged
+    fprintf('Session complete: participant pressed SPACE on the end screen.\nData saved: %s\n', ...
+        fullfile(ex.Header.onlineExperimentalDirName, fname));
+end
+end
+
+
+function windowSizePx = defaultWindowSizePx(profileName)
+if strcmpi(strtrim(profileName), 'mouse_mini')
+    windowSizePx = [960 540];%1080×1080
+else
+    windowSizePx = [2560 1440];
+end
 end

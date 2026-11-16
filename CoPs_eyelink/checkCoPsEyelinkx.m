@@ -25,15 +25,7 @@ end
 
 % these adc channels carry sync pulses only, on an independent clock
 if isfield(ex.setup, 'dependencies') && ex.setup.dependencies.adcOn
-    Datapixx('RegWrRd');
-    status = Datapixx('GetAdcStatus');
-    count = status.newBufferFrames;
-    if count > 0
-        idx = trEye.analog.n + (1:count);
-        [trEye.analog.v(:,idx), trEye.analog.t(idx)] = ...
-            Datapixx('ReadAdcBuffer', count, -1);
-        trEye.analog.n = trEye.analog.n + count;
-    end
+    trEye.analog = readCoPsAnalogx(trEye.analog);
 end
 lastEyePos = NaN(2,2);
 passEye = false;

@@ -95,7 +95,11 @@ while GetSecs - onset < ex.fix.waitstop + val.fixDur
     elseif GetSecs - (E.ptbStart + lastSample - E.trackerStart) > .1
         holdStart = NaN;
     end
-    [down, ~, keys] = KbCheck;
+    if isfield(ex.setup, 'keyboards') && ex.setup.keyboards.separate
+        [down, ~, keys] = KbCheck(ex.setup.keyboards.experimenterIndex);
+    else
+        [down, ~, keys] = KbCheck;
+    end
     if down && (keys(KbName('F4')) || keys(KbName('ESCAPE')))
         aborted = true;
         holdEnd = NaN;

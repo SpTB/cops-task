@@ -2,6 +2,16 @@ function ex = setDefaultsCoPs(ex)
 
 % do a intro minisession for Kaki: 5 pur; 10 normal (lo thresh) 5 Null (lo thresh) 
 ctl.advance_trial_with_space = true; % requires space between trials, f4 to quit
+ctl.between_trial_pause_mean = 1; % average trials between pause screens (e.g. 5)
+ctl.between_trial_pause_range = 0; % integer +/- range (5 +/- 1 gives 4, 5, or 6)
+% Photodiode display protocol; see docs/photodiode_sync.md for rig testing.
+sync.mode = 'goPulse'; % 'binary' adds a saved frame-by-frame code; 'off' disables the patch
+sync.framesPerBit = 1; % 1 = one code bit per refresh, 2 = half the display refresh rate
+sync.seed = 1; % nonzero 15-bit LFSR state; independent of stimulus RNG
+sync.sequence = []; % optional pregenerated 0/1 vector; [] generates 32767 bits once per run
+sync.preambleSec = 0.1; % retain the GO onset marker before the binary code
+sync.gapSec = 0.05; % black separation between marker and code
+sync.physicalChannel = 6; % zero-based DataPixx input channel
 %drawRewPeak(6,10)
 
 %main params
@@ -21,11 +31,10 @@ pur.lenSec = 10; % fixed pursuit-trial duration
 pur.priority = true; % true: run pursuit block before main trials
 
 % points display
-rew.points_feedbackOn = true; %show trial/session points and wait for space
-rew.points_feedback_every_n_trials = 10; % shows feedback every N trials
+rew.points_feedback_on = true; % show points on the scheduled pause screens
 rew.points_feedback_text_size = 48;
 rew.points_feedback_decimals = 0; % number of decimal points displayed on the point total
-rew.points_sound_on = true; % play sound when gaining a point
+rew.soundOn = true; % reward-threshold cue; controlled by runEx soundOn option
 
 
 %thresholding
@@ -61,7 +70,7 @@ graph.target_visibility =[1,.9,.8,.7,.6];
 graph.sequenceMode_vis = false; % true: target_visibility values are presented in listed order, cycling as needed
 
 ctl.target_num = 2; % scalar or vector; e.g. [1 2 2 2] gives 25% single-target trials
-ctl.target_numNULL = [1,2];
+ctl.target_numNULL = 2;%[1,2];
 %kaki:    desert4, river3, ice2,river2(?)
 % lychee: desert4, river3, sea1, river1,
 % OUT: water1, desert1, desert3, ice1, ice3,river2
@@ -234,6 +243,7 @@ ex.exp.CoPs.pre = pre;
 ex.exp.CoPs.tut = tut;
 ex.exp.CoPs.pur = pur;
 ex.exp.CoPs.analysis = analysis;
+ex.exp.CoPs.sync = sync;
 end
 
 

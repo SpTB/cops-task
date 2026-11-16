@@ -27,6 +27,11 @@ arguments
     rewOn {mustBeNumericOrLogical} = true
 end
 
+KbName('UnifyKeyNames');
+controlKeys = struct('F1', KbName('F1'), 'F2', KbName('F2'), ...
+    'F3', KbName('F3'), 'F4', KbName('F4'), 'F6', KbName('F6'), ...
+    'F7', KbName('F7'), 'F8', KbName('F8'), 'F9', KbName('F9'));
+
 if isfield(ex, 'setup') && isfield(ex.setup, 'inputMode') && ~isempty(ex.setup.inputMode)
     inputMode = lower(strtrim(char(ex.setup.inputMode)));
 elseif eyeOn
@@ -68,10 +73,9 @@ if ~isfield(ctl, 'advance_trial_with_space'), ctl.advance_trial_with_space = tru
 rew = ex.exp.CoPs.rew;
 % allow older saved settings to use the feedback defaults
 if ~isfield(rew, 'points_feedback_on'), rew.points_feedback_on = true; end
-if ~isfield(rew, 'points_feedback_every_n_trials'), rew.points_feedback_every_n_trials = 10; end
-validateattributes(rew.points_feedback_every_n_trials, {'numeric'}, ...
-    {'scalar', 'real', 'finite', 'integer', 'positive'}, ...
-    mfilename, 'rew.points_feedback_every_n_trials');
+if ~isfield(ex.exp.CoPs, 'pauseSchedule')
+    ex = prepareCoPsPauseSchedulex(ex);
+end
 if ~isfield(rew, 'points_feedback_text_size'), rew.points_feedback_text_size = 48; end
 if ~isfield(rew, 'points_feedback_decimals'), rew.points_feedback_decimals = 0; end
 if isfield(ex.exp.CoPs, 'ctr')
@@ -627,7 +631,7 @@ ex.Trials(ex.j).stimTiming = stimTiming;
 % so trial eye data begin close to the actual trial start, not at the
 % earlier generic pretrial reset in runEx/runExptx.
 %if eyeOn
-adcOn = strcmp(inputMode,'eye') || (isfield(ex.setup, 'dependancies') && ex.setup.dependencies.adcOn);
+adcOn = strcmp(inputMode,'eye') || (isfield(ex.setup, 'dependencies') && ex.setup.dependencies.adcOn);
 if adcOn
     resetAdcBuffer(ex);
 end
@@ -641,13 +645,37 @@ end
 
 % PRE-ALLOCATE MEMORY FOR TIMING AND DATA
 frametimestep = 1/ex.setup.refreshRate;
-eyetimestep = 1/ex.setup.adc.Rate;  % 500Hz is the fastest Eyelink sample binocularly
+inputSampleRate = ex.setup.adc.Rate;
+if isfield(ex.setup, 'inputSampleRate'), inputSampleRate = ex.setup.inputSampleRate; end
+eyetimestep = 1/inputSampleRate;
 maxTrialDur = step_wait_secs * ctl.nsteps + 5 + ex.fix.waitstop; % add buffer time
 frame_alloc_n = ceil(maxTrialDur*ex.setup.refreshRate);
 flip_info = NaN(frame_alloc_n,4);
 frameStep = NaN(frame_alloc_n,1);
 frameState = NaN(frame_alloc_n,1);
 frameSyncPulse = false(frame_alloc_n,1);
+sync = struct('mode', 'goPulse');
+if isfield(ex.exp.CoPs, 'sync'), sync = ex.exp.CoPs.sync; end
+if ~isfield(sync, 'protocolVersion')
+    sync = prepareCoPsSyncx(sync, 1/ex.setup.refreshRate);
+end
+binarySync = strcmp(sync.mode, 'binary');
+sync.patchRect = spRects(:)';
+sync.physicalChannel = double(sync.physicalChannel);
+if binarySync
+    requiredBits = ceil(frame_alloc_n / sync.framesPerBit);
+    if numel(sync.sequence) < requiredBits
+        error('runTrialTaskCoPsx:SyncSequenceTooShort', ...
+            'Photodiode code needs at least %d bits for this trial including timing margin.', requiredBits);
+    end
+end
+frameSyncBit = NaN(frame_alloc_n,1);
+frameSyncIndex = NaN(frame_alloc_n,1);
+frameSyncPhase = zeros(frame_alloc_n,1,'uint8');
+syncCursor = 0;
+lastSyncVbl = NaN;
+syncClock = struct('ptbSec', NaN, 'datapixxSec', NaN, 'uncertaintySec', NaN);
+analog = struct('v', [], 't', [], 'n', 0);
 StimStart = NaN*ones(1,ceil(ex.setup.refreshRate*ex.fix.stimDuration));
 
 flip_info_grow_chunk = ceil(10 * ex.setup.refreshRate); % grow by ~10s if trial runs longer than expected
@@ -725,6 +753,8 @@ reward_start = 0;
 reward_stop = 0;
 reward_on = 0;
 reward_cnt = 0;
+rewardSoundRequestTimes = [];
+rewardSoundPlayed = false(1, 0);
 % reward_dur = rew.duration;
 
 % Fixation flash settings (dot flashes only during fixation period)
@@ -754,7 +784,6 @@ ex.Trials(ex.j).isFixationTrial = useFixationTrial;
 % ------------------------------------------------------------------------
 % TRIAL START
 % ------------------------------------------------------------------------
-%if isfield(rew, 'points_sound_on'), rew.points_sound_on = true; end
 %pointsEvidence = 0;
 %pointsCount = 0;
 
@@ -776,6 +805,14 @@ if eyeOn
     toc_trstartEYELINK = toc;
 end
 trstart = GetSecs;  % start of trial time
+if adcOn
+    clockBefore = GetSecs;
+    Datapixx('RegWrRd');
+    syncClock.datapixxSec = Datapixx('GetTime');
+    clockAfter = GetSecs;
+    syncClock.ptbSec = (clockBefore + clockAfter) / 2;
+    syncClock.uncertaintySec = (clockAfter - clockBefore) / 2;
+end
 if strcmp(inputMode,'eyelink')
     % TrackerTime already returns seconds, matching decoded Eye.t samples.
     trEye.trackerStart = trstart_Eyelink;
@@ -904,6 +941,9 @@ while state ~= ex.states.BREAKFIX &&...
 
             [pass_eye, trEye, lastEyePos, inputSample] = sampleCoPsInputx( ...
                 inputMode, trEye, ex, pass_eye, freeViewing, lastEyePos, tolerance_scalar);
+            if adcOn && strcmp(inputMode, 'mouse')
+                analog = readCoPsAnalogx(analog);
+            end
             current_xy_abs = inputSample.position;
             currentEyeInBounds = inputSample.inBounds;
             olPos = inputSample.overlayPositions;
@@ -981,11 +1021,8 @@ while state ~= ex.states.BREAKFIX &&...
                 reward_vec(end+1) = gauss_reward;
                 scaled_reward_vec(end+1) = scaled_reward;
 
-                % play cue when trial crosses a whole point
-                %if rew.points_sound_on && isfinite(scaled_reward) && scaled_reward >= 0
-                    %pointsEvidence 
-                
                 % Check for accumulated reward threshold
+                previousRewardCount = reward_cnt;
                 if ~isempty(scaled_reward_vec)
                     if isfield(ctl, 'independent_accumulation') && ctl.independent_accumulation && ctl.target_num > 1
                         scaled_reward_vec_per_target(end+1, :) = scaled_reward_target_vec; %#ok<AGROW>
@@ -1013,6 +1050,15 @@ while state ~= ex.states.BREAKFIX &&...
                     end
                 end
                 
+                % One cue per accepted reward event, including mouse runs.
+                % reward_start remains latched without hardware, so it must
+                % not be used as the audio trigger.
+                if reward_cnt > previousRewardCount && ...
+                        isfield(ex.setup, 'rewardSound') && ex.setup.rewardSound.enabled
+                    rewardSoundRequestTimes(end+1) = GetSecs() - trstart;
+                    rewardSoundPlayed(end+1) = playCoPsRewardSoundx(ex.setup.rewardSound);
+                end
+
                 % Check for error conditions (too far from targets)
                 if current_step > 3
                     if length(closeness_vec)>rew.accum_len_fp
@@ -1302,7 +1348,7 @@ while state ~= ex.states.BREAKFIX &&...
             %Screen('DrawDots', ex.setup.window, spPos, spSz, spCol);
             
             %Draw synch pulse briefly when entering GO state
-            if GetSecs <= goSyncPulseEndTime
+            if strcmp(sync.mode, 'goPulse') && GetSecs <= goSyncPulseEndTime
                 Screen('FillRect', ex.setup.window, spCol, spRects);
                 frameSyncPulseToSave = true;
             end
@@ -1326,6 +1372,9 @@ while state ~= ex.states.BREAKFIX &&...
                 frameStep(end+1:end+flip_info_grow_chunk, 1) = NaN;
                 frameState(end+1:end+flip_info_grow_chunk, 1) = NaN;
                 frameSyncPulse(end+1:end+flip_info_grow_chunk, 1) = false;
+                frameSyncBit(end+1:end+flip_info_grow_chunk, 1) = NaN;
+                frameSyncIndex(end+1:end+flip_info_grow_chunk, 1) = NaN;
+                frameSyncPhase(end+1:end+flip_info_grow_chunk, 1) = uint8(0);
             end
             if si > numel(StimStart)
                 StimStart(end+1:end+stimstart_grow_chunk) = NaN;
@@ -1347,18 +1396,35 @@ while state ~= ex.states.BREAKFIX &&...
         end
         
         % Flip screen
-        Screen('DrawingFinished', ex.setup.window);
+        refreshCoPsPreviewWindowx(ex.setup);
+        frameSyncBitToSave = NaN;
+        frameSyncIndexToSave = NaN;
+        frameSyncPhaseToSave = uint8(0);
          if fi > size(flip_info,1)
             flip_info(end+1:end+flip_info_grow_chunk, :) = NaN;
             frameStep(end+1:end+flip_info_grow_chunk, 1) = NaN;
             frameState(end+1:end+flip_info_grow_chunk, 1) = NaN;
             frameSyncPulse(end+1:end+flip_info_grow_chunk, 1) = false;
+            frameSyncBit(end+1:end+flip_info_grow_chunk, 1) = NaN;
+            frameSyncIndex(end+1:end+flip_info_grow_chunk, 1) = NaN;
+            frameSyncPhase(end+1:end+flip_info_grow_chunk, 1) = uint8(0);
          end
         frameStep(fi) = frameStepToSave;
         frameState(fi) = frameStateToSave;
         frameSyncPulse(fi) = frameSyncPulseToSave;
-        [flip_info(fi,1), flip_info(fi,2), flip_info(fi,3), flip_info(fi,4)] =...
-            Screen('Flip', ex.setup.window);
+        if binarySync
+            [flip_info(fi,:), syncCursor, frameSyncBitToSave, frameSyncIndexToSave, frameSyncPhaseToSave] = ...
+                flipCoPsSyncFramex(sync, syncCursor, state == ex.states.GO && stimulus_active, ex.setup, ex.idx, lastSyncVbl);
+            frameSyncPulse(fi) = frameSyncPhaseToSave == 1;
+        else
+            Screen('DrawingFinished', ex.setup.window);
+            [flip_info(fi,1), flip_info(fi,2), flip_info(fi,3), flip_info(fi,4)] = ...
+                Screen('Flip', ex.setup.window);
+        end
+        frameSyncBit(fi) = frameSyncBitToSave;
+        frameSyncIndex(fi) = frameSyncIndexToSave;
+        frameSyncPhase(fi) = frameSyncPhaseToSave;
+        lastSyncVbl = flip_info(fi,1);
         presentCoPsOverlayx(ex);
         fi = fi + 1;
         if fi > 500 
@@ -1370,23 +1436,23 @@ while state ~= ex.states.BREAKFIX &&...
     % --------------------------------------------------------------------
     % INPUT HANDLING SECTION ---------------------------------------------
     % --------------------------------------------------------------------
-    [keyIsDown, secs, keyCode] = KbCheck;
-    if ~isMatlabWindowFocusedLocal()
+    [keyCode, ~, secs] = readCoPsKeyboardx(ex.setup);
+    if ~isTaskWindowFocusedLocal(ex.setup)
         keyCode = zeros(size(keyCode));
     end
     
-    if strcmpi(KbName(keyCode),'F4')
+    if keyCode(controlKeys.F4)
         ex.quit = 4;
         state;
-    elseif strcmpi(KbName(keyCode),'F1')
+    elseif keyCode(controlKeys.F1)
         ex.quit = 1;
         ex.Trials(ex.j).pa = 1;
         state;
-    elseif strcmpi(KbName(keyCode),'F2')
+    elseif keyCode(controlKeys.F2)
         ex.quit = 2;
         ex.Trials(ex.j).to = 1;
     % F3: fixation trial next
-    elseif strcmpi(KbName(keyCode),'F3')
+    elseif keyCode(controlKeys.F3)
         if GetSecs - scheduleFixTrial_t0 > 0.25
             ex.exp.CoPs.ctl.next_fixation_trial = 1;
             scheduleFixTrial_t0 = GetSecs;
@@ -1394,7 +1460,7 @@ while state ~= ex.states.BREAKFIX &&...
         end
     
     % F6: reward-center overlay marker
-    elseif strcmpi(KbName(keyCode),'F6')
+    elseif keyCode(controlKeys.F6)
         if GetSecs - rewardCenterOverlayToggle_t0 > overlayToggleDebounceSecs
             useOverlayGaussCenterMarker = ~useOverlayGaussCenterMarker;
             rew.show_gauss_center_marker_overlay = double(useOverlayGaussCenterMarker);
@@ -1407,7 +1473,7 @@ while state ~= ex.states.BREAKFIX &&...
             end
         end
     %F7: recenter
-    elseif strcmpi(KbName(keyCode),'F7')
+    elseif keyCode(controlKeys.F7)
         % to make sure we only re-center once per keyboard press
         if strcmp(inputMode, 'eyelink')
             disp('Native Eyelink gaze: use tracker calibration/validation before the run');
@@ -1422,7 +1488,7 @@ while state ~= ex.states.BREAKFIX &&...
             centerEye_t0 = GetSecs;
         end
      %F8: target circle overlay
-    elseif strcmpi(KbName(keyCode),'F8')
+    elseif keyCode(controlKeys.F8)
         if GetSecs - targetCircleOverlayToggle_t0 > overlayToggleDebounceSecs
             useOverlayTargetCircles = ~useOverlayTargetCircles;
             ctl.circle_target_loc_overlay = double(useOverlayTargetCircles);
@@ -1435,7 +1501,7 @@ while state ~= ex.states.BREAKFIX &&...
             end
         end
     %F9: plot gaze heat from completed trials
-    elseif strcmpi(KbName(keyCode),'F9')
+    elseif keyCode(controlKeys.F9)
         if GetSecs - gazeHeatPlot_t0 > 1.0
             gazeHeatPlot_t0 = GetSecs;
             lastCompletedTrial = min(ex.j - 1, numel(ex.Trials));
@@ -1486,7 +1552,9 @@ Screen('FillRect', ex.setup.window, texture_background_color, texture_background
 if overlayIsSeparate
     Screen('FillRect', ex.setup.overlay, ex.idx.bg);
 end
-Screen('Flip', ex.setup.window);
+refreshCoPsPreviewWindowx(ex.setup);
+if binarySync, Screen('FillRect', ex.setup.window, ex.idx.black, spRects); end
+syncOffTime = Screen('Flip', ex.setup.window);
 presentCoPsOverlayx(ex);
 
 % Store trial information
@@ -1497,6 +1565,13 @@ if strcmp(inputMode, 'eyelink')
     trEye.t = trEye.t(1:trEye.n);
     ex.Trials(ex.j).Analog = trEye.analog;
     trEye = rmfield(trEye,'analog');
+elseif adcOn && strcmp(inputMode, 'mouse')
+    analog = readCoPsAnalogx(analog);
+    ex.Trials(ex.j).Analog = analog;
+elseif adcOn && strcmp(inputMode, 'eye')
+    % Keep unmodified photodiode voltages alongside legacy calibrated eye data.
+    ex.Trials(ex.j).Analog = struct('v', trEye.v(:,1:trEye.n), ...
+        't', trEye.t(1:trEye.n), 'n', trEye.n);
 end
 ex.Trials(ex.j).Eye = trEye;
 ex.Trials(ex.j).adcChannels = ex.setup.adc.Channels;
@@ -1532,6 +1607,8 @@ ex.Trials(ex.j).scaledReward = scaled_reward_vec;
 ex.Trials(ex.j).targetPositions = targPositions;
 ex.Trials(ex.j).nsteps = ctl.nsteps;
 ex.Trials(ex.j).rewardAccumulated = reward_accum_realized + reward_accum_since_last; % need to add the unrealised reward amount
+ex.Trials(ex.j).rewardSoundRequestTimes = rewardSoundRequestTimes; % seconds from trial start
+ex.Trials(ex.j).rewardSoundPlayed = rewardSoundPlayed;
 if isfield(ctl, 'independent_accumulation') && ctl.independent_accumulation && ctl.target_num > 1
     ex.Trials(ex.j).scaledRewardPerTarget = scaled_reward_vec_per_target;
 end
@@ -1567,31 +1644,21 @@ ex.Trials(ex.j).flip_info = flip_info(1:fi-1,:);
 ex.Trials(ex.j).frameStep = frameStep(1:fi-1);
 ex.Trials(ex.j).frameState = frameState(1:fi-1);
 ex.Trials(ex.j).frameSyncPulse = frameSyncPulse(1:fi-1);
+ex.Trials(ex.j).sync = sync;
+ex.Trials(ex.j).syncClock = syncClock;
+ex.Trials(ex.j).syncOffTime = syncOffTime;
+ex.Trials(ex.j).frameSyncBit = frameSyncBit(1:fi-1);
+ex.Trials(ex.j).frameSyncIndex = frameSyncIndex(1:fi-1);
+ex.Trials(ex.j).frameSyncPhase = frameSyncPhase(1:fi-1);
 ex.Trials(ex.j).frameStateLookup = ex.states;
 
-% feedback is outside the recorded trial interval and stimulus flip stream
-ex.Trials(ex.j).pointsFeedbackOn = NaN;
-ex.Trials(ex.j).pointsFeedbackOff = NaN;
-ex.Trials(ex.j).trialAdvanceWaitOn = NaN;
-ex.Trials(ex.j).trialAdvanceWaitOff = NaN;
-showPoints = rew.points_feedback_on && ex.Trials(ex.j).trialScored && ...
-    mod(ex.j, rew.points_feedback_every_n_trials) == 0;
-waitForNextTrial = ctl.advance_trial_with_space && ex.j < ex.finish;
-if ex.quit == 0 && (showPoints || waitForNextTrial)
-    [feedbackOn, feedbackOff, quitRequested] = showTrialAdvanceLocal(...
-        ex.setup.window, window_background_color, ex.idx.white, ...
-        ex.Trials(ex.j).pointsEarned, ex.totalPoints, ...
-        rew.points_feedback_text_size, rew.points_feedback_decimals, showPoints);
-    ex.Trials(ex.j).trialAdvanceWaitOn = feedbackOn;
-    ex.Trials(ex.j).trialAdvanceWaitOff = feedbackOff;
-    if showPoints
-        ex.Trials(ex.j).pointsFeedbackOn = feedbackOn;
-        ex.Trials(ex.j).pointsFeedbackOff = feedbackOff;
-    end
-    if quitRequested
-        ex.quit = 4;
-    end
+% Feedback is outside the recorded trial interval and stimulus flip stream.
+betweenTrialGray = texture_background_color;
+if ~isPursuitTrial && isfield(targPositions, 'nullBackgroundGray')
+    lastStep = min(ctl.nsteps, max(1, current_step - 1));
+    betweenTrialGray = targPositions(lastStep).nullBackgroundGray;
 end
+ex = showCoPsTrialFeedbackx(ex, betweenTrialGray);
 
 
 % -------------------------------------------------------------------------
@@ -1611,57 +1678,6 @@ if ~isempty(stimTextures)
 end
 
 end
-
-    function [feedbackOn, feedbackOff, quitRequested] = showTrialAdvanceLocal(window, backgroundColor, textColor, trialPoints, totalPoints, textSize, decimals, showPoints)
-quitRequested = false;
-        textSize = double(textSize);
-if ~isscalar(textSize) || ~isfinite(textSize) || textSize <= 0
-    textSize = 48;
-end
-textSize = round(textSize);
-decimals = double(decimals);
-if ~isscalar(decimals) || ~isfinite(decimals) || decimals < 0
-    decimals = 1;
-end
-decimals = min(6, round(decimals));
-oldTextSize = Screen('TextSize', window);
-Screen('TextSize', window, textSize);
-Screen('FillRect', window, backgroundColor);
-if showPoints
-    numberFormat = ['%.' num2str(decimals) 'f'];
-    feedbackText = sprintf([numberFormat 'points\n\nTotal:' numberFormat ...
-        'points\n\nPress SPACE to continue\nF4 to quit'], ...
-        trialPoints, totalPoints);
-else
-    feedbackText = sprintf('Press SPACE to start the next trial\n\nF4 to quit');
-end
-DrawFormattedText(window, feedbackText, 'center', 'center', textColor, [], [], [], 1.5);
-feedbackOn = Screen('Flip', window);
-Screen('TextSize', window, oldTextSize);
-
-% require a new space press: discard any key held when the trial ended,
-% then wait for SPACE and its release to carry into next trial
-KbName('UnifyKeyNames');
-spaceKey = KbName('space');
-quitKey = KbName('F4');
-KbReleaseWait;
-while true
-    [keyIsDown, ~, keyCode] = KbCheck;
-    if keyIsDown && any(keyCode(quitKey))
-        quitRequested = true;
-        break
-    elseif keyIsDown && any(keyCode(spaceKey))
-        break
-    end
-    WaitSecs('YieldSecs', 0.01);
-end
-KbReleaseWait;
-
-Screen('FillRect', window, backgroundColor);
-feedbackOff = Screen('Flip', window);
-end
-
-
 
 function [nsteps, meta] = computeSmoothPursuitTrialMetaLocal(pursuitTrialIdx, rew, window_size, gauss_dim, xshift, yshift, ppd, step_wait_secs, pur)
 cornerIdxList = 2:5; % reward quadrants: TL, TR, BL, BR
@@ -2432,8 +2448,19 @@ end
 end
 
 
-function tf = isMatlabWindowFocusedLocal()
-% Return true only when MATLAB desktop/main window is focused and not minimized.
+function tf = isTaskWindowFocusedLocal(setup)
+% Dedicated devices remain usable while the operator uses another window.
+if isfield(setup, 'keyboards') && setup.keyboards.separate
+    tf = true;
+    return
+end
+% Desktop previews receive input when their native window has focus.
+if isfield(setup, 'guiWindow') && setup.guiWindow
+    [~, ~, ~, tf] = GetMouse(setup.window);
+    tf = logical(tf);
+    return
+end
+% Other modes retain the MATLAB desktop/main-window focus check.
 % If focus cannot be determined (e.g., no desktop/Java), default to true.
 tf = true;
 if ~usejava('desktop') || ~desktop('-inuse')
