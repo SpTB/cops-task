@@ -20,6 +20,7 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('mouse_mini', showCursor=false)  % hide the normally visible cursor
 %   runEx('mouse_mini', filePrefix="P001")  % supply the subject ID without a dialog
 %   runEx('mouse_mini', soundOn=false)  % disable reward-threshold beeps
+%   runEx('mouse_mini', instrOn=true)  % three instruction pages + two practice trials
 %   runEx('mouse_mini', syncMode='binary')  % preview a frame-coded photodiode patch
 %   runEx('test1', syncMode='binary', photodiodeRecord=true, photodiodeSampleRate=2000)
 % See docs/photodiode_sync.md before using photodiode acquisition on the rig.
@@ -41,7 +42,7 @@ end
 
 function ex = runCoPsWithOptions(eyeStr, overlayEnabled, pixOn, rewOn, eyeOn, skipQuest, options)
 arguments
-    eyeStr {mustBeText} % calibration mode, 'test1', or 'mouse_mini'
+    eyeStr {mustBeText} % calibration mode, 't', 'test1', or 'mouse_mini'
     overlayEnabled {mustBeNumericOrLogical} = 0;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
     pixOn  {mustBeNumericOrLogical} = 1
     rewOn {mustBeNumericOrLogical} = false
@@ -55,6 +56,7 @@ arguments
     options.fullscreen (1,1) logical = ~strcmpi(strtrim(eyeStr), 'mouse_mini')
     options.showCursor (1,1) logical = strcmpi(strtrim(eyeStr), 'mouse_mini')
     options.soundOn (1,1) logical = true
+    options.instrOn (1,:) logical = [] % [] uses setDefaultsCoPs; explicit true/false overrides
     options.syncMode (1,1) string {mustBeMember(options.syncMode, ["","goPulse","binary","off"])} = ""
     options.syncFramesPerBit (1,:) double {mustBeInteger, mustBePositive, mustBeFinite} = []
     options.syncSequence (1,:) double = []
@@ -89,6 +91,12 @@ if dependencies.datapixxOn && ~Datapixx('Open')
 end
 
 ex = setDefaultsCoPs(ex);
+if ~isempty(options.instrOn)
+    validateattributes(options.instrOn, {'logical'}, {'scalar'});
+    ex.exp.CoPs.instrOn = options.instrOn;
+end
+ex.exp.CoPs.pay = resolveCoPsPayx(ex.exp.CoPs.pay);
+formatCoPsInstructionTextx(ex.exp.CoPs.pay);
 if strlength(options.syncMode) > 0, ex.exp.CoPs.sync.mode = char(options.syncMode); end
 if ~isempty(options.syncFramesPerBit)
     validateattributes(options.syncFramesPerBit, {'numeric'}, {'scalar'});
@@ -152,7 +160,7 @@ ex.setup.overlayWindowSizePx = options.overlayWindowSizePx;
 [ex.setup.keyboards, keyboardCleanup] = initCoPsKeyboardsx( ...
     options.participantKeyboard, options.experimenterKeyboard); %#ok<NASGU>
 if ex.setup.keyboards.separate
-    fprintf('CoPs keyboards: participant SPACE only; experimenter controls enabled.\n');
+    fprintf('CoPs keyboards: participant SPACE/Q at pauses; experimenter F6 recalibrates at pauses, F4 quits.\n');
 else
     fprintf('CoPs keyboards: shared test mode (participant keyboard is not isolated).\n');
 end
@@ -454,6 +462,15 @@ dailyLog_old = dailyLog;
 % the rewards after shakes and keep track of the number of
 ex.reward.nTrialsAfterShake = inf; % default baseline
 
+if ex.exp.CoPs.instrOn
+    ex = showCoPsInstructionsx(ex);
+    cur_dir = cd(trDir);
+    save(fname,'ex'); % preserve the instruction text, timestamps, and acknowledgement
+    cd(cur_dir);
+end
+
+ex = completeCoPsPauseActionsx(ex,fullfile(trDir,fname));
+
 while ex.j <= ex.finish && ex.quit~=4
     if options.showCursor
         ShowCursor('Arrow', ex.setup.window);
@@ -506,6 +523,14 @@ while ex.j <= ex.finish && ex.quit~=4
         Trials = ex.Trials(ex.j-1);
         save(['tr' num2str(ex.j-1)],'Trials');
         cd(cur_dir)
+        ex = completeCoPsPauseActionsx(ex,fullfile(trDir,fname));
+        [ex,instructionPageShown] = advanceCoPsInstructionFlowx(ex);
+        if instructionPageShown
+            cur_dir = cd(trDir);
+            save(fname,'ex'); % save page acknowledgements before the next trial
+            cd(cur_dir);
+        end
+        ex = completeCoPsPauseActionsx(ex,fullfile(trDir,fname));
         
     elseif ex.quit ==1
         disp('in pause')
@@ -661,6 +686,10 @@ if ex.j > ex.finish && ~isempty(ex.Trials) && ...
         isfield(ex.Trials, 'endScreenAcknowledged') && ex.Trials(end).endScreenAcknowledged
     fprintf('Session complete: participant pressed SPACE on the end screen.\nData saved: %s\n', ...
         fullfile(ex.Header.onlineExperimentalDirName, fname));
+    if isfield(ex,'Payout')
+        fprintf('Participant bonus: $%.2f (%d points / %d task trials; average %.4f).\n', ...
+            ex.Payout.bonusDollars,ex.Payout.totalPoints,ex.Payout.nTrials,ex.Payout.averagePointsPerTrial);
+    end
 end
 end
 

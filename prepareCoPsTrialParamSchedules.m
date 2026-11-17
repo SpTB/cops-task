@@ -115,6 +115,26 @@ sched.step_size_mult(blockInfo.tutorialIdx) = buildBalancedValueScheduleLocal(tu
 sched.step_size_mult(blockInfo.preIdx) = buildBalancedValueScheduleLocal(mainStepSize, preN);
 sched.step_size_mult(blockInfo.mainIdx) = buildBalancedValueScheduleLocal(mainStepSize, mainN);
 
+% The instruction practice is separate from the legacy one-target tutorial.
+idx = blockInfo.instructionIdx;
+sched.background_noise_lvl(idx) = -1;
+sched.target_visibility(idx) = 1;
+if numel(idx) > 1
+    dynamicNoise = mainNoise(isfinite(mainNoise) & mainNoise ~= -1 & mainNoise ~= 0);
+    if isempty(dynamicNoise), dynamicNoise = 1; end
+    practiceVisibility = 1;
+    if isfield(ex.exp.CoPs,'instr') && isfield(ex.exp.CoPs.instr,'targetVisibility')
+        practiceVisibility = ex.exp.CoPs.instr.targetVisibility;
+    end
+    validateattributes(practiceVisibility,{'numeric'},{'scalar','real','finite','>=',0,'<=',1});
+    sched.background_noise_lvl(idx(2)) = dynamicNoise(1);
+    sched.target_visibility(idx(2)) = practiceVisibility;
+end
+sched.target_num(idx) = 2;
+sched.coherence(idx) = 1;
+if ~isempty(mainStepSize), sched.step_size_mult(idx) = mainStepSize(1); end
+if ~isempty(targetMaskSigmaMult), sched.target_mask_sigma_mult(idx) = targetMaskSigmaMult(1); end
+
 ex.exp.CoPs.trialParamSchedules = sched;
 end
 

@@ -23,6 +23,11 @@ end
 if ~isfield(T, 'Eye') || isempty(T.Eye) || ~isfield(T.Eye, 'v') || isempty(T.Eye.v)
     return
 end
+% In-task recalibration can change gains/corrections between trials. New
+% recordings retain the calibration used online; old files use the session fit.
+if isfield(T,'eyeCal') && ~isempty(T.eyeCal)
+    ex.eyeCal = T.eyeCal;
+end
 
 V = T.Eye.v;
 if isfield(T.Eye, 'n') && T.Eye.n > 0 && T.Eye.n <= size(V,2)

@@ -10,7 +10,7 @@ testCase.TestData.folder = folder;
 testCase.TestData.originalPath = path;
 writeMock(folder, 'KbName', [
     "function value = KbName(name)"
-    "names = {'space','F1','F2','F3','F4','F6','F7','F8','F9','c','Control_L'};"
+    "names = {'space','F1','F2','F3','F4','F6','F7','F8','F9','c','Control_L','q'};"
     "if strcmp(name, 'UnifyKeyNames'), value = []; return; end"
     "value = find(strcmp(name, names), 1);"
     "if isempty(value), error('CoPsKeyboardTest:UnknownKey', 'Unknown key.'); end"
@@ -103,6 +103,27 @@ end
 function value = separateSetup()
 value = struct('keyboards', struct('separate', true, ...
     'participantIndex', 1, 'experimenterIndex', 2));
+end
+
+function testQuestionComesOnlyFromParticipantKeyboard(testCase)
+global COPS_KEYBOARD_TEST
+COPS_KEYBOARD_TEST.states{2}(12)=true;
+[~,~,~,question]=readCoPsKeyboardx(separateSetup());
+verifyFalse(testCase,question);
+COPS_KEYBOARD_TEST.states{1}(12)=true;
+[operator,space,~,question]=readCoPsKeyboardx(separateSetup());
+verifyTrue(testCase,question);
+verifyFalse(testCase,space);
+verifyFalse(testCase,any(operator));
+end
+
+function testSharedKeyboardQuestionIsAnOptionalFourthOutput(testCase)
+global COPS_KEYBOARD_TEST
+COPS_KEYBOARD_TEST.states{3}(12)=true;
+[operator,space,~,question]=readCoPsKeyboardx(struct());
+verifyTrue(testCase,question);
+verifyFalse(testCase,space);
+verifyFalse(testCase,any(operator));
 end
 
 function writeMock(folder, name, lines)

@@ -6,7 +6,9 @@ if ~isfield(ex.eyeCal.native, 'matFile')
     [fname, ~, calDir] = makeFilenameAndDirx(ex, 'EyeCal');
     ex.eyeCal.native.matFile = fullfile(calDir, fname);
     [~, stem] = fileparts(fname);
-    ex.eyeCal.native.edfFile = fullfile(calDir, [stem '.edf']);
+    if ~isfield(ex.eyeCal.native,'edfFile')
+        ex.eyeCal.native.edfFile = fullfile(calDir, [stem '.edf']);
+    end
 end
 if closeEdf
     Eyelink('StopRecording');

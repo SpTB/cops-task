@@ -16,7 +16,7 @@ schedule = struct('meanTrials', average, 'rangeTrials', spread, ...
     'intervals', [], 'afterTrial', false(1, ex.finish));
 enabled = ~isfield(ctl, 'advance_trial_with_space') || ctl.advance_trial_with_space;
 if enabled
-    boundary = 0;
+    boundary = 2 * double(isfield(ex.exp.CoPs, 'instrOn') && ex.exp.CoPs.instrOn);
     while true
         interval = average;
         if spread > 0

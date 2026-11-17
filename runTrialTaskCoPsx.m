@@ -107,6 +107,11 @@ blockInfo = getCoPsTrialBlockInfox(ex);
 isTutorialTrial = any(ex.j == blockInfo.tutorialIdx);
 isPursuitTrial = any(ex.j == blockInfo.pursuitIdx);
 isPreTrial = any(ex.j == blockInfo.preIdx);
+isInstructionTrial = any(ex.j == blockInfo.instructionIdx);
+ex.Trials(ex.j).isInstructionTutorial = isInstructionTrial;
+practiceNumber = find(blockInfo.instructionIdx == ex.j,1);
+ex.Trials(ex.j).instructionTrialNumber = NaN;
+if isInstructionTrial, ex.Trials(ex.j).instructionTrialNumber = practiceNumber; end
 
 if isTutorialTrial && isfield(tut, 'threshold')
     reward_threshold = tut.threshold;
@@ -117,7 +122,7 @@ else
 end
 
 % One-shot override: run current trial as a center fixation trial.
-useFixationTrial = isfield(ctl, 'next_fixation_trial') && logical(ctl.next_fixation_trial);
+useFixationTrial = ~isInstructionTrial && isfield(ctl, 'next_fixation_trial') && logical(ctl.next_fixation_trial);
 
 % Support mixed/randomized background noise levels across trials.
 % Tutorial and main-task trials can use different noise settings.
@@ -146,13 +151,13 @@ else
 end
 ex.Trials(ex.j).fixed_background = double(ex.Trials(ex.j).background_noise_lvl == 0);
 ex.Trials(ex.j).no_background = double(ex.Trials(ex.j).background_noise_lvl == -1);
-if ~isTutorialTrial && ~isPursuitTrial && ex.Trials(ex.j).background_noise_lvl == -1 && ...
+if ~isInstructionTrial && ~isTutorialTrial && ~isPursuitTrial && ex.Trials(ex.j).background_noise_lvl == -1 && ...
         isfield(rew, 'thresholdNoiseNull') && isfinite(rew.thresholdNoiseNull)
     reward_threshold = rew.thresholdNoiseNull;
-elseif ~isTutorialTrial && ~isPursuitTrial && ex.Trials(ex.j).background_noise_lvl == -1 && ...
+elseif ~isInstructionTrial && ~isTutorialTrial && ~isPursuitTrial && ex.Trials(ex.j).background_noise_lvl == -1 && ...
         isfield(rew, 'threshold_noiseNull') && isfinite(rew.threshold_noiseNull)
     reward_threshold = rew.threshold_noiseNull;
-elseif ~isTutorialTrial && ~isPursuitTrial && ex.Trials(ex.j).background_noise_lvl == 0 && ...
+elseif ~isInstructionTrial && ~isTutorialTrial && ~isPursuitTrial && ex.Trials(ex.j).background_noise_lvl == 0 && ...
         isfield(rew, 'threshold_noise0') && isfinite(rew.threshold_noise0)
     reward_threshold = rew.threshold_noise0;
 end
@@ -319,6 +324,18 @@ if useFixationTrial
     ex.exp.CoPs.ctl.next_fixation_trial = 0; % consume one-shot flag
 end
 
+if isInstructionTrial
+    instr = struct('targetVisibility',1);
+    if isfield(ex.exp.CoPs,'instr'), instr = ex.exp.CoPs.instr; end
+    [ctl,graph,rew] = configureCoPsPracticeTrialx(ctl,graph,rew,ex.idx.bg_lum,practiceNumber,instr);
+    ex.Trials(ex.j).background_noise_lvl = graph.background_noise_lvl;
+    ex.Trials(ex.j).fixed_background = 0;
+    ex.Trials(ex.j).no_background = double(graph.background_noise_lvl == -1);
+    ex.Trials(ex.j).target_visibility = graph.target_visibility;
+    ex.Trials(ex.j).target_num = 2;
+    ex.Trials(ex.j).coherence = 1;
+end
+
 % Record trial-level eye recenter metadata for offline reference.
 ex.Trials(ex.j).eyeRecenterCount = 0;
 if isfield(ex, 'eyeCal') && isfield(ex.eyeCal, 'Delta') && ~isempty(ex.eyeCal.Delta) && ...
@@ -350,6 +367,7 @@ ex.Trials(ex.j).textureGeometrySourceFile = textureGeometryInfo.sourceFile;
 % Window and display setup
 window_size = ex.setup.screenRect;
 window_background_color = ex.idx.black;
+if isInstructionTrial, window_background_color = ex.idx.bg_lum; end
 texture_background_color = ex.idx.bg_lum;
 texture_background_w = graph.texture_dims(2) * graph.size_mult;
 texture_background_h = graph.texture_dims(1) * graph.size_mult;
@@ -404,13 +422,20 @@ gauss_dim = graph.texture_dims(1)*graph.size_mult; % based on texture size
 % Pick Gaussian reward center once per session: indexed center or free center.
 [ctr, max_peak_dist_norm] = resolveMaxPeakDistanceNormLocal(ctr, gauss_dim, ppd, rew);
 ex.exp.CoPs.ctr = ctr;
-[rew, gaussCenterCache] = loadDailyGaussCenterCoordsLocal(ex, rew, ctr, max_peak_dist_norm);
-[rew, selected_center_norm, center_px] = selectGaussRewardCenterCoPsx(rew, gauss_dim, max_peak_dist_norm);
-[rew, gaussCenterCache] = saveDailyGaussCenterCoordsLocal(ex, rew, selected_center_norm, ctr, max_peak_dist_norm, gaussCenterCache);
-rew.gauss_center_cache = gaussCenterCache;
-ex.exp.CoPs.rew = rew;
+if isInstructionTrial
+    selected_center_norm = [0.5 0.5];
+    center_px = [gauss_dim gauss_dim]/2;
+    gaussCenterCache = struct('path','','status','practice_no_landscape');
+    reward_mat = ones(gauss_dim,gauss_dim);
+else
+    [rew, gaussCenterCache] = loadDailyGaussCenterCoordsLocal(ex, rew, ctr, max_peak_dist_norm);
+    [rew, selected_center_norm, center_px] = selectGaussRewardCenterCoPsx(rew, gauss_dim, max_peak_dist_norm);
+    [rew, gaussCenterCache] = saveDailyGaussCenterCoordsLocal(ex, rew, selected_center_norm, ctr, max_peak_dist_norm, gaussCenterCache);
+    rew.gauss_center_cache = gaussCenterCache;
+    ex.exp.CoPs.rew = rew;
 
-reward_mat = gauss_rew_land(gauss_dim, center_px, rew.gauss_sigma); % reward matrix
+    reward_mat = gauss_rew_land(gauss_dim, center_px, rew.gauss_sigma); % reward matrix
+end
 xshift = (window_size(3) - gauss_dim)/2; %
 yshift = (window_size(4) - gauss_dim)/2;
 
@@ -432,7 +457,9 @@ ex.Trials(ex.j).gaussSigmaDeg = gaussSigmaInfo.sigmaDeg;
 ex.Trials(ex.j).gaussSigmaUnits = char(gaussSigmaInfo.units);
 ex.Trials(ex.j).isPursuitTrial = isPursuitTrial;
 ex.Trials(ex.j).isPreTrial = isPreTrial;
-if useFixationTrial
+if isInstructionTrial
+    run_phase_label = 'instructionPractice';
+elseif useFixationTrial
     run_phase_label = 'fixation';
 elseif isTutorialTrial
     run_phase_label = 'tut';
@@ -459,7 +486,7 @@ end
 
 % Initialize target positions
 posT = struct();
-ex.Trials(ex.j).isTutorialTrial = isTutorialTrial;
+ex.Trials(ex.j).isTutorialTrial = isTutorialTrial || isInstructionTrial;
 ex.Trials(ex.j).rewardThreshold = reward_threshold;
 
 if isPursuitTrial
@@ -532,7 +559,9 @@ elseif isPursuitTrial
     ex.Trials(ex.j).pursuitLenSec = pursuitMeta.lenSec;
     ex.Trials(ex.j).pursuitPathLengthDeg = pursuitMeta.pathLengthDeg;
 else
-    if isPreTrial
+    if isInstructionTrial
+        ex.Trials(ex.j).runPhase = 'instructionPractice';
+    elseif isPreTrial
         ex.Trials(ex.j).runPhase = 'pre';
     else
         ex.Trials(ex.j).runPhase = 'main';
@@ -1651,6 +1680,12 @@ ex.Trials(ex.j).frameSyncBit = frameSyncBit(1:fi-1);
 ex.Trials(ex.j).frameSyncIndex = frameSyncIndex(1:fi-1);
 ex.Trials(ex.j).frameSyncPhase = frameSyncPhase(1:fi-1);
 ex.Trials(ex.j).frameStateLookup = ex.states;
+
+% Preserve the fit/correction used for this trial across later recalibrations.
+ex.Trials(ex.j).eyeCal = ex.eyeCal;
+if isfield(ex.Trials(ex.j).eyeCal,'validation')
+    ex.Trials(ex.j).eyeCal = rmfield(ex.Trials(ex.j).eyeCal,'validation');
+end
 
 % Feedback is outside the recorded trial interval and stimulus flip stream.
 betweenTrialGray = texture_background_color;

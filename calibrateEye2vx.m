@@ -6,6 +6,7 @@ end
 ex = resolveCalibrationValidationDisplaySizes(ex);
 val = ex.valid;
 cal = ex.calib;
+inTask = isfield(ex.setup,'inTaskRecalibration') && ex.setup.inTaskRecalibration;
 if ~isfield(cal, 'signedGain') || isempty(cal.signedGain)
     cal.signedGain = true;
 end
@@ -305,7 +306,9 @@ clearkeyboard = input('please press the RETURN key','s');
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%%% store unique experiment ID
 clocktime = fix(clock);
-sendStrobes([ex.strobe.FILE_ID,clocktime,ex.strobe.EXPERIMENT_START]);
+if ~inTask
+    sendStrobes([ex.strobe.FILE_ID,clocktime,ex.strobe.EXPERIMENT_START]);
+end
 
 ex.Header.fileID = clocktime;
 
@@ -337,7 +340,7 @@ pos2 = localValidationGridPx(localValidationOffsetsDeg2(val), val.distance_scali
 % iknew 6.27.2022
 % open Eyelink edf file
 % close any open edf file
-if Eyelink('IsConnected') == 1
+if ~inTask && Eyelink('IsConnected') == 1
     Eyelink('SetOfflineMode')
     Eyelink('CloseFile');
     
@@ -370,12 +373,12 @@ disp('saving...')
 save(fname, 'ex');
 saveEyeCalDesktopCopy(fullfile(pwd, fname));
 cd(cur_dir)
-ex.quit = 0;
+if ~inTask, ex.quit = 0; end % preserve an aborted in-task validation
 
 
 % iknew 06.27.2022
 % close edf file
-if Eyelink('IsConnected') == 1
+if ~inTask && Eyelink('IsConnected') == 1
     Eyelink('StopRecording')
     Eyelink('SetOfflineMode')
     Eyelink('CloseFile');

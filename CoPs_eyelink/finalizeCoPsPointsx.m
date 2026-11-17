@@ -14,7 +14,13 @@ if ~isfield(ex, 'totalPoints') || isempty(ex.totalPoints) || ...
         ~isscalar(ex.totalPoints) || ~isfinite(ex.totalPoints)
     ex.totalPoints = 0;
 end
-ex.totalPoints = ex.totalPoints + pointsEarned;
+countsTowardTotal = true;
+if isfield(ex,'Trials') && numel(ex.Trials) >= ex.j && ...
+        isfield(ex.Trials,'isInstructionTutorial') && ~isempty(ex.Trials(ex.j).isInstructionTutorial)
+    countsTowardTotal = ~ex.Trials(ex.j).isInstructionTutorial;
+end
+if countsTowardTotal, ex.totalPoints = ex.totalPoints + pointsEarned; end
+ex.Trials(ex.j).pointsCountTowardTotal = countsTowardTotal;
 ex.Trials(ex.j).rawPointsEvidence = sum(evidence);
 ex.Trials(ex.j).pointTrace = pointTrace;
 ex.Trials(ex.j).pointsEarned = pointsEarned;

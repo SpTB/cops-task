@@ -80,6 +80,7 @@ end
 
 function ex = localMinimalDefaults()
 ex = setDefaultsCoPs(struct());
+ex.exp.CoPs.instrOn = false; % isolate profile trial counts from optional instruction practices
 ex.setup = struct();
 ex.setup.stereo = struct('Display', true, 'Mode', 8, 'Multisampling', 8);
 ex.setup.viewingDistance = 100;

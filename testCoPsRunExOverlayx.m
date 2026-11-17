@@ -96,6 +96,18 @@ for profile = {'test1', 'mouse_mini'}
 end
 end
 
+function testInstructionFlagReachesBothMouseProfiles(testCase)
+for profile = {'test1','mouse_mini'}
+    ex = captureBeforeDisplay(testCase,profile{1},instrOn=true);
+    verifyTrue(testCase,ex.exp.CoPs.instrOn);
+    verifyEqual(testCase,ex.exp.CoPs.pay.max_bonus_dollar,25);
+    verifyEqual(testCase,getCoPsTotalRepsx(ex),5);
+    ex = captureBeforeDisplay(testCase,profile{1},instrOn=false);
+    verifyFalse(testCase,ex.exp.CoPs.instrOn);
+    verifyEqual(testCase,getCoPsTotalRepsx(ex),3);
+end
+end
+
 function testSoundCanBeDisabledIndependentlyOfOverlay(testCase)
 for profile = {'test1', 'mouse_mini'}
     ex = captureBeforeDisplay(testCase, profile{1}, overlayOn=true, soundOn=false);

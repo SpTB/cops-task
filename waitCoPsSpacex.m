@@ -1,0 +1,89 @@
+function [quitRequested,requests,recalibrate] = waitCoPsSpacex(setup, redraw, onQuestion, allowCalibration)
+% Pause controls: participant SPACE/Q, operator F4/F6. Require fresh presses.
+if nargin < 3, onQuestion = []; end
+if nargin < 4, allowCalibration = false; end
+requests = struct('time',{},'target',{});
+notificationCleanup = []; %#ok<NASGU> Keep the latest popup alive until this screen ends.
+KbName('UnifyKeyNames');
+quitKey = KbName('F4');
+calibrationKey = [];
+if allowCalibration, calibrationKey = KbName('F6'); end
+questionDown = false;
+if isempty(onQuestion)
+    [keys,spaceDown] = readCoPsKeyboardx(setup);
+else
+    [keys,spaceDown,~,questionDown] = readCoPsKeyboardx(setup);
+end
+questionReady = ~questionDown;
+calibrationReady = ~any(keys(calibrationKey));
+waitingForCalibrationRelease = false;
+spaceReady = ~spaceDown;
+waitingForSpaceRelease = false;
+quitRequested = false;
+recalibrate = false;
+separate = isfield(setup, 'keyboards') && setup.keyboards.separate;
+while true
+    if refreshCoPsPreviewWindowx(setup), redraw(); end
+    if isempty(onQuestion)
+        [keys,spaceDown] = readCoPsKeyboardx(setup);
+    else
+        [keys,spaceDown,~,questionDown] = readCoPsKeyboardx(setup);
+    end
+    focused = true;
+    if isfield(setup, 'guiWindow') && setup.guiWindow && ~separate
+        [~,~,~,focused] = GetMouse(setup.window);
+    end
+    if ~focused
+        spaceReady = false;
+        waitingForSpaceRelease = false;
+        waitingForCalibrationRelease = false;
+        questionReady = false;
+        calibrationReady = false;
+        WaitSecs('YieldSecs',0.01);
+        continue
+    end
+    if any(keys(quitKey))
+        quitRequested = true;
+        return
+    end
+    if ~isempty(onQuestion)
+        if questionDown && questionReady
+            % Close the old alert before opening another one. Screen handles
+            % can be reused when an experimenter closes a popup manually.
+            notificationCleanup = []; %#ok<NASGU>
+            [request,notificationCleanup] = onQuestion(); %#ok<NASGU>
+            requests(end+1) = request; %#ok<AGROW>
+            questionReady = false;
+            spaceReady = false;
+            waitingForSpaceRelease = false;
+            calibrationReady = false;
+            waitingForCalibrationRelease = false;
+        elseif ~questionDown
+            questionReady = true;
+        end
+    end
+    if allowCalibration
+        calibrationDown = any(keys(calibrationKey));
+        if ~calibrationDown
+            if waitingForCalibrationRelease
+                recalibrate = true;
+                return
+            end
+            calibrationReady = true;
+        elseif calibrationReady
+            waitingForCalibrationRelease = true;
+        end
+        if waitingForCalibrationRelease
+            WaitSecs('YieldSecs',0.01);
+            continue
+        end
+    end
+    if ~spaceDown
+        if waitingForSpaceRelease, return; end
+        spaceReady = true;
+    elseif spaceReady
+        waitingForSpaceRelease = true;
+    end
+    WaitSecs('YieldSecs',0.01);
+end
+end

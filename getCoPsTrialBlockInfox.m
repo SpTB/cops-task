@@ -6,6 +6,7 @@ tutN = localNonnegativeRound(localNestedNumeric(ex, {'exp', 'CoPs', 'tut', 'nrep
 purN = localNonnegativeRound(localNestedNumeric(ex, {'exp', 'CoPs', 'pur', 'nreps'}, 0));
 preN = localNonnegativeRound(getCoPsPreTrialCountx(ex));
 purPriority = localNestedLogical(ex, {'exp', 'CoPs', 'pur', 'priority'}, true);
+instructionN = 2 * double(localNestedLogical(ex, {'exp', 'CoPs', 'instrOn'}, false));
 
 info = struct();
 info.mainN = mainN;
@@ -13,9 +14,12 @@ info.tutN = tutN;
 info.purN = purN;
 info.preN = preN;
 info.purPriority = purPriority;
-info.totalN = mainN + tutN + purN + preN;
+info.instructionN = instructionN;
+info.totalN = instructionN + mainN + tutN + purN + preN;
 
 cursor = 1;
+info.instructionIdx = cursor:(cursor + instructionN - 1);
+cursor = cursor + instructionN;
 info.tutorialIdx = cursor:(cursor + tutN - 1);
 cursor = cursor + tutN;
 

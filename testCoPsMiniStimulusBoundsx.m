@@ -13,9 +13,11 @@ testCase.TestData.originalPath = path;
 writeMock(mockDir, 'Screen', [
     "function varargout = Screen(command, varargin)"
     "global COPS_MINI_STIMULUS_TEST"
+    "global COPS_MINI_PIXELS_TEST"
     "switch lower(command)"
     "case 'maketexture'"
     "    COPS_MINI_STIMULUS_TEST = COPS_MINI_STIMULUS_TEST + 1;"
+    "    COPS_MINI_PIXELS_TEST(end+1) = double(varargin{2}(1,end));"
     "    varargout = {COPS_MINI_STIMULUS_TEST};"
     "case 'preloadtextures'"
     "    varargout = {true, true(size(varargin{2}))};"
@@ -40,11 +42,14 @@ assert(strcmp(fileparts(mockDir), fileparts(tempname)), ...
     'Refusing to remove a mock directory outside the temporary folder.');
 rmdir(mockDir, 's');
 clear global COPS_MINI_STIMULUS_TEST
+clear global COPS_MINI_PIXELS_TEST
 end
 
 function setup(~)
 global COPS_MINI_STIMULUS_TEST
+global COPS_MINI_PIXELS_TEST
 COPS_MINI_STIMULUS_TEST = 0;
+COPS_MINI_PIXELS_TEST = [];
 end
 
 function testFullHdCanvasContainsSingleAndPairedTargets(testCase)
@@ -55,7 +60,22 @@ function testLargerCanvasContainsSingleAndPairedTargets(testCase)
 verifyStimulusBounds(testCase, [0 0 2560 1440]);
 end
 
-function verifyStimulusBounds(testCase, logicalRect)
+function testPracticeHasConstantGrayAcrossGeneratedTextures(testCase)
+global COPS_MINI_PIXELS_TEST
+verifyStimulusBounds(testCase,[0 0 1920 1080],true);
+verifyEqual(testCase,COPS_MINI_PIXELS_TEST,128*ones(size(COPS_MINI_PIXELS_TEST)));
+end
+
+function testSecondPracticeGeneratesChangingBackgroundTextures(testCase)
+global COPS_MINI_PIXELS_TEST
+verifyStimulusBounds(testCase,[0 0 1920 1080],2);
+% The sampled corner is outside the target masks. Check the first target-count
+% run alone so changes cannot come from switching between one and two targets.
+verifyGreaterThan(testCase,numel(unique(COPS_MINI_PIXELS_TEST(1:5))),1);
+end
+
+function verifyStimulusBounds(testCase, logicalRect, practice)
+if nargin < 3, practice = false; end
 repoRoot = testCase.TestData.repoRoot;
 stimulusDir = fullfile(repoRoot, 'test_data', 'test_stim', 'face_fn_0021_sample_03');
 reference = load(fullfile(stimulusDir, 'noise1', 'full', 'full_0001.mat'), 'full_tp');
@@ -67,7 +87,12 @@ graph.texture_dim = sourceDims(1);
 graph.size_mult = 1080 / sourceDims(1);
 graph.radius = 15 * (sourceDims(1) / 192);
 graph.background_noise_lvl = -1;
+if practice == 1, graph.nullBackgroundGray = 128; end
 graph.target_visibility = 1;
+if practice == 2
+    graph.background_noise_lvl = 1;
+    graph.target_visibility = 0.35;
+end
 graph.scaleTextureOnDraw = true;
 ctl = ex.exp.CoPs.ctl;
 ctl.nsteps = 4;
@@ -100,6 +125,7 @@ for targetCount = 1:2
     verifyNumElements(testCase, textures, ctl.nsteps + 1);
     verifyEqual(testCase, timing.nTextures, ctl.nsteps + 1);
     expectedGray = round(min(254, max(1, mean(double(reference.full_tp(:)), 'omitnan'))));
+    if practice == 1, expectedGray = 128; end
     verifyEqual(testCase, positions(1).nullBackgroundGray, expectedGray);
     for target = 1:targetCount
         targetName = sprintf('targ%d', target);

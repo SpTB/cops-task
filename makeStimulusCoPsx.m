@@ -279,6 +279,10 @@ for j = 1:nsteps+1 %add last image being same as first but with circles
     backgroundPrepTimer = tic;
     if no_background_trial
         background_img = localGrayBackgroundLikeTarget(target_img);
+        if isfield(graph,'nullBackgroundGray')
+            validateattributes(graph.nullBackgroundGray,{'numeric'},{'scalar','real','finite','>=',1,'<=',254});
+            background_img(:) = graph.nullBackgroundGray;
+        end
     else
         background_img = matchImageMeanLocal(background_img, target_img);
     end
@@ -503,6 +507,7 @@ for j = 1:nsteps+1 %add last image being same as first but with circles
     targPositions(j).step = j;
     % Match the rendered null-condition gray for this same source texture.
     nullGray = mean(double(target_img(:)), 'omitnan');
+    if no_background_trial && isfield(graph,'nullBackgroundGray'), nullGray = graph.nullBackgroundGray; end
     if ~isfinite(nullGray), nullGray = 0; end
     targPositions(j).nullBackgroundGray = round(min(254, max(1, nullGray)));
     targPositions(j).image_idx = target_idx;

@@ -1,5 +1,13 @@
 function ex = setDefaultsCoPs(ex)
 
+ex.exp.CoPs.instrOn = 1; % three instruction screens + two practice trials
+pay.minPointsPerTrial = 3; % this average earns zero bonus; higher averages earn more
+pay.maxPointsPerTrial = 25; % this average or higher earns the maximum bonus
+pay.max_bonus_dollar = 25; % maximum bonus in welcome instructions and final payout
+pay.transform = 'linear'; % 'linear' or 'logit' (normalized inverse-logit / sigmoid)
+pay.logitSlope = 10; % steepness of the S-curve; used only for 'logit'
+instr.targetVisibility = 1; % visibility of the second, dynamic-background practice trial
+
 % do a intro minisession for Kaki: 5 pur; 10 normal (lo thresh) 5 Null (lo thresh) 
 ctl.advance_trial_with_space = true; % requires space between trials, f4 to quit
 ctl.between_trial_pause_mean = 1; % average trials between pause screens (e.g. 5)
@@ -243,6 +251,8 @@ ex.exp.CoPs.pre = pre;
 ex.exp.CoPs.tut = tut;
 ex.exp.CoPs.pur = pur;
 ex.exp.CoPs.analysis = analysis;
+ex.exp.CoPs.pay = pay;
+ex.exp.CoPs.instr = instr;
 ex.exp.CoPs.sync = sync;
 end
 
