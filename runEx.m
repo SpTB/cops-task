@@ -12,6 +12,7 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('test1', 0)  % disable the experimenter overlay
 %   runEx('test1', overlayOn=true, overlayScreen=0)
 %   runEx('test1', testTrials=5)
+%   runEx('mouse_mini', stimulusDir="stimuli/my_session") % use a generated bank
 %   runEx('test1', viewingDistanceCm=60, monitorWidthCm=53)
 %   runEx('mouse_mini')  % full-display preview in a normal desktop window
 %   runEx('mouse_mini', 1)  % enable the overlay on a separate monitor
@@ -63,6 +64,7 @@ arguments
     options.photodiodeRecord (1,1) logical = false
     options.photodiodeSampleRate (1,1) double {mustBeInteger, mustBePositive, mustBeFinite, mustBeLessThanOrEqual(options.photodiodeSampleRate,200000)} = 500
     options.filePrefix (1,1) string = ""
+    options.stimulusDir (1,1) string {mustBeStimulusDirectoryOrEmpty} = ""
     options.participantKeyboard (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite} = []
     options.experimenterKeyboard (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite} = []
     options.overlayOn (1,1) logical = logical(overlayEnabled)
@@ -132,6 +134,9 @@ if isTestProfile
             dependencies.profile, options.testTrials);
     end
     ex.Header.animal = 'test';
+end
+if strlength(options.stimulusDir) > 0
+    ex = useStimulusDirectoryLocal(ex,options.stimulusDir);
 end
 if recordingEnabled, ex = configureCoPsRecordingx(ex,options.recording); end
 if isTestProfile || strlength(options.filePrefix) > 0
@@ -713,6 +718,28 @@ elseif isfield(ex,'Payout')
 end
 end
 
+
+function mustBeStimulusDirectoryOrEmpty(folder)
+if strlength(folder) > 0 && ~isfolder(folder)
+    error('CoPs:StimulusDirectory','Stimulus directory does not exist: %s',folder);
+end
+end
+
+function ex = useStimulusDirectoryLocal(ex,folder)
+[ok,attributes] = fileattrib(char(folder));
+if ~ok
+    error('CoPs:StimulusDirectory','Cannot resolve stimulus directory: %s',folder);
+end
+resolved = attributes.Name;
+[parent,name] = fileparts(resolved);
+ex.exp.CoPs.dirs.all = [resolved filesep];
+ex.exp.CoPs.graph.texture_root = parent;
+ex.exp.CoPs.graph.texture_folder = name;
+ex.exp.CoPs.graph.texture_folder_resolved = ex.exp.CoPs.dirs.all;
+if isfield(ex.setup,'testConfig')
+    ex.setup.testConfig.stimulusRoot = resolved;
+end
+end
 
 function windowSizePx = defaultWindowSizePx(profileName)
 if strcmpi(strtrim(profileName), 'mouse_mini')

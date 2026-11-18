@@ -111,6 +111,22 @@ verifyEqual(testCase,center,[0.75 0.75]);
 verifyGreaterThan(testCase,ex.exp.CoPs.ctl.gauss_scalar,1);
 end
 
+function testExplicitStimulusBankOverridesBundledTestBank(testCase)
+for profile={'test1','mouse_mini'}
+    bank=testCase.TestData.mockDir;
+    ex=captureBeforeDisplay(testCase,profile{1},stimulusDir=string(bank));
+    verifyEqual(testCase,ex.exp.CoPs.dirs.all,[bank filesep]);
+    verifyEqual(testCase,ex.exp.CoPs.graph.texture_folder_resolved,[bank filesep]);
+    verifyEqual(testCase,ex.setup.testConfig.stimulusRoot,bank);
+    verifyMouseOnly(testCase,ex);
+end
+end
+
+function testInvalidStimulusDirectoryFailsBeforeHardwareOrDisplay(testCase)
+missing=string(fullfile(testCase.TestData.mockDir,'does_not_exist'));
+verifyError(testCase,@() runEx('mouse_mini',stimulusDir=missing),'CoPs:StimulusDirectory');
+end
+
 function testBinarySyncOptionsReachDisplayWithoutAcquisition(testCase)
 for profile = {'test1', 'mouse_mini'}
     ex = captureBeforeDisplay(testCase, profile{1}, syncMode='binary', ...

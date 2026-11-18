@@ -25,7 +25,7 @@ rmdir(folder,'s');
 clear global COPS_RECEX_TEST
 end
 
-function testDefaultsAreOneFiveSecondTrialWithoutInstructionsOrHardware(testCase)
+function testDefaultsAreOneTenSecondTrialWithoutInstructionsOrHardware(testCase)
 global COPS_RECEX_TEST
 ex=invoke(testCase);
 a=COPS_RECEX_TEST.args; c=a.recording;
@@ -36,7 +36,7 @@ verifyTrue(testCase,a.showCursor);
 verifyFalse(testCase,a.soundOn);
 verifyEqual(testCase,a.syncMode,'off');
 verifyFalse(testCase,a.overlayOn);
-verifyEqual(testCase,[c.length c.targetNum c.visibility c.background],[5 2 1 -1]);
+verifyEqual(testCase,[c.length c.targetNum c.visibility c.background],[10 2 1 -1]);
 verifyTrue(testCase,c.mouseVisible);
 verifyTrue(testCase,c.displayReward);
 verifyTrue(testCase,c.rewardMarker);
@@ -56,6 +56,14 @@ invoke(testCase,2.5,fps=60,movieSizePx=[1920 1080]);
 c=COPS_RECEX_TEST.args.recording;
 verifyEqual(testCase,[c.length c.fps],[2.5 60]);
 verifyEqual(testCase,c.movieSizePx,[1920 1080]);
+end
+
+function testGeneratedStimulusDirectoryIsForwardedToRunEx(testCase)
+global COPS_RECEX_TEST
+folder=string(testCase.TestData.folder);
+invoke(testCase,stimulusDir=folder);
+verifyEqual(testCase,COPS_RECEX_TEST.args.stimulusDir,folder);
+verifyEqual(testCase,COPS_RECEX_TEST.args.recording.stimulusDir,folder);
 end
 
 function testInvalidInputsFailBeforeStartingTask(testCase)
@@ -132,7 +140,7 @@ for corner=1:4
 end
 end
 
-function testNullBackgroundOverridesRespectRequestedVisibilityAndTargetCount(testCase)
+function testNullBackgroundVisibilityAndTargetCountOverrides(testCase)
 global COPS_RECEX_TEST
 invoke(testCase,length=2,targetNum=1,visibility=0.35,background=-1);
 evalc('ex=setDefaultsCoPs(struct());');

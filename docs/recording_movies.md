@@ -5,7 +5,7 @@ ex = recEx();
 ex.MovieFiles{1}              % absolute path to the first MP4
 ```
 
-By default this previews and exports **one five-second trial**, with two targets,
+By default this previews and exports **one ten-second trial**, with two targets,
 visibility 1, a static gray/null background (`-1`), a flat reward landscape,
 and a visible mouse. It uses
 the hardware-free, windowed `mouse_mini` task. No instruction/practice trials,
@@ -26,7 +26,7 @@ arguments use name-value syntax. Options:
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
-| `length` | `5` | Stimulus/movie length in seconds, rounded to a movie frame |
+| `length` | `10` | Stimulus/movie length in seconds, rounded to a movie frame |
 | `targetNum` | `2` | One or two targets |
 | `visibility` | `1` | Target visibility from 0 to 1, including null/fixed backgrounds |
 | `background` | `-1` | `-1`: static gray/null; `0`: fixed texture; positive integers: dynamic noise levels from the configured stimulus set |
@@ -40,6 +40,7 @@ arguments use name-value syntax. Options:
 | `movieSizePx` | `[1280 720]` | Output `[width height]`, both even |
 | `windowSizePx` | `[960 540]` | Requested preview window size |
 | `outputDir` | `""` | Parent folder for movies; empty uses the session's `movies` folder |
+| `stimulusDir` | `""` | Generated bank/session directory; empty uses the bundled test bank |
 | `filePrefix` | `"demo"` | Prefix for the accompanying session data and movie subfolder |
 
 The stimulus updates at the existing configured rate (normally 30 Hz). A 60 fps
@@ -47,6 +48,9 @@ movie repeats each stimulus step twice; it does not introduce extra motion.
 The full logical scene is fitted into the output size without cropping, adding
 black borders if the aspect ratios differ. Visibility and target count apply
 to the null-background condition as well as fixed/dynamic backgrounds.
+
+Use `recEx(stimulusDir=bank)` to record a bank produced by `genDailyStimCorey`.
+See [stimulus generation](stimulus_generation.md) for the complete workflow.
 
 Move the mouse during the preview if you want to demonstrate tracking. The
 mouse starts centered in the preview. The movie renders a software arrow using

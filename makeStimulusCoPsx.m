@@ -301,11 +301,11 @@ for j = 1:nsteps+1 %add last image being same as first but with circles
     [pixel_x1, pixel_y1] = pix_norm(cx(step_idx), cy(step_idx), img_width, img_height, radius, target_hidden_bounds_frac);
     % Create Gaussian masks with converted coordinates
     mask_sigma = (radius / 3) * target_mask_sigma_mult;
-    gaussian_mask = target_visibility * gauss_mask(target_img, pixel_x1, pixel_y1, radius, mask_sigma);
+    gaussian_mask = target_visibility * copsstim.gaussMask(target_img, pixel_x1, pixel_y1, radius, mask_sigma);
     inv_mask = 1 - gaussian_mask;
     if target_num == 2
         [pixel_x2, pixel_y2] = pix_norm(cx2(step_idx), cy2(step_idx), img_width, img_height, radius, target_hidden_bounds_frac);
-        gaussian_mask2 = target_visibility * gauss_mask(target_img, pixel_x2, pixel_y2, radius, mask_sigma);
+        gaussian_mask2 = target_visibility * copsstim.gaussMask(target_img, pixel_x2, pixel_y2, radius, mask_sigma);
         inv_mask2 = 1 - gaussian_mask2;
     end
     timingInfo.stepMaskSec(j) = toc(maskTimer);

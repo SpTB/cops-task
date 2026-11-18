@@ -203,7 +203,7 @@ else
     end
 
     [pixelX1, pixelY1] = pix_norm(cx1, cy1, imgWidth, imgHeight, radius, targetHiddenBoundsFrac);
-    gaussianMask1 = targetVisibility * gauss_mask(targetImg, pixelX1, pixelY1, radius, maskSigma);
+    gaussianMask1 = targetVisibility * copsstim.gaussMask(targetImg, pixelX1, pixelY1, radius, maskSigma);
     if opts.targOnly && opts.singleTargetCenter
         circleMask1 = localCircleMask(imgWidth, imgHeight, pixelX1, pixelY1, radius);
         invMask = circleMask1 .* (1 - gaussianMask1);
@@ -217,7 +217,7 @@ else
     pixelY2 = NaN;
     if targetNum == 2
         [pixelX2, pixelY2] = pix_norm(cx2, cy2, imgWidth, imgHeight, radius, targetHiddenBoundsFrac);
-        gaussianMask2 = targetVisibility * gauss_mask(targetImg, pixelX2, pixelY2, radius, maskSigma);
+        gaussianMask2 = targetVisibility * copsstim.gaussMask(targetImg, pixelX2, pixelY2, radius, maskSigma);
         invMask2 = 1 - gaussianMask2;
         target2 = targetImg .* gaussianMask2;
         background = background .* invMask2;

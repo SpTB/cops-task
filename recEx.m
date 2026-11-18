@@ -3,6 +3,7 @@ function ex = recEx(varargin)
 %   ex = recEx();
 %   ex = recEx(length=5, targetNum=2, visibility=1, background=-1, mouseVisible=true);
 %   ex = recEx(8, background=1, visibility=0.6, mouseVisible=false);
+%   ex = recEx(stimulusDir="stimuli/my_session");
 % rewardLandscape: 0=flat (default), 1=top-left, 2=top-right,
 % 3=bottom-left, 4=bottom-right, using the configured corner peak positions.
 % Optional displayReward=true embeds point-crossing beeps in each MP4.
@@ -30,6 +31,7 @@ arguments
     options.movieSizePx (1,2) double {mustBeInteger,mustBePositive} = [1280 720]
     options.windowSizePx (1,2) double {mustBeInteger,mustBePositive} = [960 540]
     options.outputDir (1,1) string = ""
+    options.stimulusDir (1,1) string = ""
     options.filePrefix (1,1) string = "demo"
 end
 if any(mod(options.movieSizePx,2))
@@ -37,6 +39,7 @@ if any(mod(options.movieSizePx,2))
 end
 ex = runEx('mouse_mini',testTrials=options.nTrials,instrOn=false, ...
     showCursor=options.mouseVisible,soundOn=false,syncMode='off',overlayOn=false, ...
+    stimulusDir=options.stimulusDir, ...
     windowSizePx=options.windowSizePx,filePrefix=options.filePrefix,recording=options);
 if isfield(ex,'lastError') && ~isempty(ex.lastError)
     rethrow(ex.lastError);

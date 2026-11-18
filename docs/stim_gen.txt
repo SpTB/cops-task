@@ -1,0 +1,6 @@
+setenv('COPS_STIM_SOURCE_ROOT', ...
+    'Y:\groupMembers\current\Corey\stimGeneration\face_fMRI\stimuli');
+
+out = genDailyStimCorey();
+
+Put the setenv line in MATLAB’s startup.m to keep using genDailyStimCorey() without arguments across sessions. Output defaults to the repo’s stimuli folder.

@@ -1,0 +1,266 @@
+[
+  {
+    "library": "textureSynth local snapshot",
+    "source": "adjustCorr1s.m",
+    "destination": "private/adjustCorr1s.m",
+    "sha256": "65fef3317b2c32488bef59785a0ea650991549af1f6469d88c3e12586e4aea55"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "adjustCorr2s.m",
+    "destination": "private/adjustCorr2s.m",
+    "sha256": "9dd6ccb2c5cd90f23bc929d496793ce8dcc8c2a63ddf1fd4a9d6dc4366e6ebe6"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "expand.m",
+    "destination": "private/expand.m",
+    "sha256": "b4ade7b16744760071ff9f3a89c134d7c9444e2a9576fe9388ca839b64ed41a0"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "loadSavedVar.m",
+    "destination": "private/loadSavedVar.m",
+    "sha256": "dea9269335dfcd0ddce7c43be25f32c6475068dde0774603fb4759515ccfa858"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "modacor22.m",
+    "destination": "private/modacor22.m",
+    "sha256": "fac0ef82d892b7062167df102d43dd4c505ac46ef3e60124dc47b4d8a6f4e034"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "modkurt.m",
+    "destination": "private/modkurt.m",
+    "sha256": "8bd6cb0b326c98aaa9a3c93d9f484144c71b20690f2350171a0f2e4a5eab56c2"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "modskew.m",
+    "destination": "private/modskew.m",
+    "sha256": "0944bc91effb500ee6528044a7c9d011d8339a0745a967dd050a8054045c3e20"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "params2struct.m",
+    "destination": "private/params2struct.m",
+    "sha256": "325e0b3129ebcbd9ba3a4670567d92c29e1adcf86228e73a2e61cb001adad7c4"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "paramsMatchSettings.m",
+    "destination": "private/paramsMatchSettings.m",
+    "sha256": "b97b2199fbaed4262eddb7765af41bd1a6f25ee887701e9201acb16eaa97adf1"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "randomize_phase.m",
+    "destination": "private/randomize_phase.m",
+    "sha256": "57dca20fc2c3b4a9399e329f7b3db7ed7b99123584a42a79003c065ccc2553ca"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "snr.m",
+    "destination": "private/snr.m",
+    "sha256": "f83b4280ec80b3892b185451c92b5ef896e7547f316d16f4eac43b6843da692a"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "struct2params.m",
+    "destination": "private/struct2params.m",
+    "sha256": "469ea9335b763f10a0d4badadf8e1af7127b17ce262e752822c956ed2c51cbe5"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "textureAnalysis_wz.m",
+    "destination": "private/textureAnalysis_wz.m",
+    "sha256": "b3fcdbc3f656a99ed81c1c9990f2f628ce8931f81917636b9ca604d73407a28e"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "textureSynthesis_wz.m",
+    "destination": "private/textureSynthesis_wz.m",
+    "sha256": "4cccd55d4b951f1290035002fde096d673b6775ba1529a445aa69e8242af7e6d"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "buildSCFpyr.m",
+    "destination": "private/buildSCFpyr.m",
+    "sha256": "f154e38c681b43de08a46e01bc53197e528e60a86792f532ecde59e1cbc331a2"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "buildSCFpyrLevs.m",
+    "destination": "private/buildSCFpyrLevs.m",
+    "sha256": "b31582da7080ed1117e541b3c67a60cb2e21e7e0dbd6b33585833527bc9aadc0"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "buildSFpyr.m",
+    "destination": "private/buildSFpyr.m",
+    "sha256": "83088666487020d45a40f7e9146ac3d7a8652d0a13da0c1ac421e191886beead"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "buildSFpyrLevs.m",
+    "destination": "private/buildSFpyrLevs.m",
+    "sha256": "c000850699b037b64681bc3651ebf5f121fc37aee0dc9b10460505cf8857c88f"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "clip.m",
+    "destination": "private/clip.m",
+    "sha256": "3e7a3fe8ff865af28f89c4fa331bc2d8084d945b8972cc9290f37b31d5a64701"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "factorial.m",
+    "destination": "private/factorial.m",
+    "sha256": "1d1bcee51e2e071b7c30e1adf286994d95c38d6d323475a10298a1d624bed0ca"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "histo.m",
+    "destination": "private/histo.m",
+    "sha256": "064a959c23ee2e87a3c264a322807b264fec16919cb3094ddcd7dc96f6ec90eb"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "innerProd.m",
+    "destination": "private/innerProd.m",
+    "sha256": "d1a640aa7a3af6c30d7e0e568f3f1b52699e09c62fdae5de838959ca16b849bf"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "kurt2.m",
+    "destination": "private/kurt2.m",
+    "sha256": "645ebe8d93839238ce16217d4936bbbd6d23973efe72908262840719ad6bb7d5"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "mean2.m",
+    "destination": "private/mean2.m",
+    "sha256": "4bfac16b894e30c9680bd9202e90662b5fff16c961122c61642197f7a215f7bb"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "mkAngle.m",
+    "destination": "private/mkAngle.m",
+    "sha256": "55029be025d7b413da721baf0d5cd042c465e38e3471914bf475a653d1ee6605"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "pixelAxes.m",
+    "destination": "private/pixelAxes.m",
+    "sha256": "f192bdc44a59711d38f056263c6fe82ab26fd2d631e7c7eb21a0bc96a821e966"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "pointOp.m",
+    "destination": "private/pointOp.m",
+    "sha256": "9b28e94042d43a6ea9494ab6d5a90b8b771cd9a43839c4a465819b47bd3e1801"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "pyrBand.m",
+    "destination": "private/pyrBand.m",
+    "sha256": "51ac0a30aa402751251c47e620b9f57c8c343c0121def3f3858ab15cabe02591"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "pyrBandIndices.m",
+    "destination": "private/pyrBandIndices.m",
+    "sha256": "b9118ffbb55e76fd3fb40d4cfbdb4c18e1e26d5ff07415088eff289df6c96950"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "pyrLow.m",
+    "destination": "private/pyrLow.m",
+    "sha256": "eac12a7ba2de0a3ccb6efc80b43447bcde3b88ad09a741d2093592188c66774e"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "range2.m",
+    "destination": "private/range2.m",
+    "sha256": "b49f89331873aa2c06899172b3d78d13ceaae9d7aae388a52915262b5c9063e1"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "rcosFn.m",
+    "destination": "private/rcosFn.m",
+    "sha256": "960ead38e04a041d93012dc5b9a930e40bf704dbcdf2c778125932fcf4aa12aa"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "reconSFpyr.m",
+    "destination": "private/reconSFpyr.m",
+    "sha256": "442e81fae8004ba6e3aa04f7517df9bdc40bebda3f04403212a9c9927ec11797"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "reconSFpyrLevs.m",
+    "destination": "private/reconSFpyrLevs.m",
+    "sha256": "fe4597a824de0c8dda5cab11bdab3b8866c55ba174bf98a4d5adffca8ae6a3ba"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "shift.m",
+    "destination": "private/shift.m",
+    "sha256": "c1ee7ddfa391adbbc4c6fb8efed8bef5f6a2e7be441f9ae357f8fbf5056e5ea0"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "showIm.m",
+    "destination": "private/showIm.m",
+    "sha256": "e279eb5dd42c07a5270b1e2baa06c54eaa92d61b63641d4626391c895b853e72"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "skew2.m",
+    "destination": "private/skew2.m",
+    "sha256": "f0e7e505652f212c7fd9cf49045633b7904df329e83d861be4d6d3b9d6b18d03"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "spyrHt.m",
+    "destination": "private/spyrHt.m",
+    "sha256": "41fe95f4c599a99df16f83ef9e02208f67eb4991e67b0d8d245c55882784a0c8"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "spyrNumBands.m",
+    "destination": "private/spyrNumBands.m",
+    "sha256": "1af6f6130151cfb0df6421eb04eab46338b74d7f69e76d4f213adf271b176023"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "steer2HarmMtx.m",
+    "destination": "private/steer2HarmMtx.m",
+    "sha256": "be192db66b49692d3fbb3d81284760675df6c7909edd2518d67c50be90f126bf"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "subMtx.m",
+    "destination": "private/subMtx.m",
+    "sha256": "cc2e1cb8c2bf04b896262f9a64cebf721a8a5d184c4a41fb3a0063fd9df3a41e"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "var2.m",
+    "destination": "private/var2.m",
+    "sha256": "cd073de7b7541cc74451df6e1827c3045c1e5f1eba8ab0aee5bac83dd69d7f9c"
+  },
+  {
+    "library": "matlabPyrTools local snapshot",
+    "source": "vectify.m",
+    "destination": "private/vectify.m",
+    "sha256": "3b5f2b962401ed5a2d8a1c0c685299701a65c519a746099905d399d2891a5ef4"
+  },
+  {
+    "library": "textureSynth local snapshot",
+    "source": "genDailyStimCorey.m",
+    "destination": "generateCorey.m",
+    "sha256": "83676f126a2aed24f8516277247123526cca0b8303df44d38f9ff47f13cdfa73"
+  }
+]
