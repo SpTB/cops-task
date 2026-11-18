@@ -19,8 +19,13 @@ ex.Trials(ex.j).endScreenAcknowledged = false;
 if ex.quit ~= 0 || (~pauseScheduled && ~isFinalTrial)
     return
 end
+if isFinalTrial
+    ex.Payout = calculateCoPsPayoutx(ex.Trials(1:ex.j),ex.exp.CoPs.pay);
+    ex = showCoPsOutrox(ex,backgroundColor,false,ex.j);
+    return
+end
 
-showPoints = ~isFinalTrial && (isPractice || (rew.points_feedback_on && ex.Trials(ex.j).trialScored));
+showPoints = isPractice || (rew.points_feedback_on && ex.Trials(ex.j).trialScored);
 textSize = double(rew.points_feedback_text_size);
 if ~isscalar(textSize) || ~isfinite(textSize) || textSize <= 0
     textSize = 48;
@@ -32,20 +37,13 @@ if ~isscalar(decimals) || ~isfinite(decimals) || decimals < 0
 end
 decimals = min(6, round(decimals));
 numberFormat = ['%.' num2str(decimals) 'f'];
-if isFinalTrial || showPoints
+if showPoints
     % Only accepted threshold crossings earn displayed points. Fractional
     % evidence resets each trial and must not add up to an unearned point.
     [totalPoints,earnedPoints] = getCoPsEarnedPointsx(ex.Trials(1:ex.j));
     trialPoints = earnedPoints(end);
 end
-if isFinalTrial
-    ex.Payout = calculateCoPsPayoutx(ex.Trials(1:ex.j),ex.exp.CoPs.pay);
-    averageDisplayed = floor(100*ex.Payout.totalPoints/max(1,ex.Payout.nTrials))/100;
-    feedbackText = sprintf(['The session is complete.\n\nTotal: ' numberFormat ...
-        ' points\nAverage: %.2f points per trial\nBonus earned: $%.2f\n\n' ...
-        'Press SPACE to finish.\n\nPlease inform the experimenter.'], ...
-        totalPoints,averageDisplayed,ex.Payout.bonusDollars);
-elseif isPractice
+if isPractice
     feedbackText = sprintf(['Practice trial: ' numberFormat ' points\n\n' ...
         'Practice points do not count toward your winnings.\n\nPress SPACE to continue'],trialPoints);
 elseif showPoints
@@ -55,11 +53,7 @@ elseif showPoints
 else
     feedbackText = 'Press SPACE to start the next trial';
 end
-if isFinalTrial
-    ex.Outro = struct('text',feedbackText,'on',NaN,'off',NaN,'acknowledged',false);
-else
-    feedbackText = sprintf('%s\n\nTo ask a question, press Q and keep your head still.',feedbackText);
-end
+feedbackText = sprintf('%s\n\nTo ask a question, press Q and keep your head still.',feedbackText);
 
 setup = ex.setup;
 window = setup.window;
@@ -72,7 +66,7 @@ refreshCoPsPreviewWindowx(setup);
 feedbackOn = Screen('Flip', window);
 Screen('TextSize', window, oldTextSize);
 
-allowCalibration = ~isFinalTrial && isfield(setup,'inputMode') && ismember(setup.inputMode,{'eyelink','eye'});
+allowCalibration = isfield(setup,'inputMode') && ismember(setup.inputMode,{'eyelink','eye'});
 [quitRequested,questionRequests,recalibrate] = waitCoPsSpacex(setup, ...
     @() redrawLocal(ex,backgroundColor,feedbackText,textSize,oldTextSize), ...
     @() notifyCoPsQuestionx(ex),allowCalibration);
@@ -86,22 +80,11 @@ Screen('FillRect', window, backgroundColor);
 drawCoPsIdleSyncx(ex);
 refreshCoPsPreviewWindowx(setup);
 feedbackOff = Screen('Flip', window);
-if isFinalTrial
-    ex.Outro.on = feedbackOn;
-    ex.Outro.off = feedbackOff;
-    ex.Outro.acknowledged = ~quitRequested;
-    ex.Outro.questionRequests = questionRequests;
-    ex.Trials(ex.j).payout = ex.Payout;
-    ex.Trials(ex.j).endScreenOn = feedbackOn;
-    ex.Trials(ex.j).endScreenOff = feedbackOff;
-    ex.Trials(ex.j).endScreenAcknowledged = ~quitRequested;
-else
-    ex.Trials(ex.j).trialAdvanceWaitOn = feedbackOn;
-    ex.Trials(ex.j).trialAdvanceWaitOff = feedbackOff;
-    if showPoints
-        ex.Trials(ex.j).pointsFeedbackOn = feedbackOn;
-        ex.Trials(ex.j).pointsFeedbackOff = feedbackOff;
-    end
+ex.Trials(ex.j).trialAdvanceWaitOn = feedbackOn;
+ex.Trials(ex.j).trialAdvanceWaitOff = feedbackOff;
+if showPoints
+    ex.Trials(ex.j).pointsFeedbackOn = feedbackOn;
+    ex.Trials(ex.j).pointsFeedbackOff = feedbackOff;
 end
 if quitRequested
     ex.quit = 4;

@@ -1,7 +1,8 @@
-function [quitRequested,requests,recalibrate] = waitCoPsSpacex(setup, redraw, onQuestion, allowCalibration)
+function [quitRequested,requests,recalibrate] = waitCoPsSpacex(setup, redraw, onQuestion, allowCalibration, requireFreshQuit)
 % Pause controls: participant SPACE/Q, operator F4/F6. Require fresh presses.
 if nargin < 3, onQuestion = []; end
 if nargin < 4, allowCalibration = false; end
+if nargin < 5, requireFreshQuit = false; end
 requests = struct('time',{},'target',{});
 notificationCleanup = []; %#ok<NASGU> Keep the latest popup alive until this screen ends.
 KbName('UnifyKeyNames');
@@ -15,6 +16,7 @@ else
     [keys,spaceDown,~,questionDown] = readCoPsKeyboardx(setup);
 end
 questionReady = ~questionDown;
+quitReady = ~requireFreshQuit || ~any(keys(quitKey));
 calibrationReady = ~any(keys(calibrationKey));
 waitingForCalibrationRelease = false;
 spaceReady = ~spaceDown;
@@ -42,7 +44,9 @@ while true
         WaitSecs('YieldSecs',0.01);
         continue
     end
-    if any(keys(quitKey))
+    if ~any(keys(quitKey))
+        quitReady = true;
+    elseif quitReady
         quitRequested = true;
         return
     end

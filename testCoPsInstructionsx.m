@@ -88,14 +88,14 @@ end
 
 function testCopyUsesConfiguredBonusAndNoBoldMarkup(testCase)
 [body,prompt]=formatCoPsInstructionTextx(struct('max_bonus_dollar',25));
-verifySubstring(testCase,body,'up to $25.');
+verifySubstring(testCase,body,'up to $25 for this session.');
 verifySubstring(testCase,body,'switch between them freely');
 verifySubstring(testCase,body,'earn a point and hear a beep');
 verifyFalse(testCase,contains(body,'landscape'));
 verifyFalse(testCase,contains(body,'**'));
 verifyEqual(testCase,prompt,'Press the SPACE BAR to begin.');
 body=formatCoPsInstructionTextx(struct('max_bonus_dollar',12.5));
-verifySubstring(testCase,body,'up to $12.50.');
+verifySubstring(testCase,body,'up to $12.50 for this session.');
 verifyError(testCase,@() formatCoPsInstructionTextx(struct('max_bonus_dollar',-1)), ...
     'MATLAB:expectedNonnegative');
 end
@@ -114,11 +114,34 @@ draws=COPS_INSTRUCTIONS_TEST.flips{1};
 verifyNumElements(testCase,draws,2);
 verifyEqual(testCase,[draws{1}.style draws{2}.style],[0 1]);
 verifyEqual(testCase,draws{2}.text,'Press the SPACE BAR to begin.');
-verifySubstring(testCase,draws{1}.text,'up to $25.');
+verifySubstring(testCase,draws{1}.text,'up to $0.41 for this session.');
+verifyEqual(testCase,ex.Instructions.max_bonus_dollar,0.41);
+verifyEqual(testCase,ex.Instructions.hourly_max_bonus_dollar,25);
+verifyEqual(testCase,ex.Instructions.planned_paid_trials,3);
 verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.style,7);
 verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.size,42);
 verifyTrue(testCase,ex.Instructions.acknowledged);
 verifyEqual(testCase,[ex.Instructions.on ex.Instructions.off],[101 102]);
+end
+
+function testWelcomeScalesSessionCapAndExcludesBothPracticeTrials(testCase)
+global COPS_INSTRUCTIONS_TEST
+for n=[90 180 360]
+    resetMock();
+    ex=fixture(); ex.exp.nreps=n; % instruction flow adds two unpaid practices
+    ex=showInstructions(testCase,ex);
+    verifyEqual(testCase,ex.Instructions.max_bonus_dollar,25*n/180);
+    verifyEqual(testCase,ex.Instructions.planned_paid_trials,n);
+    if n==90
+        verifySubstring(testCase,COPS_INSTRUCTIONS_TEST.flips{1}{1}.text,'$12.50 for this session');
+    end
+end
+end
+
+function testFormatterUsesExplicitSessionLength(testCase)
+[body,~,cap]=formatCoPsInstructionTextx(struct(),'welcome',struct(),90);
+verifySubstring(testCase,body,'up to $12.50 for this session.');
+verifyEqual(testCase,cap.maxBonusDollars,12.5);
 end
 
 function testHeldSpaceAndResizeRequireFreshAcknowledgement(testCase)

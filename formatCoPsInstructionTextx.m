@@ -1,8 +1,12 @@
-function [body, prompt] = formatCoPsInstructionTextx(pay,stage,ctl)
+function [body, prompt, cap] = formatCoPsInstructionTextx(pay,stage,ctl,nTrials)
 % Participant-approved copy; styling is applied separately by the renderer.
 if nargin < 1, pay = struct(); end
 if nargin < 2, stage = 'welcome'; end
 if nargin < 3, ctl = struct(); end
+pay = resolveCoPsPayx(pay);
+% Standalone calls preview one reference hour; the renderer supplies the plan.
+if nargin < 4, nTrials = pay.trials_per_hour; end
+cap = getCoPsBonusCapx(nTrials,pay);
 stage = validatestring(stage,{'welcome','dynamic','ready'});
 if strcmp(stage,'dynamic')
     body = sprintf(['Most trials will be more challenging. The targets will move against a changing, noisy background ' ...
@@ -46,17 +50,16 @@ elseif strcmp(stage,'ready')
     prompt = 'Press the SPACE BAR to start the main task.';
     return
 end
-pay = resolveCoPsPayx(pay);
-amount = sprintf('%.2f', pay.max_bonus_dollar);
-if pay.max_bonus_dollar == fix(pay.max_bonus_dollar)
-    amount = sprintf('%.0f', pay.max_bonus_dollar);
+amount = sprintf('%.2f', cap.maxBonusDollars);
+if cap.maxBonusDollars == fix(cap.maxBonusDollars)
+    amount = sprintf('%.0f', cap.maxBonusDollars);
 end
 body = sprintf(['Welcome!\n\n' ...
     'In this task, you will use your eyes to follow moving texture patches, called targets.\n\n' ...
     'You can follow either target and switch between them freely. ' ...
     'Try to keep your gaze as close to a target''s center as possible as it moves.\n\n' ...
     'The more accurately you track a target, the more points you earn. ' ...
-    'Your total points will determine your winnings, up to $%s.\n\n' ...
+    'Your total points will determine your winnings, up to $%s for this session.\n\n' ...
     'When you follow a target closely for long enough, you earn a point and hear a beep.\n\n' ...
     'We''ll start with a short practice trial.\n\n' ...
     'To ask a question, press Q and keep your head still while waiting for the experimenter.'], amount);

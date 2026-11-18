@@ -1,5 +1,5 @@
 function payout = calculateCoPsPayoutx(trials,pay)
-% Convert the average whole earned points per non-practice trial to a bonus.
+% Convert mean earned points to a bonus scaled by eligible trial count.
 % Both endpoints are exact; 'logit' denotes a normalized inverse-logit curve.
 pay = resolveCoPsPayx(pay);
 [total,points,mask] = getCoPsEarnedPointsx(trials);
@@ -14,8 +14,10 @@ if strcmp(pay.transform,'logit') && x > 0 && x < 1 && pay.logitSlope >= sqrt(eps
     fraction = (tanh(pay.logitSlope*(x-0.5)/2)+a)/(2*a);
 end
 fraction = max(0,min(1,fraction));
-capCents = round(100*pay.max_bonus_dollar);
-rawCents = fraction*capCents;
+cap = getCoPsBonusCapx(n,pay);
+capCents = cap.maxBonusCents;
+% Keep fractional cents in the scaled cap until performance is applied.
+rawCents = fraction*cap.maxBonusDollarsUnrounded*100;
 % Correct only floating-point error at exact cents before flooring.
 if abs(rawCents-round(rawCents)) <= 16*eps(max(1,abs(rawCents)))
     rawCents = round(rawCents);
@@ -27,7 +29,10 @@ end
 if n == 0, bonusCents = 0; end
 payout = struct('config',pay,'totalPoints',total,'nTrials',n, ...
     'trialPoints',points,'trialMask',mask,'averagePointsPerTrial',average, ...
+    'equivalentHours',cap.equivalentHours, ...
+    'maxBonusDollarsUnrounded',cap.maxBonusDollarsUnrounded, ...
+    'maxBonusCents',capCents,'maxBonusDollars',cap.maxBonusDollars, ...
     'normalizedPerformance',x,'bonusFraction',fraction, ...
-    'bonusDollarsUnrounded',fraction*pay.max_bonus_dollar, ...
+    'bonusDollarsUnrounded',fraction*cap.maxBonusDollarsUnrounded, ...
     'bonusCents',bonusCents,'bonusDollars',bonusCents/100);
 end

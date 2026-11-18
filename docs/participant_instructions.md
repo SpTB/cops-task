@@ -17,12 +17,16 @@ when the preview is resized.
 The maximum bonus stated in the text is configured in `setDefaultsCoPs.m`:
 
 ```matlab
-pay.max_bonus_dollar = 25;
+pay.max_bonus_dollar = 25; % maximum per trials_per_hour paid trials
+pay.trials_per_hour = 180;
 instr.targetVisibility = 1;
 ```
 
-The bonus cap is saved as `ex.exp.CoPs.pay.max_bonus_dollar` and is shared by
-the welcome text and the payout calculation. All money settings are in `pay`;
+The hourly bonus amount is saved as `ex.exp.CoPs.pay.max_bonus_dollar`.
+The welcome text quotes that amount scaled by planned paid trials divided by
+`pay.trials_per_hour`: $12.50 for 90 paid trials or $50 for 360 with the
+defaults. Both instruction practices are excluded. The final payout uses the
+same scaling based on eligible trials actually recorded. All money settings are in `pay`;
 see [Participant bonus](participant_bonus.md) for thresholds and curves.
 The second setting is saved as `ex.exp.CoPs.instr.targetVisibility`,
 must be between 0 and 1, and controls the second practice trial's visibility.
@@ -43,6 +47,11 @@ After calibration the flow is:
 8. After the task, an outro showing earned points, average points per task
    trial, the cash bonus, and SPACE to finish.
 
+Experimenter F4 also shows the outro when at least one paid trial has completed;
+an unfinished trial is excluded from payment. `ex.Payout` is calculated and
+saved even when the run stops early or only practice has run (a zero payout).
+See [Early termination and recovery](participant_bonus.md#f4-and-early-termination).
+
 Both practice trials use normal moving texture targets, full coherence,
 spatially uniform reward weighting, the normal trial duration, and the soundOn
 setting. Dynamic practice uses the first configured dynamic noise level; if
@@ -55,7 +64,9 @@ replace main-task conditions or select/save a reward-landscape center.
 
 The exact copy, amount, screen timestamps, stage (`welcome`, `dynamic`, or
 `ready`), and acknowledgement of every page are saved in
-`ex.Instructions.pages`. The original top-level `ex.Instructions` fields still
+`ex.Instructions.pages`. `max_bonus_dollar` in each page is the quoted session
+cap; `hourly_max_bonus_dollar`, `trials_per_hour`, and `planned_paid_trials`
+record how it was scaled. The original top-level `ex.Instructions` fields still
 describe the welcome page. Completed trial data are saved before showing the
 next page, and page acknowledgements are checkpointed before the next trial.
 

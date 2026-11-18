@@ -3,15 +3,20 @@ function ex = showCoPsInstructionsx(ex,stage)
 if nargin < 2, stage = 'welcome'; end
 if ~ex.exp.CoPs.instrOn, return; end
 stage = validatestring(stage,{'welcome','dynamic','ready'});
+ex.exp.CoPs.pay = resolveCoPsPayx(ex.exp.CoPs.pay);
 ctl = struct();
 if isfield(ex.exp.CoPs,'ctl'), ctl = ex.exp.CoPs.ctl; end
-[body,prompt] = formatCoPsInstructionTextx(ex.exp.CoPs.pay,stage,ctl);
+info = getCoPsTrialBlockInfox(ex);
+nPaidTrials = info.totalN-info.instructionN;
+[body,prompt,cap] = formatCoPsInstructionTextx(ex.exp.CoPs.pay,stage,ctl,nPaidTrials);
 window = ex.setup.window;
 oldSize = Screen('TextSize',window);
 oldStyle = Screen('TextStyle',window);
 cleanup = onCleanup(@() restoreTextLocal(window,oldSize,oldStyle)); %#ok<NASGU>
 page = struct('stage',stage,'body',body,'prompt',prompt, ...
-    'max_bonus_dollar',ex.exp.CoPs.pay.max_bonus_dollar, ...
+    'max_bonus_dollar',cap.maxBonusDollars, ...
+    'hourly_max_bonus_dollar',ex.exp.CoPs.pay.max_bonus_dollar, ...
+    'trials_per_hour',ex.exp.CoPs.pay.trials_per_hour,'planned_paid_trials',nPaidTrials, ...
     'on',NaN,'off',NaN,'acknowledged',false,'questionRequests',struct('time',{},'target',{}));
 refreshCoPsPreviewWindowx(ex.setup);
 drawPage();

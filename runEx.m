@@ -576,6 +576,10 @@ end
 % end experiment
 % playRandomLines(ex);
 
+% F4 and handled errors also finalize payment. Checkpoint before an early
+% outro or hardware shutdown so payment does not depend on reaching the end.
+ex = finalizeCoPsSessionx(ex,fullfile(ex.Header.onlineExperimentalDirName,fname));
+
 % signal end of experiment
 if pixOn
     sendStrobe(ex.strobe.EXPERIMENT_END);
@@ -682,14 +686,15 @@ else
 end
 
 ShowCursor
-if ex.j > ex.finish && ~isempty(ex.Trials) && ...
+if ex.j > ex.finish && ~ex.SessionEnd.endedEarly && ~isempty(ex.Trials) && ...
         isfield(ex.Trials, 'endScreenAcknowledged') && ex.Trials(end).endScreenAcknowledged
     fprintf('Session complete: participant pressed SPACE on the end screen.\nData saved: %s\n', ...
         fullfile(ex.Header.onlineExperimentalDirName, fname));
-    if isfield(ex,'Payout')
-        fprintf('Participant bonus: $%.2f (%d points / %d task trials; average %.4f).\n', ...
-            ex.Payout.bonusDollars,ex.Payout.totalPoints,ex.Payout.nTrials,ex.Payout.averagePointsPerTrial);
-    end
+end
+if isfield(ex,'Payout')
+    fprintf('Participant bonus: $%.2f (%d points / %d completed task trials; average %.4f).\nData saved: %s\n', ...
+        ex.Payout.bonusDollars,ex.Payout.totalPoints,ex.Payout.nTrials,ex.Payout.averagePointsPerTrial, ...
+        fullfile(ex.Header.onlineExperimentalDirName,fname));
 end
 end
 

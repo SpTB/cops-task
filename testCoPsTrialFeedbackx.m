@@ -18,6 +18,11 @@ writeMock(mockDir, 'Screen', [
     "case 'fillrect'"
     "    COPS_FEEDBACK_TEST.backgrounds(end+1) = varargin{2};"
     "case 'flip'"
+    "    if ~isempty(COPS_FEEDBACK_TEST.checkpointFile)"
+    "        saved=load(COPS_FEEDBACK_TEST.checkpointFile,'ex');"
+    "        COPS_FEEDBACK_TEST.checkpoints{end+1}=saved.ex.Payout;"
+    "    end"
+    "    if COPS_FEEDBACK_TEST.failFlip, error('FeedbackTest:DisplayFailed','Simulated display failure.'); end"
     "    COPS_FEEDBACK_TEST.flips = COPS_FEEDBACK_TEST.flips + 1;"
     "    varargout = {100 + COPS_FEEDBACK_TEST.flips};"
     "otherwise, error('CoPsFeedbackTest:UnexpectedScreenCall', 'Unexpected Screen command.');"
@@ -85,7 +90,8 @@ global COPS_FEEDBACK_TEST
 COPS_FEEDBACK_TEST = struct('textSize', 24, 'backgrounds', [], 'flips', 0, ...
     'messages', {{}}, 'refreshes', 0, 'resizeAt', [], 'polls', 0, ...
     'spaces', [false true false], 'quitAt', [], 'keyboardSetups', {{}}, ...
-    'focus', true, 'focusQueries', 0, 'questionAt', [], 'calibrationAt', [], 'questions', 0);
+    'focus', true, 'focusQueries', 0, 'questionAt', [], 'calibrationAt', [], 'questions', 0, ...
+    'checkpointFile','','checkpoints',{{}},'failFlip',false);
 end
 
 function testFinalScreenIgnoresPauseAndPointsSettings(testCase)
@@ -294,9 +300,10 @@ ex.Trials(2).isInstructionTutorial=true;
 ex=showFeedback(testCase,ex);
 verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Total: 28 points');
 verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Average: 14.00 points per trial');
-verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Bonus earned: $12.50');
+verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Bonus earned: $0.13');
 verifyEqual(testCase,ex.Payout.nTrials,2);
-verifyEqual(testCase,ex.Payout.bonusDollars,12.5);
+verifyEqual(testCase,ex.Payout.bonusDollars,0.13);
+verifyEqual(testCase,ex.Payout.maxBonusDollars,0.27);
 verifyEqual(testCase,ex.Trials(end).payout,ex.Payout);
 verifyEqual(testCase,ex.Outro.text,COPS_FEEDBACK_TEST.messages{1});
 verifyEqual(testCase,[ex.Outro.on ex.Outro.off],[101 102]);
@@ -375,6 +382,151 @@ verifyEqual(testCase,ex.quit,4);
 verifyFalse(testCase,ex.Trials(2).pauseCalibrationRequested);
 end
 
+function testEarlyF4After100PaidTrialsSavesAndShowsActualBonus(testCase)
+global COPS_FEEDBACK_TEST
+ex=fixture();
+ex.Trials=repmat(ex.Trials(1),1,102);
+for k=1:102, ex.Trials(k).times.reward=1:14; end
+ex.Trials(1).isInstructionTutorial=true; ex.Trials(2).isInstructionTutorial=true;
+ex.j=103; ex.finish=182; ex.quit=4; ex.totalPoints=1400.5;
+ex=finalizeSession(testCase,ex);
+verifyEqual(testCase,[ex.Payout.nTrials ex.Payout.totalPoints ex.Payout.bonusDollars],[100 1400 6.94]);
+verifyEqual(testCase,ex.Payout.maxBonusDollars,13.88);
+verifySubstring(testCase,ex.Outro.text,'The session has ended.');
+verifySubstring(testCase,ex.Outro.text,'Bonus earned: $6.94');
+verifyFalse(testCase,contains(ex.Outro.text,'To ask a question'));
+verifyTrue(testCase,ex.Outro.acknowledged);
+verifyTrue(testCase,ex.Outro.endedEarly);
+verifyEqual(testCase,[ex.j ex.finish ex.quit ex.totalPoints],[103 182 4 1400.5]);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.checkpoints{1},ex.Payout); % saved before first flip
+saved=load(COPS_FEEDBACK_TEST.checkpointFile,'ex');
+verifyEqual(testCase,saved.ex.Payout,ex.Payout);
+verifyEqual(testCase,saved.ex.Outro,ex.Outro);
+end
+
+function testF4AtPauseWaitsForHeldKeyToBeReleasedOnOutro(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.spaces=[false false false false false true false];
+COPS_FEEDBACK_TEST.quitAt=[2 3 4];
+ex=fixture(); ex.Trials=ex.Trials(1:2); ex.j=2; ex.finish=180;
+ex.exp.CoPs.pauseSchedule.afterTrial(2)=true;
+ex=showFeedback(testCase,ex); % first F4 exits the pause
+verifyEqual(testCase,ex.quit,4);
+ex.j=3; % runTrialTaskCoPsx advances the trial counter before runEx finalizes
+ex=finalizeSession(testCase,ex);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,7);
+verifyTrue(testCase,ex.Outro.acknowledged);
+verifyEqual(testCase,ex.quit,4); % acknowledging the outro never resumes trials
+verifyNumElements(testCase,COPS_FEEDBACK_TEST.messages,2);
+end
+
+function testAnotherF4CanDismissEarlyOutro(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.spaces=false(1,4);
+COPS_FEEDBACK_TEST.quitAt=[1 2 4];
+ex=fixture(); ex.j=4; ex.finish=180; ex.quit=4;
+ex=finalizeSession(testCase,ex);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,4);
+verifyFalse(testCase,ex.Outro.acknowledged);
+saved=load(COPS_FEEDBACK_TEST.checkpointFile,'ex');
+verifyEqual(testCase,saved.ex.Payout,ex.Payout);
+end
+
+function testEarlyExitBeforePaidTrialSavesZeroWithoutOutro(testCase)
+global COPS_FEEDBACK_TEST
+for kind={'empty','practice','interrupted'}
+    setup(testCase);
+    ex=fixture(); ex.quit=4; ex.finish=180;
+    switch kind{1}
+        case 'empty', ex.Trials=ex.Trials([]); ex.j=1;
+        case 'practice'
+            ex.Trials=ex.Trials(1:2); ex.j=3;
+            for k=1:2, ex.Trials(k).isInstructionTutorial=true; end
+        case 'interrupted'
+            ex.Trials=ex.Trials(1); ex.Trials.trialCompleted=false; ex.j=2;
+    end
+    ex=finalizeSession(testCase,ex);
+    verifyEqual(testCase,[ex.Payout.nTrials ex.Payout.bonusDollars],[0 0]);
+    verifyFalse(testCase,isfield(ex,'Outro'));
+    verifyEmpty(testCase,COPS_FEEDBACK_TEST.messages);
+    saved=load(COPS_FEEDBACK_TEST.checkpointFile,'ex');
+    verifyEqual(testCase,saved.ex.Payout,ex.Payout);
+end
+end
+
+function testCompletedZeroPointTrialStillShowsEarlyOutro(testCase)
+ex=fixture(); ex.Trials=ex.Trials(1); ex.Trials.times.reward=[];
+ex.quit=4; ex.j=2; ex.finish=180;
+ex=finalizeSession(testCase,ex);
+verifyTrue(testCase,ex.Outro.acknowledged);
+verifyEqual(testCase,[ex.Payout.nTrials ex.Payout.bonusDollars],[1 0]);
+end
+
+function testStopDuringLastPlannedTrialExcludesItsPartialPoints(testCase)
+ex=fixture(); ex.quit=4; ex.j=4; ex.finish=3;
+ex.Trials(1).times.reward=1:14; ex.Trials(2).times.reward=1:14;
+ex.Trials(3).times.reward=1:500; ex.Trials(3).trialCompleted=false;
+ex=finalizeSession(testCase,ex);
+verifyEqual(testCase,[ex.Payout.nTrials ex.Payout.totalPoints ex.Payout.bonusDollars],[2 28 0.13]);
+verifyEqual(testCase,ex.Payout.trialMask,[true true false]);
+verifyTrue(testCase,ex.SessionEnd.endedEarly);
+verifyNumElements(testCase,ex.Trials(3).times.reward,500); % raw data retained
+end
+
+function testFinalizationDoesNotShowNormalOutroTwice(testCase)
+global COPS_FEEDBACK_TEST
+ex=showFeedback(testCase,fixture());
+outro=ex.Outro;
+ex.j=ex.finish+1;
+ex=finalizeSession(testCase,ex);
+verifyEqual(testCase,ex.Outro,outro);
+verifyNumElements(testCase,COPS_FEEDBACK_TEST.messages,1);
+verifyFalse(testCase,ex.SessionEnd.endedEarly);
+end
+
+function testF4AfterLastCompletedTrialStillShowsCompletionOutro(testCase)
+ex=fixture(); ex.j=4; ex.finish=3; ex.quit=4;
+ex=finalizeSession(testCase,ex);
+verifyTrue(testCase,ex.Outro.acknowledged);
+verifyFalse(testCase,ex.SessionEnd.endedEarly);
+verifyFalse(testCase,ex.Outro.endedEarly);
+verifySubstring(testCase,ex.Outro.text,'The session is complete.');
+verifyEqual(testCase,ex.Payout.nTrials,3);
+end
+
+function testHandledErrorSavesPayoutWithoutRequiringDisplay(testCase)
+global COPS_FEEDBACK_TEST
+ex=fixture(); ex.quit=4; ex.j=4; ex.finish=180;
+ex.lastError=MException('FeedbackTest:TrialFailed','Simulated trial error.');
+ex=finalizeSession(testCase,ex);
+verifyEqual(testCase,ex.Payout.nTrials,3);
+verifyEmpty(testCase,COPS_FEEDBACK_TEST.messages);
+saved=load(COPS_FEEDBACK_TEST.checkpointFile,'ex');
+verifyEqual(testCase,saved.ex.Payout,ex.Payout);
+end
+
+function testDisplayFailureStillLeavesSavedPayout(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.failFlip=true;
+ex=fixture(); ex.quit=4; ex.j=4; ex.finish=180;
+warningState=warning('off','CoPs:OutroFailed');
+cleanup=onCleanup(@() warning(warningState)); %#ok<NASGU>
+ex=finalizeSession(testCase,ex);
+verifyEqual(testCase,ex.outroError.identifier,'FeedbackTest:DisplayFailed');
+saved=load(COPS_FEEDBACK_TEST.checkpointFile,'ex');
+verifyEqual(testCase,saved.ex.Payout,ex.Payout);
+verifyEqual(testCase,saved.ex.Payout.nTrials,3);
+end
+
+function ex = finalizeSession(testCase,ex)
+global COPS_FEEDBACK_TEST
+originalFolder=pwd; cd(testCase.TestData.mockDir);
+restoreFolder=onCleanup(@() cd(originalFolder)); %#ok<NASGU>
+clear Screen DrawFormattedText refreshCoPsPreviewWindowx readCoPsKeyboardx KbName WaitSecs GetMouse notifyCoPsQuestionx
+COPS_FEEDBACK_TEST.checkpointFile=fullfile(testCase.TestData.mockDir,'session_payout.mat');
+ex=finalizeCoPsSessionx(ex,COPS_FEEDBACK_TEST.checkpointFile);
+end
+
 function ex = showFeedback(testCase, ex)
 originalFolder = pwd;
 cd(testCase.TestData.mockDir);
@@ -392,7 +544,8 @@ ex.exp.CoPs.rew = struct('points_feedback_on', true, ...
 ex.exp.CoPs.pauseSchedule.afterTrial = false(1, 3);
 ex.setup = struct('window', 101, 'guiWindow', false, 'keyboards', struct('separate', false));
 ex.idx.white = 255;
-ex.Trials = repmat(struct('pointsEarned', 2, 'trialScored', true, ...
+ex.idx.bg_lum = 127;
+ex.Trials = repmat(struct('pointsEarned', 2, 'trialScored', true, 'trialCompleted', true, ...
     'times', struct('reward', [0.25 0.5])), 1, 3);
 end
 

@@ -1,0 +1,2 @@
+payout = calculateCoPsPayoutx(ex.Trials, S.ex.exp.CoPs.pay);
+payout.bonusDollars
