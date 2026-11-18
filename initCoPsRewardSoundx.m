@@ -21,15 +21,8 @@ cleanup = onCleanup(@() closeAudio(handle));
 status = PsychPortAudio('GetStatus', handle);
 audio.handle = handle;
 audio.sampleRate = status.SampleRate;
-nSamples = max(2, round(audio.durationSecs * audio.sampleRate));
-t = (0:nSamples-1) / audio.sampleRate;
-envelope = ones(1, nSamples);
-nRamp = min(floor(nSamples / 2), max(1, round(0.003 * audio.sampleRate)));
-ramp = 0.5 - 0.5 * cos(linspace(0, pi, nRamp));
-envelope(1:nRamp) = ramp;
-envelope(end-nRamp+1:end) = fliplr(ramp);
-tone = audio.gain * sin(2 * pi * audio.frequencyHz * t) .* envelope;
-PsychPortAudio('FillBuffer', handle, [tone; tone]);
+tone = makeCoPsRewardBeepx(audio.sampleRate,audio.frequencyHz,audio.durationSecs,audio.gain);
+PsychPortAudio('FillBuffer', handle, tone);
 end
 
 function closeAudio(handle)

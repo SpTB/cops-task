@@ -1,5 +1,6 @@
 function ex = showCoPsTrialFeedbackx(ex, backgroundColor)
 % Show a scheduled trial pause or the final participant acknowledgement.
+if isfield(ex.setup,'recording') && ex.setup.recording.enabled, return; end
 ctl = ex.exp.CoPs.ctl;
 rew = ex.exp.CoPs.rew;
 isFinalTrial = ex.j == ex.finish;

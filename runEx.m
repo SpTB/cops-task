@@ -69,10 +69,15 @@ arguments
     options.overlayScreen (1,:) double {mustBeInteger, mustBeNonnegative} = []
     options.overlayWindowSizePx (1,2) double {mustBeInteger, mustBePositive} = [960 540]
     options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = defaultWindowSizePx(eyeStr)
+    options.recording (1,1) struct = struct() % configured by recEx
 end
 
 dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn, options.eyeSource, options.photodiodeRecord);
 isTestProfile = ismember(dependencies.profile, {'test1', 'mouse_mini'});
+recordingEnabled = ~isempty(fieldnames(options.recording));
+if recordingEnabled && ~isTestProfile
+    error('recEx:Profile','Presentation recording requires a mouse test profile.');
+end
 pixOn = dependencies.pixOn;
 eyeOn = dependencies.eyeOn;
 rewOn = dependencies.rewOn;
@@ -128,6 +133,7 @@ if isTestProfile
     end
     ex.Header.animal = 'test';
 end
+if recordingEnabled, ex = configureCoPsRecordingx(ex,options.recording); end
 if isTestProfile || strlength(options.filePrefix) > 0
     subjectID = strtrim(char(options.filePrefix));
     if isempty(subjectID) && isfield(ex.Header, 'subjectID')
@@ -204,6 +210,10 @@ if strcmp(ex.exp.CoPs.sync.mode, 'binary')
 end
 if options.showCursor
     ShowCursor('Arrow', ex.setup.window);
+    if recordingEnabled
+        [width,height] = Screen('WindowSize',ex.setup.window,1);
+        SetMouse(round(width/2),round(height/2),ex.setup.window);
+    end
 end
 pause(1)
 
@@ -380,6 +390,7 @@ ex.Header.onlineDirName = dirName;
 ex.Header.onlineExperimentalDirName = expDir;
 ex.Header.onlineEdfDirName = edfDir;
 ex.Header.onlineFileName = fname;
+if recordingEnabled, ex = prepareCoPsMovieOutputx(ex); end
 fprintf('CoPs output: %s\n', fullfile(expDir, fname));
 
 % create Trials
@@ -691,7 +702,11 @@ if ex.j > ex.finish && ~ex.SessionEnd.endedEarly && ~isempty(ex.Trials) && ...
     fprintf('Session complete: participant pressed SPACE on the end screen.\nData saved: %s\n', ...
         fullfile(ex.Header.onlineExperimentalDirName, fname));
 end
-if isfield(ex,'Payout')
+if recordingEnabled
+    for movieIndex = 1:numel(ex.MovieFiles)
+        fprintf('Movie saved: %s\n',ex.MovieFiles{movieIndex});
+    end
+elseif isfield(ex,'Payout')
     fprintf('Participant bonus: $%.2f (%d points / %d completed task trials; average %.4f).\nData saved: %s\n', ...
         ex.Payout.bonusDollars,ex.Payout.totalPoints,ex.Payout.nTrials,ex.Payout.averagePointsPerTrial, ...
         fullfile(ex.Header.onlineExperimentalDirName,fname));

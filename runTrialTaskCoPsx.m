@@ -43,6 +43,12 @@ end
 showExperimenterOverlay = ~isfield(ex.setup, 'showExperimenterOverlay') || ...
     logical(ex.setup.showExperimenterOverlay);
 overlayIsSeparate = isfield(ex.setup, 'overlayIsSeparate') && ex.setup.overlayIsSeparate;
+rewardMarkerEnabled = isfield(ex.setup,'recording') && ex.setup.recording.enabled && ...
+    isfield(ex.setup.recording,'rewardMarker') && ex.setup.recording.rewardMarker;
+rewardMarkerDuration = 0.2;
+if rewardMarkerEnabled && isfield(ex.setup.recording,'rewardMarkerDuration')
+    rewardMarkerDuration = ex.setup.recording.rewardMarkerDuration;
+end
 
 %temp
 
@@ -1424,6 +1430,12 @@ while state ~= ex.states.BREAKFIX &&...
 
         end
         
+        if rewardMarkerEnabled && state == ex.states.GO && stimulus_active && reward_cnt > 0 && ...
+                isfinite(time_reward(reward_cnt)) && ...
+                GetSecs()-trstart-time_reward(reward_cnt) < rewardMarkerDuration
+            drawCoPsRewardMarkerx(ex.setup.window,texture_background_rect);
+        end
+
         % Flip screen
         refreshCoPsPreviewWindowx(ex.setup);
         frameSyncBitToSave = NaN;
@@ -1685,6 +1697,24 @@ ex.Trials(ex.j).frameStateLookup = ex.states;
 ex.Trials(ex.j).eyeCal = ex.eyeCal;
 if isfield(ex.Trials(ex.j).eyeCal,'validation')
     ex.Trials(ex.j).eyeCal = rmfield(ex.Trials(ex.j).eyeCal,'validation');
+end
+
+% Presentation exports reuse the generated textures after the live trial.
+% Encoding and readback never run inside the stimulus timing loop.
+if isfield(ex.setup,'recording') && ex.setup.recording.enabled
+    scene = struct('windowColor',window_background_color,'textureColor',texture_background_color, ...
+        'textureRect',texture_background_rect,'textureDestinationRect',textureDrawRect);
+    try
+        ex.Trials(ex.j).movie = exportCoPsTrialMoviex(ex,stimTextures,scene);
+        if ~isempty(ex.Trials(ex.j).movie.file)
+            ex.MovieFiles{end+1} = ex.Trials(ex.j).movie.file;
+        end
+    catch err
+        ex.Trials(ex.j).movieError = err;
+        ex.lastError = err;
+        ex.quit = 4;
+        fprintf(2,'Movie export failed: %s\n',err.message);
+    end
 end
 
 % Feedback is outside the recorded trial interval and stimulus flip stream.

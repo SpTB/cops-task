@@ -13,7 +13,8 @@ ex.SessionEnd = struct('quitCode',ex.quit,'endedEarly',endedEarly, ...
 saveCheckpointLocal(checkpointFile,ex);
 alreadyShown = isfield(ex,'Outro') && isfield(ex.Outro,'on') && ...
     isscalar(ex.Outro.on) && isfinite(ex.Outro.on);
-if ex.quit == 4 && ex.Payout.nTrials > 0 && ~alreadyShown && ~hasError
+recording = isfield(ex.setup,'recording') && ex.setup.recording.enabled;
+if ex.quit == 4 && ex.Payout.nTrials > 0 && ~alreadyShown && ~hasError && ~recording
     color = ex.idx.bg_lum;
     if ~isempty(ex.Trials) && isfield(ex.Trials,'betweenTrialBackgroundGray') && ...
             ~isempty(ex.Trials(end).betweenTrialBackgroundGray)

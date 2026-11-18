@@ -85,6 +85,32 @@ for profile = {'test1', 'mouse_mini'}
 end
 end
 
+function testRecordingOverridesReachTheRealRunExSetup(testCase)
+cfg=struct('length',5,'targetNum',1,'visibility',0.4,'background',-1);
+ex=captureBeforeDisplay(testCase,'mouse_mini',recording=cfg,testTrials=1, ...
+    instrOn=false,filePrefix="demo",soundOn=false,syncMode='off');
+verifyMouseOnly(testCase,ex);
+verifyTrue(testCase,ex.setup.recording.enabled);
+verifyEqual(testCase,ex.exp.CoPs.ctl.nsteps,150);
+verifyEqual(testCase,ex.exp.CoPs.ctl.target_numNULL,1);
+verifyEqual(testCase,ex.exp.CoPs.graph.targetVisibilityNull,0.4);
+verifyEqual(testCase,ex.exp.CoPs.graph.background_noise_lvl,-1);
+verifyFalse(testCase,ex.exp.CoPs.instrOn);
+verifyEqual(testCase,ex.exp.CoPs.ctl.gauss_scalar,1);
+verifyEqual(testCase,ex.setup.recording.rewardLandscape,0);
+verifyEmpty(testCase,ex.MovieFiles);
+end
+
+function testRecordingCornerOverridesTheNormalFreeCenter(testCase)
+cfg=struct('length',5,'targetNum',2,'visibility',1,'background',-1,'rewardLandscape',4);
+ex=captureBeforeDisplay(testCase,'mouse_mini',recording=cfg,testTrials=1, ...
+    instrOn=false,filePrefix="demo",soundOn=false,syncMode='off');
+verifyFalse(testCase,ex.exp.CoPs.rew.gauss_center_free);
+[~,center]=selectGaussRewardCenterCoPsx(ex.exp.CoPs.rew,101,0);
+verifyEqual(testCase,center,[0.75 0.75]);
+verifyGreaterThan(testCase,ex.exp.CoPs.ctl.gauss_scalar,1);
+end
+
 function testBinarySyncOptionsReachDisplayWithoutAcquisition(testCase)
 for profile = {'test1', 'mouse_mini'}
     ex = captureBeforeDisplay(testCase, profile{1}, syncMode='binary', ...

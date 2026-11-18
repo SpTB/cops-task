@@ -518,6 +518,19 @@ verifyEqual(testCase,saved.ex.Payout,ex.Payout);
 verifyEqual(testCase,saved.ex.Payout.nTrials,3);
 end
 
+function testPresentationRecordingNeverWaitsForFeedbackOrOutro(testCase)
+global COPS_FEEDBACK_TEST
+ex=fixture(); ex.setup.recording.enabled=true;
+ex=showFeedback(testCase,ex);
+verifyEmpty(testCase,COPS_FEEDBACK_TEST.messages);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,0);
+ex.quit=4; ex.j=4; ex.finish=180;
+ex=finalizeSession(testCase,ex);
+verifyEmpty(testCase,COPS_FEEDBACK_TEST.messages);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,0);
+verifyFalse(testCase,isfield(ex,'Outro'));
+end
+
 function ex = finalizeSession(testCase,ex)
 global COPS_FEEDBACK_TEST
 originalFolder=pwd; cd(testCase.TestData.mockDir);
