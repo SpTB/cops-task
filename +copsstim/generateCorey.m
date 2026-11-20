@@ -9,6 +9,7 @@ function output = generateCorey(animal, stimType, selection, opts)
 % uses those explicit source PNGs.
 % genDailyStimCorey() omits the animal label and starts session folder names
 % with the date tag.
+% genDailyStimCorey('local') uses bundled source PNGs and repo-local output.
 
 if nargin < 1
     animal = '';
@@ -23,9 +24,12 @@ if nargin < 4
     opts = [];
 end
 
+localMode = (ischar(animal) || (isstring(animal) && isscalar(animal))) && ...
+    strcmpi(strtrim(animal),'local');
+if localMode, animal = ''; end
 [stimType, selection, opts] = parseInputs(stimType, selection, opts, nargin);
 animal = normalizeAnimal(animal);
-opts = mergeOptions(opts, defaultOptions());
+opts = mergeOptions(opts, defaultOptions(localMode));
 stimType = normalizeStimType(stimType);
 noise_scalar = validateNoiseLevel(opts.noise_scalar);
 
@@ -54,6 +58,7 @@ output.selection = {selection};
 output.noiseLvl = noise_scalar;
 output.date_tag = date_tag;
 output.selection_rng_seed = selection_rng_seed;
+output.localMode = localMode;
 output.options = opts;
 output.sessions = repmat(emptySessionOutput(), num_sessions, 1);
 
@@ -133,7 +138,7 @@ for session_idx = 1:num_sessions
     end
 
     if save_bool
-        manifest = struct('settings',opts,'selection_rng_seed',selection_rng_seed, ...
+        manifest = struct('settings',opts,'localMode',localMode,'selection_rng_seed',selection_rng_seed, ...
             'session',output.sessions(session_idx));
         save(fullfile(daily_dir,'generation_manifest.mat'),'manifest');
     end
@@ -431,11 +436,12 @@ function pathText = canonicalPath(pathText)
 pathText = char(java.io.File(pathText).getCanonicalPath());
 end
 
-function defaults = defaultOptions()
+function defaults = defaultOptions(localMode)
 repoRoot = fileparts(fileparts(mfilename('fullpath')));
-defaults.source_root = getenv('COPS_STIM_SOURCE_ROOT');
-if isempty(defaults.source_root)
-    defaults.source_root = fullfile(repoRoot,'stimulus_sources');
+defaults.source_root = fullfile(repoRoot,'stimulus_sources');
+if ~localMode
+    environmentRoot = getenv('COPS_STIM_SOURCE_ROOT');
+    if ~isempty(environmentRoot), defaults.source_root = environmentRoot; end
 end
 defaults.face_folder = 'faces_scrambled_raw';
 defaults.object_folder = 'objects_scrambled_raw';

@@ -107,6 +107,77 @@ verifyEqual(testCase,out.source_dir,fullfile(testCase.TestData.inputRoot,'faces_
 verifyEqual(testCase,out.options.output_root,fullfile(testCase.TestData.repoRoot,'stimuli'));
 end
 
+function testLocalModeUsesBundledDefaultsDespiteEnvironment(testCase)
+previous = getenv('COPS_STIM_SOURCE_ROOT');
+setenv('COPS_STIM_SOURCE_ROOT',fullfile(testCase.TestData.folder,'missing_network_source'));
+cleanup = onCleanup(@() setenv('COPS_STIM_SOURCE_ROOT',previous)); %#ok<NASGU>
+opts = struct('sessions',1,'Ntp',0,'Niter',1,'save_bool',false,'rng_seed',42, ...
+    'date_tag',['local_defaults_' char(java.util.UUID.randomUUID())]);
+out = invoke(testCase,' LOCAL ',opts);
+verifyTrue(testCase,out.localMode);
+verifyEqual(testCase,out.options.source_root,fullfile(testCase.TestData.repoRoot,'stimulus_sources'));
+verifyEqual(testCase,out.options.output_root,fullfile(testCase.TestData.repoRoot,'stimuli'));
+verifyEqual(testCase,out.stimType,'face');
+verifyNumElements(testCase,out.sessions(1).images,5);
+verifyNumElements(testCase,unique([out.sessions(1).images.imageId]),5);
+end
+
+function testLocalModeGeneratesARealBundledBank(testCase)
+opts = options(testCase,1); opts = rmfield(opts,'source_root'); opts.Ntp = 1;
+out = invoke(testCase,'local','face',1,opts);
+item = out.sessions(1).images(1);
+verifyTrue(testCase,out.localMode);
+verifyTrue(testCase,startsWith(item.sourcePath,fullfile(testCase.TestData.repoRoot,'stimulus_sources')));
+verifyTrue(testCase,endsWith(out.sessions(1).daily_dir,'reference_stim1'));
+full = load(fullfile(item.fullFolder,'full_0001.mat'));
+source = imread(item.sourcePath);
+verifyEqual(testCase,size(full.full_tp),size(source,[1 2]));
+verifyTrue(testCase,all(isfinite(full.full_tp),'all'));
+saved = load(fullfile(out.sessions(1).daily_dir,'generation_manifest.mat'));
+verifyTrue(testCase,saved.manifest.localMode);
+ex.stim.seq = {item.folder};
+ex.exp.CoPs.graph = struct('background_noise_lvl',[-1 0 1],'full_as_background',false);
+ex.exp.CoPs.ctl.coherence = 1;
+info = validateCoPsStimulusSelection(ex);
+verifyEqual(testCase,double(info.nUniqueRequirements),3);
+end
+
+function testLocalModeAllowsExplicitSourceAndOutputOverrides(testCase)
+opts = options(testCase,1);
+out = invoke(testCase,'local','face',1,opts);
+verifyEqual(testCase,out.options.source_root,opts.source_root);
+verifyEqual(testCase,out.options.output_root,opts.output_root);
+full = load(fullfile(out.sessions(1).images(1).fullFolder,'full_0001.mat'));
+verifyEqual(testCase,full.full_tp,testCase.TestData.reference(1).full(:,:,1),'AbsTol',1e-8);
+end
+
+function testBundledPngsMatchTheirChecksumsAndInventory(testCase)
+root = fullfile(testCase.TestData.repoRoot,'stimulus_sources');
+manifest = jsondecode(fileread(fullfile(root,'manifest.json')));
+files = manifest.files;
+verifyEqual(testCase,sum([manifest.sets.count]),numel(files));
+verifyLessThan(testCase,max([files.bytes]),100*1024^2);
+for group = manifest.sets(:)'
+    actual = dir(fullfile(root,group.folder,'*.png'));
+    verifyNumElements(testCase,actual,group.count);
+    verifyEqual(testCase,sum([actual.bytes]),group.bytes);
+end
+actualHashes = cell(numel(files),1);
+actualBytes = zeros(numel(files),1);
+digest = java.security.MessageDigest.getInstance('SHA-256');
+for k=1:numel(files)
+    filename = fullfile(root,strrep(files(k).path,'/',filesep));
+    fid = fopen(filename,'rb');
+    assert(fid>=0,'StimGenTest:MissingBundledPng','Cannot open %s.',filename);
+    bytes = fread(fid,Inf,'*uint8'); fclose(fid);
+    actualBytes(k) = numel(bytes);
+    digest.update(bytes);
+    actualHashes{k} = lower(reshape(dec2hex(typecast(digest.digest(),'uint8'),2).',1,[]));
+end
+verifyEqual(testCase,actualBytes,[files.bytes]');
+verifyEqual(testCase,actualHashes,{files.sha256}');
+end
+
 function testMissingSourceAndUnknownOptionGiveUsefulErrors(testCase)
 opts = options(testCase,1);
 opts.source_root = fullfile(testCase.TestData.folder,'missing');

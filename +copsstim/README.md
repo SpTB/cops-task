@@ -28,8 +28,9 @@ Imported from the laboratory's local snapshots of:
 
 The original licenses and READMEs are retained in `private/`. Source-file
 SHA-256 hashes before integration are recorded in `source_manifest.json`.
-No upstream example images, datasets, archives, or native binaries are
-included.
+No upstream example images, toolbox archives, or native binaries are included
+in this package. The task's source templates are bundled separately in the
+repo's `stimulus_sources` directory; `genDailyStimCorey('local')` selects them.
 
 Integration changes: remove an invalid backtick in the generator, replace
 host-specific paths with explicit/repository defaults, use the shared mask,

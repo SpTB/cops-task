@@ -11,16 +11,27 @@ on your path or in the current directory, `which genDailyStimCorey -all`
 shows which entry point MATLAB will use. `copsstim.generateCorey` is the
 unambiguous package entry point and accepts the same arguments.
 
-## Generate and use a bank
+## Generate and use a local bank
 
-Supply the parent directory containing the source PNG folders:
+The source PNGs are included in this repo. To use them and save the generated
+banks in the repo's untracked output folder:
+
+```matlab
+out = genDailyStimCorey('local');
+```
+
+This selects five face IDs and uses the usual synthesis defaults: three
+banks, 100 frames per image, and 50 iterations per frame. The `local` keyword
+chooses the repo's `stimulus_sources` folder even if an old
+`COPS_STIM_SOURCE_ROOT` environment variable points to a network drive.
+
+For a custom selection and one bank:
 
 ```matlab
 opts = struct();
-opts.source_root = 'Y:\groupMembers\current\Corey\stimGeneration\face_fMRI\stimuli';
 opts.sessions = 1;
 opts.rng_seed = 42; % omit for a shuffled seed
-out = genDailyStimCorey('', 'both', 5, opts);
+out = genDailyStimCorey('local', 'both', 5, opts);
 
 bank = out.sessions(1).daily_dir;
 ex = runEx('mouse_mini', stimulusDir=bank, testTrials=3);
@@ -37,14 +48,16 @@ The existing `graph.imgs` image-name filter still applies. An empty
 
 The default output root is this repository's `stimuli` directory. Set
 `opts.output_root` to save elsewhere. Generated files under `stimuli` are
-ignored by Git.
+ignored by Git; the input PNGs under `stimulus_sources` are versioned.
+Explicit `opts.source_root` and `opts.output_root` still override the
+defaults, including in local mode.
 
 ## Source images
 
-Expected input layout:
+The repo contains 490 face and 820 object PNGs (69.6 MiB total) in this layout:
 
 ```text
-<source_root>/
+stimulus_sources/
   faces_scrambled_raw/
     fn_0001_sample_01.png
     fn_0001_sample_02.png
@@ -65,9 +78,10 @@ requirement is a multiple of `2^(Nsc+2)`, with each dimension at least
 
 The source root resolves in this order: explicit `opts.source_root`, the
 `COPS_STIM_SOURCE_ROOT` environment variable, then the repository's
-`stimulus_sources` directory. Source datasets are supplied separately;
-`stimulus_sources` is ignored by Git. The repo includes only a synthetic
-image for automated tests.
+`stimulus_sources` directory. Local mode skips the environment-variable step.
+No network connection or separate dataset transfer is required when using
+the bundled PNGs. The [source manifest](../stimulus_sources/manifest.json)
+records the byte size and SHA-256 checksum of every bundled PNG.
 
 ## Calling convention and selection
 
@@ -77,7 +91,9 @@ The original interface is preserved:
 out = genDailyStimCorey(label, stimType, selection, opts);
 ```
 
-- `label`: empty or two letters, used only in output directory names.
+- `label`: empty or two letters, used only in output directory names. The
+  special keyword `'local'` enables the repo-local defaults and omits a label
+  from the output directory name.
 - `stimType`: `'face'`, `'object'`, or `'both'`.
 - Scalar numeric `selection`: number of image-ID groups to sample, choosing
   one source sample per selected group.
@@ -93,14 +109,15 @@ out = genDailyStimCorey('', 'both', ...
 ```
 
 The legacy abbreviated calls also remain available: no arguments or only a
-label selects five face IDs; supplying a stimulus type without a selection
-uses the original default selection of ten groups.
+label selects five face IDs. Omitting a selection uses `opts.default_count`
+(five by default). `genDailyStimCorey('local', opts)` also supports this
+abbreviated form.
 
 ## Main options
 
 | Field in `opts` | Default | Meaning |
 | --- | --- | --- |
-| `source_root` | Environment variable or repo `stimulus_sources` | Parent of source folders |
+| `source_root` | Repo `stimulus_sources` in local mode; otherwise environment variable or repo | Parent of source folders |
 | `face_folder` | `'faces_scrambled_raw'` | Face source subfolder |
 | `object_folder` | `'objects_scrambled_raw'` | Object source subfolder |
 | `output_root` | Repo `stimuli` | Parent for generated session folders |
@@ -156,7 +173,7 @@ Output retains the task's existing format:
 ```
 
 Each completed session's `generation_manifest.mat` stores `manifest.settings`,
-the selection seed, and `manifest.session` with its RNG seed and selected
+the `localMode` flag, the selection seed, and `manifest.session` with its RNG seed and selected
 source paths. The returned `out` also contains the resolved options and all
 session/image paths. Existing matching parameter caches and the original
 retry/replacement behavior are retained. For a reproducible fresh run, use
@@ -187,3 +204,5 @@ Generation tests run against independent fixtures made with the original
 generator/native MEX backend for methods 1-3. They compare full, scrambled,
 mixed, and auxiliary images; check the real task loader; and exercise
 conflicting helper names without external synthesis dependencies.
+Local-mode tests use the bundled templates, verify that a stale network
+environment setting is ignored, and validate every source PNG's checksum.

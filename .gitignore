@@ -1,5 +1,13 @@
 stimuli/*
-stimulus_sources/
+stimulus_sources/*
+!stimulus_sources/README.md
+!stimulus_sources/manifest.json
+!stimulus_sources/faces_scrambled_raw/
+!stimulus_sources/objects_scrambled_raw/
+stimulus_sources/faces_scrambled_raw/*
+!stimulus_sources/faces_scrambled_raw/*.png
+stimulus_sources/objects_scrambled_raw/*
+!stimulus_sources/objects_scrambled_raw/*.png
 v2.0.6/*
 setupFiles/*
 to_be_integrated/*
