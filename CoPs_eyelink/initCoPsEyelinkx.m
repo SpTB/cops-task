@@ -1,8 +1,14 @@
 function ex = initCoPsEyelinkx(ex)
 % initialize native display-pixel and run th tracker calibration UI
 elConfig = ex.setup.el;
-if ~EyelinkInit()
+[initialized,dummy] = EyelinkInit();
+if ~initialized
     error('initCoPsEyelinkx:Connection', 'Eyelink cannot be initalized');
+end
+if dummy
+    Eyelink('Shutdown');
+    error('initCoPsEyelinkx:DummyMode', ...
+        'Ordinary CoPs runs require a real EyeLink connection. Use runEx(''mouse_mini'') for mouse simulation.');
 end
 ex.setup.el = EyelinkInitDefaults(ex.setup.window);
 ex.setup.el.edfFileName = elConfig.edfFileName;

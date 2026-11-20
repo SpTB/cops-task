@@ -22,7 +22,18 @@ verifyFalse(testCase, deps.eyeOn);
 verifyTrue(testCase, deps.rewOn);
 verifyTrue(testCase, deps.datapixxOn);
 verifyFalse(testCase, deps.eyelinkOn);
-verifyEqual(testCase, deps.inputMode, 'mouse');
+verifyEqual(testCase, deps.inputMode, 'none');
+end
+
+function testOrdinaryProfileUsesEyesByDefaultAndNeverFallsBackToMouse(testCase)
+deps = resolveCoPsRunDependenciesx();
+verifyEqual(testCase,deps.inputMode,'eyelink');
+for source = {'eyelink','analog'}
+    deps = resolveCoPsRunDependenciesx('t',false,false,false,source{1});
+    verifyEqual(testCase,deps.inputMode,'none');
+    verifyFalse(testCase,deps.eyelinkOn);
+    verifyFalse(testCase,deps.datapixxOn);
+end
 end
 
 

@@ -100,8 +100,8 @@ try
     % Calculate fixation point center
     ex.fix.PCtr = [ex.setup.screenRect(3:4)]/2;
     
-    % Set synch pulse position (top right corner)
-    ex.synch.Pos = [ex.setup.screenRect(3)-ex.synch.PSz/2; 0];
+    % Set synch pulse position (bottom right corner)
+    ex.synch.Pos = ex.setup.screenRect(3:4)' - ex.synch.PSz/2;
     
     ex.setup.overlay = [];
     if useWindowedOverlay

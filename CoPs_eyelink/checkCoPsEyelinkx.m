@@ -42,6 +42,9 @@ end
 % optional validation-derived pixel correction.
 gaze = applyCoPsNativeEyeCorrectionx(trEye.v(:,trEye.n), ex.eyeCal);
 lastEyePos = reshape(gaze([1 2 4 5]), 2, 2)';
+if ~any(all(isfinite(lastEyePos),2))
+    return % Free viewing/passOn may relax fixation, but cannot create gaze.
+end
 idx = min(first, trEye.n):trEye.n;
 gaze = applyCoPsNativeEyeCorrectionx(trEye.v(:,idx), ex.eyeCal);
 x = mean(gaze([1 4],:), 1, 'omitnan');

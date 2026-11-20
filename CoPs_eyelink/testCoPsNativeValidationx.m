@@ -26,6 +26,7 @@ end
 function testTwoLegacyGridsRepeatsAndWindows(testCase)
 ex = fixtureLocal();
 ex.valid.passes = [1 2];
+ex.valid.nRepeat = 3;
 plan = makeCoPsNativeValidationPlanx(ex);
 verifyNumElements(testCase,plan,150);
 verifyEqual(testCase,sum([plan.pass]==1),75);
@@ -49,8 +50,10 @@ ex.valid.offsetsDeg=[-80 80];
 verifyError(testCase,@() makeCoPsNativeValidationPlanx(ex),'CoPs:ValidationTargetOffscreen');
 end
 
-function testDefaultUsesSecondGridAndItsWindowOnly(testCase)
+function testSecondPassUsesSecondGridAndItsWindowOnly(testCase)
 ex=fixtureLocal();
+ex.valid.passes=2;
+ex.valid.nRepeat=3;
 verifyEqual(testCase,ex.valid.passes,2);
 plan=makeCoPsNativeValidationPlanx(ex);
 verifyNumElements(testCase,plan,75);

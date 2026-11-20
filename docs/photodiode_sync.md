@@ -6,7 +6,7 @@ timing still require validation on the rig.
 
 ## Start here
 
-Preview the top-right patch without acquisition hardware:
+Preview the bottom-right patch without acquisition hardware:
 
 ```matlab
 ex = runEx('mouse_mini', syncMode='binary', testTrials=3);
@@ -33,9 +33,52 @@ hardware, or experiment strobes. Omitting it keeps mouse profiles hardware-free.
 Existing rig runs that already enable the ADC continue recording it normally.
 Acquisition is stopped on function exit, including errors and early returns.
 
-The default display mode remains `goPulse`: the existing 100 ms white GO marker.
-Use `syncMode='binary'` to enable this protocol, or `syncMode='off'` to disable
-the patch. Default settings are near the top of `setDefaultsCoPs.m`.
+Binary playback is enabled by default. Use `syncMode='goPulse'` for just the
+100 ms white GO marker, or `syncMode='off'` to disable the patch. Default
+settings are near the top of `setDefaultsCoPs.m`.
+
+## Single-trial rig test
+
+```matlab
+[ex,pd] = photCheck(); % one fullscreen task trial, ADC0 at 2000 Hz
+[ex,pd] = photCheck(channel=6,framesPerBit=2);
+pd.timing % missed refresh count, recording-tail coverage, timing/coverage pass
+```
+
+This runs the actual task loop using explicit mouse simulation, with the binary
+sequence enabled. It skips instruction pages, practice, reward-peak blocks,
+sound, and the final SPACE prompt. EyeLink and reward hardware are disabled.
+F4 stops early. The normal task MAT file is saved in `test_data/output/test`;
+`pd` also returns the selected ADC trace and submitted bits on aligned clocks.
+The comparison plot opens after the task window closes; use `showPlot=false`
+to suppress it. `stimulusDir` selects a generated stimulus bank.
+
+Binary playback is paced by the previous actual VBL timestamp; it does not
+wait for a second, independent frame timer before drawing. Recording continues
+for 100 ms after the final black flip to capture delayed light from the last
+code bit and the final return to black. Use `photCheck(tailSecs=0.2)` for a
+longer tail, or `runEx(...,photodiodeTailSecs=0.2)` directly. The normal binary
+task default is `sync.captureTailSecs` in `setDefaultsCoPs.m`.
+
+`pd.timing.passed` requires a completed trial with at least ten payload frames,
+zero missed active refreshes, and the requested ADC tail (allowing one sample
+and measured clock-reference uncertainty). The summary is also saved as
+`ex.Trials(1).syncTiming`. This tests frame timing and acquisition coverage;
+it does not assert that the photodiode measured the expected bits.
+
+The target is zero missed refreshes. A longer interval means the previous
+image/bit remained visible for extra refreshes. A few percent of such intervals
+requires investigation for a nominally uniform frame sequence. Actual flip
+times are retained and the test reports any remaining misses explicitly.
+
+The patch uses black/white (0/255), at the same bottom-right location as the
+flash test. `framesPerBit` defaults to 1. `photodiodeChannel` can also override
+the task ADC channel directly in `runEx`; `photCheck` selects ADC0 explicitly
+and leaves the experiment's channel-6 default intact.
+
+The raw trace may contain strong refresh pulses even during constant white. Inspect pulse amplitudes when checking timing; a raw threshold crossing
+at every refresh is not evidence of a new binary bit. The comparison plot does
+not claim an automatic latency estimate or a passed timing validation.
 
 ## One sequence or a different sequence each trial?
 
@@ -104,11 +147,52 @@ Hosts without an ADC buffer-size setting use the existing rig default of
 
 ## What is displayed and recorded
 
-In binary mode the existing square at the top-right of the participant display
-is explicitly black or white, drawn after all stimulus/overlay content and
+In binary mode the existing square at the bottom-right of the participant display
+switches between black and white, drawn after all stimulus/overlay content and
 presented by the same flip as the stimulus. Its default size is the existing
-`ex.synch.PSz` (120 logical pixels). Windowed preview scales the whole canvas;
+`ex.synch.PSz` (60 logical pixels). Windowed preview scales the whole canvas;
 physical patch size must be checked in fullscreen on the rig.
+
+To test the photodiode input without the task or EyeLink, with acquisition stopped:
+
+```matlab
+pd = checkCoPsPhotodiodex(15); % live voltage plot, physical ADC0, 2000 Hz
+% pd.time is elapsed seconds; pd.voltage is volts; pd.rawVoltage is unmodified.
+```
+
+Cover/uncover the sensor or change screen brightness and watch the trace.
+Close the plot to stop early. The ADC is stopped and closed on return, errors,
+or Ctrl+C. Use `channel=6` to test the experiment's existing default input.
+If the experiment photodiode is wired to ADC0, set `sync.physicalChannel = 0`
+in `setDefaultsCoPs.m` as well; the standalone tester does not change task settings.
+
+For a known flash schedule recorded simultaneously on ADC0:
+
+```matlab
+pd = checkCoPsPhotodiodeFlashx();
+% Five 200 ms white pulses requested at 1, 2, 3, 4, and 5 seconds.
+
+pd = checkCoPsPhotodiodeFlashx(onsets=[1 2 4 6],pulseDurationSecs=0.25);
+% Use channel=6 if the sensor is wired to the experiment's default ADC input.
+```
+
+This opens the experiment's fullscreen display with the task's gray background
+(`ex.idx.bg_lum`, currently 128) and the same 60-pixel bottom-right patch,
+which switches between black and white (0 to 255 on this rig).
+It uses the rig's normal display mapping,
+requires no EyeLink, and closes the fullscreen window before plotting the
+requested schedule, actual screen flips, and measured voltage. F4/Escape stops
+early and returns the samples and flips already recorded.
+
+`pd.events` contains `plannedTime`, `actualTime`, `white`, and `missed` for each
+completed transition. `pd.time` and `pd.voltage` contain the ADC trace aligned
+to the initial black-patch flip. `pd.patchLevels` saves the black and white display values.
+Raw ADC timestamps, raw voltages, full PTB flip
+timestamps, and before/after clock references are retained in the result.
+Clock alignment uses bracketed PTB/DataPixx references at the start and end,
+allowing for offset and linear drift; the bracket uncertainty is printed and
+saved. Screen-flip times reference scanout, so the physical diode response
+also includes panel latency and scanout delay to the bottom-right sensor.
 
 Playback covers the GO period:
 
@@ -220,7 +304,7 @@ Keep the software flip logs and optical trace together.
    that logs and optical recording detect it. Do not inject delays into a
    participant session. Repeat with the experimenter overlay and audio enabled.
 7. Measure repeatability across trials and the lag between patch illumination
-   and the stimulus region of interest. A top-right sensor measures that scanout
+   and the stimulus region of interest. A bottom-right sensor measures that scanout
    location, not automatically the center or bottom of the display.
 
 ## Automated verification

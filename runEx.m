@@ -22,6 +22,7 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('mouse_mini', filePrefix="P001")  % supply the subject ID without a dialog
 %   runEx('mouse_mini', soundOn=false)  % disable reward-threshold beeps
 %   runEx('mouse_mini', instrOn=true)  % three instruction pages + two practice trials
+%   runEx('mouse_mini', jointBlocks=true) % preview the configured reward-peak blocks
 %   runEx('mouse_mini', syncMode='binary')  % preview a frame-coded photodiode patch
 %   runEx('test1', syncMode='binary', photodiodeRecord=true, photodiodeSampleRate=2000)
 % See docs/photodiode_sync.md before using photodiode acquisition on the rig.
@@ -44,7 +45,7 @@ end
 function ex = runCoPsWithOptions(eyeStr, overlayEnabled, pixOn, rewOn, eyeOn, skipQuest, options)
 arguments
     eyeStr {mustBeText} % calibration mode, 't', 'test1', or 'mouse_mini'
-    overlayEnabled {mustBeNumericOrLogical} = 0;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
+    overlayEnabled {mustBeNumericOrLogical} = 1;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
     pixOn  {mustBeNumericOrLogical} = 1
     rewOn {mustBeNumericOrLogical} = false
     eyeOn  {mustBeNumericOrLogical} = true
@@ -57,11 +58,15 @@ arguments
     options.fullscreen (1,1) logical = ~strcmpi(strtrim(eyeStr), 'mouse_mini')
     options.showCursor (1,1) logical = strcmpi(strtrim(eyeStr), 'mouse_mini')
     options.soundOn (1,1) logical = true
+    options.showEndScreen (1,1) logical = true % false for unattended diagnostics
     options.instrOn (1,:) logical = [] % [] uses setDefaultsCoPs; explicit true/false overrides
+    options.jointBlocks (1,:) logical = [] % [] uses profile defaults; true overrides testTrials
     options.syncMode (1,1) string {mustBeMember(options.syncMode, ["","goPulse","binary","off"])} = ""
     options.syncFramesPerBit (1,:) double {mustBeInteger, mustBePositive, mustBeFinite} = []
     options.syncSequence (1,:) double = []
     options.photodiodeRecord (1,1) logical = false
+    options.photodiodeTailSecs (1,:) double {mustBeNonnegative,mustBeFinite} = []
+    options.photodiodeChannel (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite, mustBeLessThanOrEqual(options.photodiodeChannel,15)} = []
     options.photodiodeSampleRate (1,1) double {mustBeInteger, mustBePositive, mustBeFinite, mustBeLessThanOrEqual(options.photodiodeSampleRate,200000)} = 500
     options.filePrefix (1,1) string = ""
     options.stimulusDir (1,1) string {mustBeStimulusDirectoryOrEmpty} = ""
@@ -110,6 +115,14 @@ if ~isempty(options.syncFramesPerBit)
     ex.exp.CoPs.sync.framesPerBit = options.syncFramesPerBit;
 end
 if ~isempty(options.syncSequence), ex.exp.CoPs.sync.sequence = options.syncSequence; end
+if ~isempty(options.photodiodeTailSecs)
+    validateattributes(options.photodiodeTailSecs, {'numeric'}, {'scalar'});
+    ex.exp.CoPs.sync.captureTailSecs = options.photodiodeTailSecs;
+end
+if ~isempty(options.photodiodeChannel)
+    validateattributes(options.photodiodeChannel, {'numeric'}, {'scalar'});
+    ex.exp.CoPs.sync.physicalChannel = options.photodiodeChannel;
+end
 
 if isTestProfile
     % Make the portable display geometry explicit before the host-specific
@@ -138,6 +151,10 @@ end
 if strlength(options.stimulusDir) > 0
     ex = useStimulusDirectoryLocal(ex,options.stimulusDir);
 end
+if ~isempty(options.jointBlocks)
+    validateattributes(options.jointBlocks, {'logical'}, {'scalar'});
+    ex.exp.CoPs.ctl.jointBlocks = options.jointBlocks;
+end
 if recordingEnabled, ex = configureCoPsRecordingx(ex,options.recording); end
 if isTestProfile || strlength(options.filePrefix) > 0
     subjectID = strtrim(char(options.filePrefix));
@@ -162,8 +179,10 @@ if isTestProfile || strlength(options.filePrefix) > 0
 end
 ex.setup.dependencies = dependencies;
 ex.setup.inputMode = dependencies.inputMode;
+fprintf('CoPs behavioral input: %s.\n', dependencies.inputMode);
 ex.setup.showCursor = options.showCursor;
 ex.setup.soundOn = options.soundOn;
+ex.setup.showEndScreen = options.showEndScreen;
 ex.exp.CoPs.rew.soundOn = options.soundOn;
 ex.setup.showExperimenterOverlay = options.overlayOn;
 ex.setup.overlayScreen = options.overlayScreen;
@@ -185,6 +204,10 @@ ex.setup.inputSampleRate = ex.setup.adc.Rate;
 if options.photodiodeRecord
     if ~isfield(ex.setup.adc, 'NumBufferFrames')
         ex.setup.adc.NumBufferFrames = 900000; % conservative existing rig default; validate on new hardware
+    end
+    if ~eyeOn
+        ex.setup.adc.Channels = ex.exp.CoPs.sync.physicalChannel;
+        ex.setup.adc.DiffChannels = 0;
     end
     if ~ismember(ex.exp.CoPs.sync.physicalChannel, ex.setup.adc.Channels)
         ex.setup.adc.Channels(end+1) = ex.exp.CoPs.sync.physicalChannel;
@@ -209,6 +232,8 @@ if strcmp(ex.exp.CoPs.sync.mode, 'binary')
     flipInterval = Screen('GetFlipInterval', ex.setup.window);
 end
 ex.exp.CoPs.sync = prepareCoPsSyncx(ex.exp.CoPs.sync, flipInterval);
+ex.exp.CoPs.sync.lowColor = ex.idx.black;
+ex.exp.CoPs.sync.highColor = ex.idx.white;
 if strcmp(ex.exp.CoPs.sync.mode, 'binary')
     fprintf('CoPs binary sync: %.3f bits/s, %d refresh(es)/bit, same code reset each trial.\n', ...
         ex.exp.CoPs.sync.bitRateHz, ex.exp.CoPs.sync.framesPerBit);
@@ -343,6 +368,7 @@ ex.goodtrial = 0;  % counter for successful trials
 ex.totalPoints = 0; % counter for total points earned
 ex.loopcnt = zeros(1, ex.finish);  % loop counter for each trial
 ex.changedBlock = 0;  % keeps track of whether we changed blocks
+ex = prepareCoPsJointBlocksx(ex); % geometry is initialized; plan before counts and schedules
 ex.exp.total_nreps = getCoPsTotalRepsx(ex);
 ex.finish = ex.exp.total_nreps;
 ex = prepareCoPsPauseSchedulex(ex);
@@ -743,7 +769,8 @@ end
 
 function windowSizePx = defaultWindowSizePx(profileName)
 if strcmpi(strtrim(profileName), 'mouse_mini')
-    windowSizePx = [960 540];%1080×1080
+    windowSizePx = [2560 1440];
+    %windowSizePx = [960 540];%1080×1080
 else
     windowSizePx = [2560 1440];
 end

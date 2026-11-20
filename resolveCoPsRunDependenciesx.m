@@ -44,7 +44,10 @@ if dependencies.eyeOn
     else
         dependencies.inputMode = 'eyelink';
     end
-else
+elseif ismember(dependencies.profile, {'test1', 'mouse_mini'})
     dependencies.inputMode = 'mouse';
+else
+    % Disabling eye hardware must never substitute a behavioral signal.
+    dependencies.inputMode = 'none';
 end
 end

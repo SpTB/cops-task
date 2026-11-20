@@ -2,6 +2,20 @@ function tests = testRecEx
 tests=functiontests(localfunctions);
 end
 
+function testNeuralRecordingFlagsDoNotEnableMovies(testCase)
+ex.setup = struct();
+verifyFalse(testCase,isCoPsMovieRecordingx(ex));
+for flag = {false,true,0,1,struct(),struct('enabled',false)}
+    ex.setup.recording = flag{1};
+    verifyFalse(testCase,isCoPsMovieRecordingx(ex));
+end
+end
+
+function testMovieConfigurationEnablesMovies(testCase)
+ex.setup.recording = struct('enabled',true);
+verifyTrue(testCase,isCoPsMovieRecordingx(ex));
+end
+
 function setupOnce(testCase)
 folder=tempname; mkdir(folder);
 testCase.TestData.folder=folder;

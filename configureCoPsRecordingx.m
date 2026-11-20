@@ -5,6 +5,7 @@ config.enabled = true;
 ex.setup.recording = config;
 ex.MovieFiles = {};
 ex.exp.CoPs.instrOn = false;
+ex.exp.CoPs.ctl.jointBlocks = false; % movie nTrials controls recording length
 ex.exp.CoPs.freeViewing = true;
 ex.exp.CoPs.ctl.advance_trial_with_space = false;
 ex.exp.CoPs.ctl.target_num = config.targetNum;

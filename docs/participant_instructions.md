@@ -7,6 +7,11 @@ ex = runEx('mouse_mini', instrOn=true); % preview with mouse input
 ex = runEx('t', instrOn=true);          % configured gaze-input rig
 ```
 
+Only the explicit `mouse_mini` and `test1` simulation profiles use the mouse
+as gaze. Ordinary `runEx()` / `runEx('t')` runs use the configured eye signal;
+disabling eye input supplies no behavioral signal and earns no points.
+Missing, invalid, stale, or off-screen gaze does not add reward evidence.
+
 `instrOn` in `setDefaultsCoPs.m` controls whether this flow runs. An explicit
 runEx argument overrides that setting. Instruction pages use regular body
 text; only the final SPACE sentence is bold. SPACE requires a fresh press and
@@ -103,7 +108,9 @@ centered on `overlayScreen` if specified, otherwise on the first screen other
 than the participant's (excluding Windows' spanning screen 0 during automatic
 selection). This works with `overlayOn=false` as well. It does not
 replace or draw into the existing experimenter overlay. One alert remains open
-per pause; another Q replaces it, and continuing closes it.
+per pause; another Q replaces it, and continuing closes it. The experimenter
+can also click the **X** inside the popup's upper-right corner to dismiss just
+the alert. This does not advance the participant's page or resume the task.
 
 For example, choose the experimenter monitor using Psychtoolbox screen IDs:
 
@@ -115,9 +122,11 @@ ex = runEx('t', overlayScreen=0); % Linux example: Q popup uses experimenter X-s
 If Psychtoolbox exposes no separate experimenter screen, a nonmodal MATLAB
 message box provides the preview fallback. On Linux, separate X-screens are
 needed for monitor-specific routing, as for the existing experimenter overlay.
-When testing with one shared keyboard, refocus the task window after
-closing any popup. With separate rig keyboards, pause controls work regardless of
-desktop focus. If the dedicated popup cannot open, the code tries the desktop
+Shared-keyboard testing accepts SPACE, Q, and experimenter controls from any
+connected keyboard. Pause controls work regardless of desktop window focus,
+including after a question popup. SPACE still requires a fresh press and release.
+Separate rig keyboards retain their configured participant and experimenter roles.
+If the dedicated popup cannot open, the code tries the desktop
 message box; if neither can open, the console still reports the question.
 Windows physical monitors use IDs 1 and above; see the
 [Psychtoolbox screen mapping](https://psychtoolbox.org/docs/Screen-Screens).

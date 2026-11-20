@@ -24,7 +24,8 @@ writeMock(folder,'Screen',[
     "case 'openwindow'"
     "    if s.popupFailure, error('InstructionsTest:Popup','Simulated unavailable display.'); end"
     "    varargout = {88};"
-    "case 'close'"
+    "case 'framerect'"
+    "case 'close', s.closedAt(end+1) = s.polls;"
     "case 'flip'"
     "    s.flips{end+1} = s.draws; varargout = {100+numel(s.flips)};"
     "otherwise, error('InstructionsTest:Screen','Unexpected Screen command.');"
@@ -63,7 +64,12 @@ writeMock(folder,'refreshCoPsPreviewWindowx',[
     "COPS_INSTRUCTIONS_TEST.refreshes=COPS_INSTRUCTIONS_TEST.refreshes+1;"
     "changed=ismember(COPS_INSTRUCTIONS_TEST.refreshes,COPS_INSTRUCTIONS_TEST.resizeAt);"
     "end"]);
-writeMock(folder,'GetMouse',["function [x,y,b,focus]=GetMouse(varargin)";"x=0; y=0; b=[]; focus=true;";"end"]);
+writeMock(folder,'GetMouse',[
+    "function [x,y,b,focus]=GetMouse(varargin)"
+    "global COPS_INSTRUCTIONS_TEST"
+    "s=COPS_INSTRUCTIONS_TEST;"
+    "x=s.mouseXY(1); y=s.mouseXY(2); b=ismember(s.polls,s.mouseDownAt); focus=s.focus;"
+    "end"]);
 writeMock(folder,'GetSecs',["function t=GetSecs";"global COPS_INSTRUCTIONS_TEST";"t=200+COPS_INSTRUCTIONS_TEST.polls/100;";"end"]);
 writeMock(folder,'msgbox',[
     "function handle=msgbox(message,varargin)"
@@ -162,6 +168,32 @@ ex=showInstructions(testCase,fixture());
 verifyEqual(testCase,ex.quit,4);
 verifyFalse(testCase,ex.Instructions.acknowledged);
 verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.style,7);
+end
+
+function testAllInstructionPagesAcceptSharedSpaceWithoutFocus(testCase)
+global COPS_INSTRUCTIONS_TEST
+for stage = {'welcome','dynamic','ready'}
+    resetMock();
+    COPS_INSTRUCTIONS_TEST.focus = false;
+    ex = fixture();
+    ex.setup.guiWindow = true;
+    ex = showInstructions(testCase, ex, stage{1});
+    verifyTrue(testCase, ex.Instructions.pages(end).acknowledged);
+    verifyEqual(testCase, COPS_INSTRUCTIONS_TEST.polls, 3);
+end
+end
+
+function testUnfocusedInstructionsAcceptQuestionThenSpace(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.focus = false;
+COPS_INSTRUCTIONS_TEST.questionAt = [2 3]; % held Q produces one request
+COPS_INSTRUCTIONS_TEST.spaces = [false false false false true false];
+ex = fixture();
+ex.setup.guiWindow = true;
+ex = showInstructions(testCase, ex);
+verifyTrue(testCase, ex.Instructions.acknowledged);
+verifyNumElements(testCase, ex.Instructions.pages.questionRequests, 1);
+verifyEqual(testCase, COPS_INSTRUCTIONS_TEST.polls, 6);
 end
 
 function testLayoutFitsCommonLogicalCanvasSizes(testCase)
@@ -371,6 +403,51 @@ verifyLessThan(testCase,closes(1),opens(2));
 verifyLessThan(testCase,opens(2),closes(2));
 end
 
+function testPopupCloseButtonDismissesOnlyAlertBeforeSpace(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.screens=[0 1];
+COPS_INSTRUCTIONS_TEST.questionAt=2;
+COPS_INSTRUCTIONS_TEST.mouseXY=[670 25]; % inside the popup's X button
+COPS_INSTRUCTIONS_TEST.mouseDownAt=3;
+COPS_INSTRUCTIONS_TEST.spaces=[false false false false true false];
+ex=fixture(); ex.setup.screenNum=1;
+ex=showInstructions(testCase,ex,'ready');
+verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.closedAt,3);
+verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.polls,6); % still waits for SPACE
+verifyEqual(testCase,ex.quit,0);
+verifyTrue(testCase,ex.Instructions.pages.acknowledged);
+verifyNumElements(testCase,ex.Instructions.pages.questionRequests,1);
+frames=COPS_INSTRUCTIONS_TEST.calls(cellfun(@(c) strcmp(c{1},'FrameRect'),COPS_INSTRUCTIONS_TEST.calls));
+verifyEqual(testCase,frames{1}{4},[654 10 690 46]);
+end
+
+function testClickOutsidePopupCloseButtonDoesNotDismiss(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.screens=[0 1];
+COPS_INSTRUCTIONS_TEST.questionAt=2;
+COPS_INSTRUCTIONS_TEST.mouseXY=[350 190]; % message body, not X
+COPS_INSTRUCTIONS_TEST.mouseDownAt=3;
+COPS_INSTRUCTIONS_TEST.spaces=[false false false false true false];
+ex=fixture(); ex.setup.screenNum=1;
+ex=showInstructions(testCase,ex);
+verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.closedAt,6); % normal cleanup
+verifyTrue(testCase,ex.Instructions.acknowledged);
+end
+
+function testMouseHeldAtPopupOpenRequiresFreshClick(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.screens=[0 1];
+COPS_INSTRUCTIONS_TEST.questionAt=2;
+COPS_INSTRUCTIONS_TEST.mouseXY=[670 25];
+COPS_INSTRUCTIONS_TEST.mouseDownAt=[2 3 5];
+COPS_INSTRUCTIONS_TEST.spaces=[false false false false false false true false];
+ex=fixture(); ex.setup.screenNum=1;
+ex=showInstructions(testCase,ex);
+verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.closedAt,5);
+verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.polls,8);
+verifyTrue(testCase,ex.Instructions.acknowledged);
+end
+
 function testQuestionKeyWorksOnOtherInstructionPages(testCase)
 global COPS_INSTRUCTIONS_TEST
 for stage={'welcome','dynamic'}
@@ -484,7 +561,8 @@ global COPS_INSTRUCTIONS_TEST
 COPS_INSTRUCTIONS_TEST=struct('calls',{{}},'draws',{{}},'flips',{{}}, ...
     'size',42,'style',7,'polls',0,'spaces',[false true false],'quitAt',[], ...
     'refreshes',0,'resizeAt',[],'questionAt',[],'popups',{{}},'calibrationAt',[],'screens',[], ...
-    'isWindows',false,'popupFailure',false);
+    'isWindows',false,'popupFailure',false,'focus',true, ...
+    'mouseXY',[0 0],'mouseDownAt',[],'closedAt',[]);
 end
 
 function writeMock(folder,name,lines)

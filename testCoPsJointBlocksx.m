@@ -168,12 +168,13 @@ for pursuitPriority = [true false]
     ex.exp.CoPs.pre.nreps = 3;
     ex.exp.CoPs.pur.nreps = 2;
     ex.exp.CoPs.pur.priority = pursuitPriority;
+    ex.exp.CoPs.instrOn = true;
     ex = prepareCoPsJointBlocksx(ex);
     info = getCoPsTrialBlockInfox(ex);
-    verifyEqual(testCase, getCoPsTotalRepsx(ex), ex.exp.nreps + 7);
-    verifyEqual(testCase, info.mainIdx(1), 6 + 2 * double(pursuitPriority));
+    verifyEqual(testCase, getCoPsTotalRepsx(ex), ex.exp.nreps + 9);
+    verifyEqual(testCase, info.mainIdx(1), 8 + 2 * double(pursuitPriority));
 
-    for j = [info.tutorialIdx info.preIdx info.pursuitIdx]
+    for j = [info.instructionIdx info.tutorialIdx info.preIdx info.pursuitIdx]
         ex.j = j;
         [rew, idx, withinBlock] = applyCoPsJointBlockx(ex, ex.exp.CoPs.rew, info);
         verifyEqual(testCase, rew, ex.exp.CoPs.rew);
@@ -233,6 +234,7 @@ end
 function testPortableProfilePreservesRequestedTrialCount(testCase)
 ex = setDefaultsCoPs(struct());
 verifyTrue(testCase, ex.exp.CoPs.ctl.jointBlocks);
+ex.exp.CoPs.instrOn = false; % isolate the requested main-trial count
 ex.setup = localSetup();
 ex.setup.stereo = struct('Display', true, 'Mode', 8, 'Multisampling', 8);
 ex.setup.fullscreen = false;
@@ -243,6 +245,39 @@ ex = prepareCoPsJointBlocksx(ex);
 verifyEqual(testCase, ex.exp.nreps, 4);
 verifyEqual(testCase, getCoPsTotalRepsx(ex), 4);
 verifyEqual(testCase, config.nTrials, 4);
+end
+
+function testHumanSchedulesIncludePracticeBeforeRewardBlocks(testCase)
+evalc('ex = setDefaultsCoPs(struct());');
+ex.setup = localSetup();
+ex.exp.CoPs.pre.nreps = 0;
+ex.exp.CoPs.ctl.numBlocks = 3;
+ex.exp.CoPs.ctl.blockMeanTrials = 2;
+ex.exp.CoPs.ctl.blockTransRange = 0;
+ex = prepareCoPsJointBlocksx(ex);
+ex.finish = getCoPsTotalRepsx(ex);
+ex = prepareCoPsPauseSchedulex(ex);
+ex = prepareCoPsTrialParamSchedules(ex);
+info = getCoPsTrialBlockInfox(ex);
+verifyEqual(testCase,ex.exp.nreps,6);
+verifyEqual(testCase,ex.finish,8);
+verifyEqual(testCase,info.instructionIdx,[1 2]);
+verifyEqual(testCase,info.mainIdx,3:8);
+verifyEqual(testCase,numel(ex.exp.CoPs.pauseSchedule.afterTrial),8);
+verifyEqual(testCase,numel(ex.exp.CoPs.trialParamSchedules.target_visibility),8);
+centers = ex.exp.CoPs.ctl.jointBlockCenters;
+for j = 1:8
+    ex.j = j;
+    [rew,block,within] = applyCoPsJointBlockx(ex,ex.exp.CoPs.rew,info);
+    if j <= 2
+        verifyTrue(testCase,isnan(block));
+    else
+        expected = ceil((j-2)/2);
+        verifyEqual(testCase,block,expected);
+        verifyEqual(testCase,within,mod(j-3,2)+1);
+        verifyEqual(testCase,rew.gauss_center_coords,centers(expected,:));
+    end
+end
 end
 
 

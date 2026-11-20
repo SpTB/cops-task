@@ -3,9 +3,9 @@ function tests = testCoPsSyncx
 tests = functiontests(localfunctions);
 end
 
-function testLegacyDefaultAndBitRates(testCase)
+function testBinaryDefaultAndBitRates(testCase)
 evalc('ex = setDefaultsCoPs(struct());');
-verifyEqual(testCase, ex.exp.CoPs.sync.mode, 'goPulse');
+verifyEqual(testCase, ex.exp.CoPs.sync.mode, 'binary');
 for rate = [60 120 144]
     for holdFrames = [1 2 4]
         sync = prepareCoPsSyncx(struct('mode','binary','framesPerBit',holdFrames), 1/rate);

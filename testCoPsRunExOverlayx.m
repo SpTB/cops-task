@@ -71,9 +71,9 @@ COPS_RUNEX_SUBJECT_TEST = struct('answer', {{'test'}}, 'calls', 0, 'existingSubj
 COPS_RUNEX_ADC_TEST = struct('enabled',false,'calls',{{}},'resetSetup',struct());
 end
 
-function testMouseProfileDisplayDefaults(testCase)
+function testMouseProfileDisplaySettings(testCase)
 for profile = {'test1', 'mouse_mini'}
-    ex = captureBeforeDisplay(testCase, profile{1});
+    ex = captureBeforeDisplay(testCase, profile{1}, overlayOn=false);
     isFullscreen = strcmp(profile{1}, 'test1');
     verifyFalse(testCase, ex.setup.showExperimenterOverlay);
     verifyEqual(testCase, ex.setup.fullscreen, isFullscreen);
@@ -99,6 +99,31 @@ verifyFalse(testCase,ex.exp.CoPs.instrOn);
 verifyEqual(testCase,ex.exp.CoPs.ctl.gauss_scalar,1);
 verifyEqual(testCase,ex.setup.recording.rewardLandscape,0);
 verifyEmpty(testCase,ex.MovieFiles);
+end
+
+function testRewardBlocksFollowHumanAndPortableDefaults(testCase)
+for profile = {'test1','mouse_mini'}
+    ex = captureBeforeDisplay(testCase,profile{1},testTrials=4);
+    verifyFalse(testCase,ex.exp.CoPs.ctl.jointBlocks);
+    verifyEqual(testCase,ex.exp.nreps,4);
+    ex = captureBeforeDisplay(testCase,profile{1},jointBlocks=true);
+    verifyTrue(testCase,ex.exp.CoPs.ctl.jointBlocks);
+end
+% Disable hardware positionally while retaining the ordinary human profile.
+ex = captureBeforeDisplay(testCase,'t',0,0,0,0);
+verifyTrue(testCase,ex.exp.CoPs.ctl.jointBlocks);
+verifyEqual(testCase,ex.setup.inputMode,'none');
+ex = captureBeforeDisplay(testCase,'t',0,0,0,0,jointBlocks=false);
+verifyFalse(testCase,ex.exp.CoPs.ctl.jointBlocks);
+verifyEqual(testCase,ex.exp.nreps,120);
+end
+
+function testMovieTrialsRemainIndependentOfRewardBlocks(testCase)
+cfg = struct('length',5,'targetNum',2,'visibility',1,'background',-1);
+ex = captureBeforeDisplay(testCase,'mouse_mini',recording=cfg, ...
+    jointBlocks=true,testTrials=2,filePrefix="demo");
+verifyFalse(testCase,ex.exp.CoPs.ctl.jointBlocks);
+verifyEqual(testCase,ex.exp.nreps,2);
 end
 
 function testRecordingCornerOverridesTheNormalFreeCenter(testCase)
@@ -176,6 +201,25 @@ verifyFalse(testCase,ex.setup.dependencies.rewOn);
 verifyTrue(testCase,ismember('StopAdcSchedule',COPS_RUNEX_ADC_TEST.calls));
 end
 
+function testPhotCheckSettingsReachTheRealAdcSchedule(testCase)
+global COPS_RUNEX_ADC_TEST
+COPS_RUNEX_ADC_TEST.enabled = true;
+ex = captureBeforeDisplay(testCase,'mouse_mini',testTrials=1, ...
+    instrOn=false,jointBlocks=false,showEndScreen=false, ...
+    photodiodeRecord=true,photodiodeChannel=0,photodiodeSampleRate=2000,photodiodeTailSecs=.2);
+verifyEqual(testCase,ex.exp.CoPs.sync.mode,'binary');
+verifyEqual(testCase,ex.exp.CoPs.sync.physicalChannel,0);
+verifyEqual(testCase,ex.exp.CoPs.sync.captureTailSecs,.2);
+verifyEqual(testCase,ex.setup.adc.Channels,0);
+verifyEqual(testCase,ex.setup.adc.DiffChannels,0);
+verifyEqual(testCase,COPS_RUNEX_ADC_TEST.resetSetup.adc.Channels,0);
+verifyEqual(testCase,ex.setup.inputMode,'mouse');
+verifyFalse(testCase,ex.setup.showEndScreen);
+verifyFalse(testCase,ex.exp.CoPs.instrOn);
+verifyFalse(testCase,ex.exp.CoPs.ctl.jointBlocks);
+verifyEqual(testCase,ex.exp.nreps,1);
+end
+
 function testKeyboardRolesAreValidatedBeforeDisplay(testCase)
 global COPS_RUNEX_OVERLAY_TEST
 COPS_RUNEX_OVERLAY_TEST = [];
@@ -240,8 +284,12 @@ for overlayOn = [false true]
         overlayOn=overlayOn);
     verifyEqual(testCase, positional.setup.showExperimenterOverlay, overlayOn);
     verifyEqual(testCase, named.setup.showExperimenterOverlay, overlayOn);
-    verifyMouseOnly(testCase, positional);
-    verifyMouseOnly(testCase, named);
+    verifyEqual(testCase, positional.setup.inputMode, 'none');
+    verifyEqual(testCase, named.setup.inputMode, 'none');
+    verifyFalse(testCase, positional.setup.dependencies.eyeOn);
+    verifyFalse(testCase, named.setup.dependencies.eyeOn);
+    verifyFalse(testCase, positional.setup.dependencies.datapixxOn);
+    verifyFalse(testCase, named.setup.dependencies.datapixxOn);
 end
 end
 

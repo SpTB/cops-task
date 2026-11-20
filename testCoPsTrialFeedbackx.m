@@ -57,10 +57,10 @@ writeMock(mockDir, 'KbName', [
     "if strcmp(name, 'F4'), key = 4; elseif strcmp(name,'F6'), key = 6; else, key = []; end"
     "end"]);
 writeMock(mockDir,'notifyCoPsQuestionx',[
-    "function [request,cleanup] = notifyCoPsQuestionx(ex)"
+    "function [request,cleanup,poll] = notifyCoPsQuestionx(ex)"
     "global COPS_FEEDBACK_TEST"
     "COPS_FEEDBACK_TEST.questions = COPS_FEEDBACK_TEST.questions+1;"
-    "request = struct('time',200,'target','experimenterPopup'); cleanup=[];"
+    "request = struct('time',200,'target','experimenterPopup'); cleanup=[]; poll=[];"
     "end"]);
 writeMock(mockDir, 'WaitSecs', ["function WaitSecs(varargin)"; "end"]);
 writeMock(mockDir, 'GetMouse', [
@@ -115,6 +115,17 @@ verifyEqual(testCase, COPS_FEEDBACK_TEST.keyboardSetups{end}, ex.setup);
 verifyEqual(testCase,ex.Payout.bonusDollars,0);
 verifyEqual(testCase,ex.Payout.nTrials,3);
 verifyTrue(testCase,ex.Outro.acknowledged);
+end
+
+function testDiagnosticCanFinishWithoutAKeypress(testCase)
+global COPS_FEEDBACK_TEST
+ex = fixture();
+ex.setup.showEndScreen = false;
+ex = showFeedback(testCase,ex);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,0);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.flips,0);
+verifyEqual(testCase,ex.Payout.nTrials,3);
+verifyFalse(testCase,ex.Trials(end).endScreenAcknowledged);
 end
 
 function testHeldSpaceRequiresReleaseThenANewPressAndRelease(testCase)
@@ -224,16 +235,27 @@ verifyEqual(testCase, COPS_FEEDBACK_TEST.messages{1}, COPS_FEEDBACK_TEST.message
 verifyEqual(testCase, ex.Trials(end).endScreenOff, 103);
 end
 
-function testUnfocusedSharedWindowCannotAcknowledge(testCase)
+function testSharedKeyboardWorksWithoutDesktopWindowFocus(testCase)
 global COPS_FEEDBACK_TEST
-COPS_FEEDBACK_TEST.spaces = [false true false true true false true false];
-COPS_FEEDBACK_TEST.focus = [true false false true true true true true];
+COPS_FEEDBACK_TEST.focus = false;
 ex = fixture();
 ex.setup.guiWindow = true;
 ex = showFeedback(testCase, ex);
-% SPACE pressed while unfocused must be released before a new press works.
 verifyTrue(testCase, ex.Trials(end).endScreenAcknowledged);
-verifyEqual(testCase, COPS_FEEDBACK_TEST.polls, 8);
+verifyEqual(testCase, COPS_FEEDBACK_TEST.polls, 3);
+verifyEqual(testCase, COPS_FEEDBACK_TEST.focusQueries, 0);
+end
+
+function testUnfocusedSharedKeyboardCanQuit(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.focus = false;
+COPS_FEEDBACK_TEST.spaces = [false false];
+COPS_FEEDBACK_TEST.quitAt = 2;
+ex = fixture();
+ex.setup.guiWindow = true;
+ex = showFeedback(testCase, ex);
+verifyEqual(testCase, ex.quit, 4);
+verifyFalse(testCase, ex.Trials(end).endScreenAcknowledged);
 end
 
 function testDedicatedDevicesWorkWithoutDesktopWindowFocus(testCase)
@@ -520,7 +542,7 @@ end
 
 function testPresentationRecordingNeverWaitsForFeedbackOrOutro(testCase)
 global COPS_FEEDBACK_TEST
-ex=fixture(); ex.setup.recording.enabled=true;
+ex=fixture(); ex.setup.recording=struct('enabled',true);
 ex=showFeedback(testCase,ex);
 verifyEmpty(testCase,COPS_FEEDBACK_TEST.messages);
 verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,0);
@@ -555,7 +577,8 @@ ex.exp.CoPs.pay = resolveCoPsPayx();
 ex.exp.CoPs.rew = struct('points_feedback_on', true, ...
     'points_feedback_text_size', 48, 'points_feedback_decimals', 0);
 ex.exp.CoPs.pauseSchedule.afterTrial = false(1, 3);
-ex.setup = struct('window', 101, 'guiWindow', false, 'keyboards', struct('separate', false));
+ex.setup = struct('window', 101, 'guiWindow', false, 'keyboards', struct('separate', false), ...
+    'recording', false); % Match the real getDefaultSettingsx output.
 ex.idx.white = 255;
 ex.idx.bg_lum = 127;
 ex.Trials = repmat(struct('pointsEarned', 2, 'trialScored', true, 'trialCompleted', true, ...

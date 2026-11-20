@@ -10,6 +10,14 @@ function closeness = calc_closeness(current_pos, target_pos, max_distance)
 % output:
 % closeness: 0-1 value indicating how close to target
 
+% Missing gaze must earn zero evidence. MATLAB min/max can discard NaNs,
+% so clamping an invalid distance below would otherwise produce closeness=1.
+if any(~isfinite(current_pos(:))) || any(~isfinite(target_pos(:))) || ...
+        ~isfinite(max_distance) || max_distance <= 0
+    closeness = 0;
+    return
+end
+
 % Calculate Euclidean distance
 distance = sqrt((current_pos(1) - target_pos(1))^2 + ...
                (current_pos(2) - target_pos(2))^2);

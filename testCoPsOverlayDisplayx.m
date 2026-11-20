@@ -159,6 +159,7 @@ for initializer = {@initDisplayx, @(ex) initDisplayxx(ex, true)}
     ex = initializer{1}(fixture());
     verifyEqual(testCase, ex.setup.screenNum, 1);
     verifyEqual(testCase, ex.setup.window, 101);
+    verifyEqual(testCase, ex.synch.Pos, [2550;1430]); % bottom-right, 20 px patch
     verifyEqual(testCase, ex.setup.overlay, 201);
     verifyTrue(testCase, ex.setup.overlayIsSeparate);
     verifyEqual(testCase, ex.setup.overlayWindow, 102);

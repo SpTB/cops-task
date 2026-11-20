@@ -15,6 +15,20 @@ ctl - Experimental control
 IN USE:
 ctl.jointBlocks: <true/false> Select rewSwitch when true and exp1 when false
 
+ctl.numBlocks: <positive integer> Number of main-task reward-peak blocks (default 12)
+
+ctl.blockMeanTrials: <positive integer> Mean main-task trials per reward peak (default 30)
+
+ctl.blockTransRange: <nonnegative integer> Uniform integer variation around blockMeanTrials (default 6 gives 24-36 trials); 0 gives fixed lengths
+
+ctl.rewPeakDistFromPrev: <nonnegative number> Minimum distance between consecutive peaks in visual degrees (default 5)
+
+With jointBlocks=true, the sum of the drawn block lengths replaces exp.nreps.
+Instruction practice, tutorial, pursuit and preblock trials do not consume blocks.
+test1/mouse_mini disable switching by default so testTrials remains the preview length.
+runEx('mouse_mini', jointBlocks=true) previews the configured full block plan instead.
+Movie exports keep their requested trial count and disable switching.
+
 ctl.nsteps: <positive integer> Number of target updates per ordinary trial; divided by timing.waitHz gives nominal duration
 
 ctl.target_num: <1, 2, or vector of these> Number of targets (dynamic noise background); repeats set proportions
@@ -326,6 +340,12 @@ Other settings
 
 IN USE:
 ex.exp.CoPs.freeViewing: <true/false> Skip fixation checking at trial start
+
+When true, the pre-GO hold advances by elapsed time regardless of gaze position,
+tracking loss, or disabled eye input. The hold preserves the nominal 500-input-poll
+startup delay (1 second at 500 Hz), or fix.duration if longer, followed by the
+configured prego_delay and go_delay. Valid gaze is still required to earn points.
+When false, the pre-GO hold requires more than 500 consecutive passed eye checks.
 
 EXP1:
 ex.exp.nreps: <nonnegative integer> Number of main trials; rewSwitch replaces it with the total generated block length

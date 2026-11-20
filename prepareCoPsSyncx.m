@@ -2,7 +2,8 @@ function sync = prepareCoPsSyncx(sync, refreshIntervalSec)
 % Resolve the photodiode protocol once, before trial execution (no toolboxes).
 if nargin < 1, sync = struct(); end
 defaults = struct('mode', 'goPulse', 'framesPerBit', 1, 'seed', 1, ...
-    'sequence', [], 'preambleSec', 0.1, 'gapSec', 0.05, 'physicalChannel', 6);
+    'sequence', [], 'preambleSec', 0.1, 'gapSec', 0.05, 'physicalChannel', 6, ...
+    'captureTailSecs', 0.1);
 names = fieldnames(defaults);
 for k = 1:numel(names)
     if ~isfield(sync, names{k}), sync.(names{k}) = defaults.(names{k}); end
@@ -14,6 +15,7 @@ validateattributes(sync.seed, {'numeric'}, {'scalar','integer','>=',1,'<=',32767
 validateattributes(sync.preambleSec, {'numeric'}, {'scalar','real','finite','positive'});
 validateattributes(sync.gapSec, {'numeric'}, {'scalar','real','finite','positive'});
 validateattributes(sync.physicalChannel, {'numeric'}, {'scalar','integer','nonnegative','finite'});
+validateattributes(sync.captureTailSecs, {'numeric'}, {'scalar','real','nonnegative','finite'});
 sync.refreshIntervalSec = double(refreshIntervalSec);
 sync.bitRateHz = 1 / (refreshIntervalSec * sync.framesPerBit);
 sync.preambleFrames = max(1, round(sync.preambleSec / refreshIntervalSec));

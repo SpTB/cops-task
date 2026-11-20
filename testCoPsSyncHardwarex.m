@@ -42,7 +42,7 @@ function testPatchAndStimulusShareOneScheduledFlip(testCase)
 global COPS_SYNC_HARDWARE_TEST
 cleanup = useMocks(testCase); %#ok<NASGU>
 sync = prepareCoPsSyncx(struct('mode','binary','sequence',[0 1]),1/60);
-sync.patchRect = [1800 0 1920 120];
+sync.patchRect = [1800 960 1920 1080];
 [info,cursor,bit,index,phase] = flipCoPsSyncFramex(sync,0,true,struct('window',7),struct('white',255,'black',0),9);
 verifyEqual(testCase,COPS_SYNC_HARDWARE_TEST.calls, ...
     {{'FillRect',7,255,sync.patchRect},{'DrawingFinished',7},{'Flip',7,9+0.5/60}});
@@ -55,12 +55,40 @@ function testZeroBitIsExplicitlyBlackAndUnscheduledFirstFlip(testCase)
 global COPS_SYNC_HARDWARE_TEST
 cleanup = useMocks(testCase); %#ok<NASGU>
 sync = prepareCoPsSyncx(struct('mode','binary','sequence',[0 1]),1/60);
-sync.patchRect = [1800 0 1920 120];
+sync.patchRect = [1800 960 1920 1080];
 cursor = sync.preambleFrames+sync.gapFrames;
 [~,~,bit,index,phase] = flipCoPsSyncFramex(sync,cursor,true,struct('window',7),struct('white',255,'black',0),NaN);
 verifyEqual(testCase,COPS_SYNC_HARDWARE_TEST.calls{1},{'FillRect',7,0,sync.patchRect});
 verifyEqual(testCase,COPS_SYNC_HARDWARE_TEST.calls{end},{'Flip',7,0});
 verifyEqual(testCase,[bit index double(phase)],[0 1 3]);
+end
+
+function testIdlePatchUsesTheSameBottomRightCorner(testCase)
+global COPS_SYNC_HARDWARE_TEST
+cleanup = useMocks(testCase); %#ok<NASGU>
+ex.exp.CoPs.sync.mode='binary';
+ex.synch.PSz=120;
+ex.setup=struct('window',7,'screenRect',[0 0 1920 1080]);
+ex.idx.black=0;
+ex.idx.bg_lum=128;
+drawCoPsIdleSyncx(ex);
+verifyEqual(testCase,COPS_SYNC_HARDWARE_TEST.calls, ...
+    {{'FillRect',7,0,[1800 960 1920 1080]}});
+end
+
+function testBinaryLevelsUseSavedBlackAndWhite(testCase)
+global COPS_SYNC_HARDWARE_TEST
+cleanup = useMocks(testCase); %#ok<NASGU>
+sync = prepareCoPsSyncx(struct('mode','binary','sequence',[0 1]),1/120);
+sync.patchRect = [1800 960 1920 1080];
+sync.lowColor = 0; sync.highColor = 255;
+cursor = sync.preambleFrames+sync.gapFrames;
+for level = [0 255]
+    [~,cursor] = flipCoPsSyncFramex(sync,cursor,true,struct('window',7), ...
+        struct('white',255,'black',0),NaN);
+    verifyEqual(testCase,COPS_SYNC_HARDWARE_TEST.calls{end-2}, ...
+        {'FillRect',7,level,sync.patchRect});
+end
 end
 
 function testIndependentAnalogDrainAndEmptyBuffer(testCase)

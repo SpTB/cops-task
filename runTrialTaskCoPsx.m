@@ -37,13 +37,13 @@ if isfield(ex, 'setup') && isfield(ex.setup, 'inputMode') && ~isempty(ex.setup.i
 elseif eyeOn
     inputMode = 'eye';
 else
-    inputMode = 'mouse';
+    inputMode = 'none'; % mouse input requires an explicit simulation mode
 end
 
 showExperimenterOverlay = ~isfield(ex.setup, 'showExperimenterOverlay') || ...
     logical(ex.setup.showExperimenterOverlay);
 overlayIsSeparate = isfield(ex.setup, 'overlayIsSeparate') && ex.setup.overlayIsSeparate;
-rewardMarkerEnabled = isfield(ex.setup,'recording') && ex.setup.recording.enabled && ...
+rewardMarkerEnabled = isCoPsMovieRecordingx(ex) && ...
     isfield(ex.setup.recording,'rewardMarker') && ex.setup.recording.rewardMarker;
 rewardMarkerDuration = 0.2;
 if rewardMarkerEnabled && isfield(ex.setup.recording,'rewardMarkerDuration')
@@ -62,7 +62,7 @@ ppd = 1/dpp;
 % point for photodiode synch pulse
 spSz = ex.synch.PSz;
 spCol =  ex.synch.Col; %[255 0 0]; %
-spPos = [ex.setup.screenRect(3) - spSz/2; spSz/2];
+spPos = [ex.setup.screenRect(3) - spSz/2; ex.setup.screenRect(4) - spSz/2];
 spHalfSz = spSz / 2;
 spRects = [spPos(1,:) - spHalfSz; spPos(2,:) - spHalfSz; ...
     spPos(1,:) + spHalfSz; spPos(2,:) + spHalfSz];
@@ -425,15 +425,18 @@ ex.Trials(ex.j).mainRewardRadiusDeg = main_reward_radius_px / ppd;
 gauss_dim = graph.texture_dims(1)*graph.size_mult; % based on texture size
 
 %reward_mat = gauss_rew_land(gauss_dim, [gauss_dim/2, gauss_dim/2], rew.gauss_sigma); % reward matrix
-% Pick Gaussian reward center once per session: indexed center or free center.
+% Resolve the fixed session center or the current reward-peak block.
 [ctr, max_peak_dist_norm] = resolveMaxPeakDistanceNormLocal(ctr, gauss_dim, ppd, rew);
 ex.exp.CoPs.ctr = ctr;
+jointBlockIdx = NaN;
+jointBlockTrialIdx = NaN;
 if isInstructionTrial
     selected_center_norm = [0.5 0.5];
     center_px = [gauss_dim gauss_dim]/2;
     gaussCenterCache = struct('path','','status','practice_no_landscape');
     reward_mat = ones(gauss_dim,gauss_dim);
 else
+    [rew, jointBlockIdx, jointBlockTrialIdx] = applyCoPsJointBlockx(ex, rew, blockInfo);
     [rew, gaussCenterCache] = loadDailyGaussCenterCoordsLocal(ex, rew, ctr, max_peak_dist_norm);
     [rew, selected_center_norm, center_px] = selectGaussRewardCenterCoPsx(rew, gauss_dim, max_peak_dist_norm);
     [rew, gaussCenterCache] = saveDailyGaussCenterCoordsLocal(ex, rew, selected_center_norm, ctr, max_peak_dist_norm, gaussCenterCache);
@@ -458,6 +461,8 @@ ex.Trials(ex.j).maxPeakDistDeg = ctr.max_peak_dist_deg;
 ex.Trials(ex.j).maxPeakDistNorm = max_peak_dist_norm;
 ex.Trials(ex.j).gaussCenterCachePath = gaussCenterCache.path;
 ex.Trials(ex.j).gaussCenterCacheStatus = gaussCenterCache.status;
+ex.Trials(ex.j).jointBlockIdx = jointBlockIdx;
+ex.Trials(ex.j).jointBlockTrialIdx = jointBlockTrialIdx;
 ex.Trials(ex.j).gaussSigmaPx = gaussSigmaInfo.sigmaPx;
 ex.Trials(ex.j).gaussSigmaDeg = gaussSigmaInfo.sigmaDeg;
 ex.Trials(ex.j).gaussSigmaUnits = char(gaussSigmaInfo.units);
@@ -694,8 +699,11 @@ if isfield(ex.exp.CoPs, 'sync'), sync = ex.exp.CoPs.sync; end
 if ~isfield(sync, 'protocolVersion')
     sync = prepareCoPsSyncx(sync, 1/ex.setup.refreshRate);
 end
+if ~isfield(sync,'captureTailSecs'), sync.captureTailSecs = 0.1; end
 binarySync = strcmp(sync.mode, 'binary');
 sync.patchRect = spRects(:)';
+sync.lowColor = ex.idx.black;
+sync.highColor = ex.idx.white;
 sync.physicalChannel = double(sync.physicalChannel);
 if binarySync
     requiredBits = ceil(frame_alloc_n / sync.framesPerBit);
@@ -913,16 +921,15 @@ while state ~= ex.states.BREAKFIX &&...
         time_breakFixation = GetSecs - trstart;
     end
     
-    % FPHOLD -> FIXATIONCOMPLETE
+    % FPHOLD -> PREGO. Free-viewing trials use time, never gaze validity.
+    % Preserve the previous 500-poll startup delay without requiring samples.
     if state == ex.states.FPHOLD
-        if  false %~pass_eye 
-            state = ex.states.BREAKFIX;
-            disp('in breakfix');
-            %new
-        elseif pass_eye && pass_eye_accum <= 500
-           % disp('during fix')
-            % time_breakFixation = GetSecs - trstart;
-        elseif ttime > time_startTrial + ex.fix.duration && pass_eye_accum>500
+        if freeViewing
+            holdComplete = ttime > time_startTrial + max(ex.fix.duration, 500*eyetimestep);
+        else
+            holdComplete = ttime > time_startTrial + ex.fix.duration && pass_eye_accum > 500;
+        end
+        if holdComplete
             % current_step = current_step + 1;
             state = ex.states.PREGO;
             if rewOn && ~rew.alwaysOnEyeInBounds
@@ -971,7 +978,7 @@ while state ~= ex.states.BREAKFIX &&...
     % Update the selected behavioral input (hardware gaze or mouse gaze).
     ttime = GetSecs-trstart;
     %if strcmp(inputMode, 'eye') || strcmp(inputMode, 'mouse')
-    if ismember(inputMode, {'eye', 'eyelink', 'mouse'})
+    if ismember(inputMode, {'eye', 'eyelink', 'mouse', 'none'})
         if ttime > lasteyepostime + eyetimestep
 
             [pass_eye, trEye, lastEyePos, inputSample] = sampleCoPsInputx( ...
@@ -994,7 +1001,7 @@ while state ~= ex.states.BREAKFIX &&...
             end
             
             %calc rew
-            if state == ex.states.GO && reward_active
+            if state == ex.states.GO && reward_active && currentEyeInBounds
                 % Calculate closeness to targets ( [0-1] bound )
                 if ctl.target_num == 1
                     closeness = calc_closeness(current_xy_abs, ...
@@ -1153,7 +1160,9 @@ while state ~= ex.states.BREAKFIX &&...
     % Screen('FillRect', ex.setup.overlay, ex.idx.bg);
 % Screen('CopyWindow', ex.setup.overlay, ex.setup.window);
 % Screen('Flip', ex.setup.window);
-    if ttime > lastframet + frametimestep
+    % Binary playback is paced by the blocking VBL-scheduled Flip below.
+    % A second free-running frame timer drifts late and periodically skips VBLs.
+    if binarySync || ttime > lastframet + frametimestep
         
         % --------------------------------------------------------------------
         % CONTINUOUS REWARD CALCULATION SECTION -------------------------------
@@ -1594,9 +1603,14 @@ if overlayIsSeparate
     Screen('FillRect', ex.setup.overlay, ex.idx.bg);
 end
 refreshCoPsPreviewWindowx(ex.setup);
-if binarySync, Screen('FillRect', ex.setup.window, ex.idx.black, spRects); end
+if binarySync, Screen('FillRect', ex.setup.window, sync.lowColor, spRects); end
 syncOffTime = Screen('Flip', ex.setup.window);
 presentCoPsOverlayx(ex);
+% Keep acquiring through scanout/panel delay, including the final black edge.
+% The ADC runs in hardware while MATLAB yields; no stimulus frames are added.
+if binarySync && adcOn && sync.captureTailSecs > 0
+    WaitSecs('UntilTime', syncOffTime + sync.captureTailSecs);
+end
 
 % Store trial information
 ex.Trials(ex.j).ID = fix(clock);
@@ -1610,6 +1624,9 @@ elseif adcOn && strcmp(inputMode, 'mouse')
     analog = readCoPsAnalogx(analog);
     ex.Trials(ex.j).Analog = analog;
 elseif adcOn && strcmp(inputMode, 'eye')
+    if binarySync
+        [~,trEye] = checkEyex(trEye,ex,pass_eye,freeViewing,lastEyePos,0,0,tolerance_scalar);
+    end
     % Keep unmodified photodiode voltages alongside legacy calibrated eye data.
     ex.Trials(ex.j).Analog = struct('v', trEye.v(:,1:trEye.n), ...
         't', trEye.t(1:trEye.n), 'n', trEye.n);
@@ -1692,6 +1709,9 @@ ex.Trials(ex.j).frameSyncBit = frameSyncBit(1:fi-1);
 ex.Trials(ex.j).frameSyncIndex = frameSyncIndex(1:fi-1);
 ex.Trials(ex.j).frameSyncPhase = frameSyncPhase(1:fi-1);
 ex.Trials(ex.j).frameStateLookup = ex.states;
+if binarySync
+    ex.Trials(ex.j).syncTiming = assessCoPsSyncTimingx(ex.Trials(ex.j));
+end
 
 % Preserve the fit/correction used for this trial across later recalibrations.
 ex.Trials(ex.j).eyeCal = ex.eyeCal;
@@ -1701,7 +1721,7 @@ end
 
 % Presentation exports reuse the generated textures after the live trial.
 % Encoding and readback never run inside the stimulus timing loop.
-if isfield(ex.setup,'recording') && ex.setup.recording.enabled
+if isCoPsMovieRecordingx(ex)
     scene = struct('windowColor',window_background_color,'textureColor',texture_background_color, ...
         'textureRect',texture_background_rect,'textureDestinationRect',textureDrawRect);
     try

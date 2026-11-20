@@ -5,6 +5,7 @@ if nargin < 4, allowCalibration = false; end
 if nargin < 5, requireFreshQuit = false; end
 requests = struct('time',{},'target',{});
 notificationCleanup = []; %#ok<NASGU> Keep the latest popup alive until this screen ends.
+notificationPoll = [];
 KbName('UnifyKeyNames');
 quitKey = KbName('F4');
 calibrationKey = [];
@@ -23,7 +24,6 @@ spaceReady = ~spaceDown;
 waitingForSpaceRelease = false;
 quitRequested = false;
 recalibrate = false;
-separate = isfield(setup, 'keyboards') && setup.keyboards.separate;
 while true
     if refreshCoPsPreviewWindowx(setup), redraw(); end
     if isempty(onQuestion)
@@ -31,19 +31,9 @@ while true
     else
         [keys,spaceDown,~,questionDown] = readCoPsKeyboardx(setup);
     end
-    focused = true;
-    if isfield(setup, 'guiWindow') && setup.guiWindow && ~separate
-        [~,~,~,focused] = GetMouse(setup.window);
-    end
-    if ~focused
-        spaceReady = false;
-        waitingForSpaceRelease = false;
-        waitingForCalibrationRelease = false;
-        questionReady = false;
-        calibrationReady = false;
-        WaitSecs('YieldSecs',0.01);
-        continue
-    end
+    if ~isempty(notificationPoll), notificationPoll(); end
+    % Psychtoolbox polls keyboard state independently of desktop focus.
+    % A window-manager focus report must not disable pause controls.
     if ~any(keys(quitKey))
         quitReady = true;
     elseif quitReady
@@ -54,8 +44,9 @@ while true
         if questionDown && questionReady
             % Close the old alert before opening another one. Screen handles
             % can be reused when an experimenter closes a popup manually.
+            notificationPoll = [];
             notificationCleanup = []; %#ok<NASGU>
-            [request,notificationCleanup] = onQuestion(); %#ok<NASGU>
+            [request,notificationCleanup,notificationPoll] = onQuestion(); %#ok<NASGU>
             requests(end+1) = request; %#ok<AGROW>
             questionReady = false;
             spaceReady = false;

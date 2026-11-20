@@ -1,9 +1,10 @@
-function [request,cleanup] = notifyCoPsQuestionx(ex)
+function [request,cleanup,poll] = notifyCoPsQuestionx(ex)
 % Open a separate question window, routed to the experimenter's display.
 message = sprintf(['The participant has a question.\n\nPlease come over to the participant.\n\n' ...
     'They have been asked to keep their head still.']);
 request = struct('time',GetSecs,'target','');
 cleanup = [];
+poll = [];
 fprintf('\nPARTICIPANT QUESTION: Please come over to the participant.\n');
 try
     screen = [];
@@ -21,7 +22,7 @@ try
     if ~isempty(screen)
         % A real GUI window, separate from both overlayWindow and its canvas.
         % Screen-local coordinates also work across Linux X screens.
-        cleanup = openCoPsQuestionWindowx(screen,message);
+        [cleanup,poll] = openCoPsQuestionWindowx(screen,message);
         request.target = 'experimenterPopup';
         return
     end

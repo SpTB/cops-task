@@ -58,8 +58,8 @@ Screen('BlendFunction', ex.setup.window, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 %%% pulse %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 ex.setup.refreshRate = FrameRate(ex.setup.window);
 ex.fix.PCtr = [ex.setup.screenRect(3:4)]/2;
-% ex.synch.Pos = [ex.setup.screenRect(3)-ex.synch.PSz/2;0]; % right top corner
-ex.synch.Pos = [ex.synch.PSz/2; ex.synch.PSz/2]; % left top
+% Bottom-right photodiode patch center, matching the trial and idle baseline.
+ex.synch.Pos = ex.setup.screenRect(3:4)' - ex.synch.PSz/2;
 
 % if ex.setup.stereo.Display
 %     % Initially fill left- and right-eye image buffer with gray background

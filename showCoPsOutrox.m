@@ -1,5 +1,6 @@
 function ex = showCoPsOutrox(ex,backgroundColor,endedEarly,trialIndex)
 % Shared normal/early outro. The caller supplies the calculated ex.Payout.
+if isfield(ex.setup,'showEndScreen') && ~ex.setup.showEndScreen, return; end
 if nargin < 3, endedEarly = false; end
 if nargin < 4, trialIndex = numel(ex.Trials); end
 rew = ex.exp.CoPs.rew;

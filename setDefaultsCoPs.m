@@ -1,6 +1,14 @@
 function ex = setDefaultsCoPs(ex)
 
 ex.exp.CoPs.instrOn = 1; % three instruction screens + two practice trials
+% Reward-peak blocks, shared with main's rewSwitches task.
+ctl.jointBlocks = true; % false keeps one center and uses exp.nreps
+ctl.numBlocks = 3;
+ctl.blockMeanTrials = 50;
+ctl.blockTransRange = 6; % integer block length: mean +/- range
+ctl.rewPeakDistFromPrev = 5; % minimum consecutive-peak distance in degrees
+
+5
 pay.minPointsPerTrial = 3; % this average earns zero bonus; higher averages earn more
 pay.maxPointsPerTrial = 25; % this average or higher earns the maximum bonus
 pay.max_bonus_dollar = 25; % maximum bonus per nominal hour (trials_per_hour paid trials)
@@ -11,26 +19,27 @@ instr.targetVisibility = 1; % visibility of the second, dynamic-background pract
 
 % do a intro minisession for Kaki: 5 pur; 10 normal (lo thresh) 5 Null (lo thresh) 
 ctl.advance_trial_with_space = true; % requires space between trials, f4 to quit
-ctl.between_trial_pause_mean = 1; % average trials between pause screens (e.g. 5)
+ctl.between_trial_pause_mean = 2; % average trials between pause screens (e.g. 5)
 ctl.between_trial_pause_range = 0; % integer +/- range (5 +/- 1 gives 4, 5, or 6)
 % Photodiode display protocol; see docs/photodiode_sync.md for rig testing.
-sync.mode = 'goPulse'; % 'binary' adds a saved frame-by-frame code; 'off' disables the patch
+sync.mode = 'binary'; % saved frame-by-frame code; 'goPulse' = onset only; 'off' = disabled
 sync.framesPerBit = 1; % 1 = one code bit per refresh, 2 = half the display refresh rate
 sync.seed = 1; % nonzero 15-bit LFSR state; independent of stimulus RNG
 sync.sequence = []; % optional pregenerated 0/1 vector; [] generates 32767 bits once per run
 sync.preambleSec = 0.1; % retain the GO onset marker before the binary code
 sync.gapSec = 0.05; % black separation between marker and code
 sync.physicalChannel = 6; % zero-based DataPixx input channel
+sync.captureTailSecs = 0.1; % keep recording after final black flip for panel/sensor delay
 %drawRewPeak(6,10)
 
 %main params
 projectRoot = fileparts(mfilename('fullpath'));
-graph.texture_root = fullfile(projectRoot, 'test_data');
+graph.texture_root = fullfile(projectRoot, 'test_data'); %change to 'stimuli'
 %'/run/user/1000/gvfs/smb-share:server=lsr-isilon.nei.nih.gov,share=lsr-nienborg/data/CoPs'
 graph.texture_folder = 'test_stim';% -> /home/vpixx/stim/ly_jun5_stim
 
 pre.nreps = 'all'; % numeric = total pre trials; 'all' = one trial per selected texture
-pur.nreps = 0;ex.exp.nreps = 120; %
+pur.nreps = 0;ex.exp.nreps = 120; % used when jointBlocks=false
 
 %pur specific
 pur.threshold = 250;

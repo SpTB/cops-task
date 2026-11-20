@@ -57,6 +57,7 @@ ex.setup.stereo.Multisampling = 0;
 ex.setup.dirRoot = outputRoot;
 
 ex.exp.nreps = nTrials;
+ex.exp.CoPs.ctl.jointBlocks = false; % testTrials remains the default preview length
 ex.finish = nTrials;
 ex.exp.CoPs.pre.nreps = 0;
 ex.exp.CoPs.tut.nreps = 0;

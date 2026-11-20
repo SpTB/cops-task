@@ -20,7 +20,9 @@ if separate
     [~, timestamp, operatorRaw] = KbCheck(setup.keyboards.experimenterIndex);
     [~, ~, participantRaw] = KbCheck(setup.keyboards.participantIndex);
 else
-    [~, timestamp, operatorRaw] = KbCheck;
+    % Shared previews accept any attached keyboard, including USB devices
+    % that Psychtoolbox did not select as the default keyboard.
+    [~, timestamp, operatorRaw] = KbCheck(-1);
     participantRaw = operatorRaw;
 end
 operatorKeys = false(size(operatorRaw));

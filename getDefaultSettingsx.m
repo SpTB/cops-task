@@ -87,14 +87,14 @@ if strcmpi(ex.setup.computerName,'hn-stim-1')
     
     % for Datapixx the Buffer size has to be <1e6 for binocular signals; for Propixx 1e7 works
     ex.setup.adc.NumBufferFrames = 9e5;  % large number for lots of buffer space
-
+    %% RIG H (human; room 4C315 bldg 10)
 elseif strcmp(ex.setup.computerName, 'nei-op4-Precision-3280-Compact') % op4 human setup
 
     % Verified NVIDIA T1000 mapping: PTB screen, output head, scanout engine.
     % Apply in portable test mode too; the default engine returns zero.
     ex.setup.screenToHead = [1 0 2];
 
-    ex.setup.viewingDistance = 55;
+    ex.setup.viewingDistance = 65;
     ex.setup.monitorWidth = 54;
 
     ex.setup.mouseXOffset = 0;
@@ -603,8 +603,8 @@ ex.fix.lineWidth = 5;
 ex.fix.searchW = 200; % search window width for ex.freeViewing=2 in pixels
 ex.fix.searchH = 200; % search window height for ex.freeViewing=2 in pixels
 ex.fix.SSz = 46; %deg2pixel(2,ex.setup); % surround of the fixation
-% synch pulse for photodiode (white point in top right corner of screen)
-ex.synch.PSz = 120; % use an even number
+% synch pulse for photodiode (square in bottom right corner of screen)
+ex.synch.PSz = 60; % use an even number
 ex.synch.Col = ex.idx.white;
 
 % target parameters

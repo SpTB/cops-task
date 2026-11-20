@@ -20,7 +20,11 @@ writeMock(folder, 'KbCheck', [
     "global COPS_KEYBOARD_TEST"
     "COPS_KEYBOARD_TEST.calls{end+1} = varargin;"
     "if isempty(varargin), device = 3; else, device = varargin{1}; end"
-    "keys = COPS_KEYBOARD_TEST.states{device};"
+    "if device == -1"
+    "    keys = any(vertcat(COPS_KEYBOARD_TEST.states{:}), 1); device = 3;"
+    "else"
+    "    keys = COPS_KEYBOARD_TEST.states{device};"
+    "end"
     "down = any(keys); timestamp = device * 11;"
     "end"]);
 addpath(fileparts(mfilename('fullpath')), '-begin');
@@ -97,7 +101,18 @@ for options = {struct(), struct('keyboards', struct('separate', false))}
     verifyTrue(testCase, space);
     verifyEqual(testCase, timestamp, 33);
 end
-verifyEqual(testCase, COPS_KEYBOARD_TEST.calls, {{}, {}});
+verifyEqual(testCase, COPS_KEYBOARD_TEST.calls, {{-1}, {-1}});
+end
+
+function testSharedModeReadsNonDefaultKeyboard(testCase)
+global COPS_KEYBOARD_TEST
+COPS_KEYBOARD_TEST.states{1}([1 12]) = true; % SPACE/Q on USB keyboard
+COPS_KEYBOARD_TEST.states{2}(5) = true; % F4 on another keyboard
+[operator, space, ~, question] = readCoPsKeyboardx(struct());
+verifyTrue(testCase, space);
+verifyTrue(testCase, question);
+verifyEqual(testCase, find(operator), 5);
+verifyEqual(testCase, COPS_KEYBOARD_TEST.calls, {{-1}});
 end
 
 function value = separateSetup()
