@@ -659,6 +659,8 @@ if ~isPursuitTrial
         graph.trialLogTargetVisibility = ex.Trials(ex.j).target_visibility;
         graph.trialLogRunPhase = run_phase_label;
         [stimTextures, targPositions, stimTiming] = makeStimulusCoPsx(ex.setup, ctl, ex.stim.seq{ex.j}, posT, graph, ex.j);
+        % Release this trial's textures on both normal return and errors.
+        textureCleanup = onCleanup(@() Screen('Close', stimTextures));
     catch err
         fprintf(2, '%s\n', getReport(err, 'extended'));
         error('Failed to create stimulus: %s', err.message);
@@ -675,10 +677,8 @@ if adcOn
     resetAdcBuffer(ex);
 end
 if strcmp(inputMode, 'eyelink')
-    drained = false;
-    while ~drained
-        [~,~,drained] = Eyelink('GetQueuedData');
-    end
+    % Discard pretrial data without allocating bulk sample/event matrices.
+    ex.Trials(ex.j).eyelinkPretrialDiscarded = drainCoPsEyelinkQueuex();
 end
 
 
@@ -1756,10 +1756,8 @@ ex = showCoPsTrialFeedbackx(ex, betweenTrialGray);
 % increase trial counter
 ex.j = ex.j + 1;
 
-% Close stimulus textures
-if ~isempty(stimTextures)
-    Screen('Close', stimTextures);
-end
+% Release textures after movie export/feedback; the guard also runs on errors.
+clear textureCleanup
 
 end
 

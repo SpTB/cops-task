@@ -22,8 +22,11 @@ writeMock(folder,'Screen',[
     "switch lower(command)"
     "case 'rect', varargout={[0 0 1920 1080]};"
     "case 'maketexture'"
+    "    assert(COPS_TRIAL_START_TEST.textures<COPS_TRIAL_START_TEST.failTextureAt,'TrialStartTest:TextureFailure','Injected texture failure');"
     "    COPS_TRIAL_START_TEST.textures=COPS_TRIAL_START_TEST.textures+1;"
     "    varargout={COPS_TRIAL_START_TEST.textures};"
+    "case 'close'"
+    "    COPS_TRIAL_START_TEST.closed=[COPS_TRIAL_START_TEST.closed varargin{1}]; varargout={};"
     "case 'preloadtextures', varargout={true,true};"
     "case 'flip'"
     "    t=GetSecs;"
@@ -112,6 +115,9 @@ writeMock(folder,'Eyelink',[
     "global COPS_TRIAL_START_TEST"
     "switch lower(command)"
     "case 'trackertime', varargout={COPS_TRIAL_START_TEST.now};"
+    "case 'getnextdatatype'"
+    "    assert(~COPS_TRIAL_START_TEST.failQueueReset,'TrialStartTest:QueueFailure','Injected pretrial queue failure');"
+    "    varargout={0};"
     "case 'getqueueddata'"
     "    s=zeros(31,1); s(1)=1000*COPS_TRIAL_START_TEST.now; s(2)=200;"
     "    s([15 17 13 14 16 12])=COPS_TRIAL_START_TEST.gaze;"
@@ -135,9 +141,40 @@ end
 function setup(~)
 global COPS_TRIAL_START_TEST
 COPS_TRIAL_START_TEST=struct('now',50,'textures',1000,'fills',{{}},'dots',{{}}, ...
+    'closed',[],'failTextureAt',Inf,'failQueueReset',false, ...
     'gaze',[NaN NaN NaN NaN NaN NaN],'abortAt',Inf, ...
     'clockStep',.005,'scheduledFlips',false,'ifi',1/120,'drawCost',0,'keyboardCost',0, ...
     'adcAllowed',false,'adcStart',NaN,'adcRate',2000,'waitUntil',NaN);
+end
+
+function testNormalTrialReleasesAllStimulusTextures(testCase)
+global COPS_TRIAL_START_TEST
+ex=fixture(); ex.setup.inputMode='eyelink';
+ex=runTrial(testCase,ex,true);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.closed,1001:COPS_TRIAL_START_TEST.textures);
+verifyEqual(testCase,ex.Trials(1).eyelinkPretrialDiscarded,0);
+end
+
+function testQueueResetErrorReleasesCurrentTrialTextures(testCase)
+global COPS_TRIAL_START_TEST
+COPS_TRIAL_START_TEST.failQueueReset=true;
+ex=fixture(); ex.setup.inputMode='eyelink';
+verifyError(testCase,@() runTrial(testCase,ex,true),'TrialStartTest:QueueFailure');
+verifyGreaterThan(testCase,COPS_TRIAL_START_TEST.textures,1000);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.closed,1001:COPS_TRIAL_START_TEST.textures);
+end
+
+function testPartialStimulusGenerationReleasesTextures(testCase)
+global COPS_TRIAL_START_TEST
+COPS_TRIAL_START_TEST.failTextureAt=1002;
+ex=fixture(); ex.setup.inputMode='none';
+try
+    runTrial(testCase,ex,false);
+    verifyFail(testCase,'Expected injected texture failure.');
+catch err
+    verifySubstring(testCase,err.message,'Injected texture failure');
+end
+verifyEqual(testCase,COPS_TRIAL_START_TEST.closed,[1001 1002]);
 end
 
 function testFreeViewingStartsAndCompletesWithoutAnyInput(testCase)

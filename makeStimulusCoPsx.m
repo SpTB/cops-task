@@ -202,6 +202,8 @@ targPositions = struct();
 dynamic_background_reference_stats = struct();
 dynamic_composite_reference_stats = struct();
 
+% Clean up partially generated trials if loading/composition/upload fails.
+try
 % Generate stimuli for each step
 for j = 1:nsteps+1 %add last image being same as first but with circles
     stepTimer = tic;
@@ -565,7 +567,7 @@ if ~isempty(out_texs_cell)
     catch err
         fprintf(2, 'Error preloading textures: %s\n', err.message);
         % Return individual textures if preloading fails
-        stimTextures = out_texs_cell;
+        stimTextures = all_tex_handles;
     end
 else
     warning('No textures were created successfully');
@@ -577,6 +579,16 @@ timingInfo.totalSec = toc(totalTimer);
 timingInfo = localFinalizeStimTimingInfoLocal(timingInfo);
 
 % completion logging removed to reduce console overhead
+catch err
+    if ~isempty(out_texs_cell)
+        try
+            Screen('Close', cell2mat(out_texs_cell));
+        catch cleanupErr
+            warning('makeStimulusCoPsx:TextureCleanup', '%s', cleanupErr.message);
+        end
+    end
+    rethrow(err);
+end
 
 end
 
