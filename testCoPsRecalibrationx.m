@@ -14,7 +14,11 @@ writeMock(folder,'Eyelink',[
     "global COPS_RECAL_TEST"
     "COPS_RECAL_TEST.commands{end+1}=command;"
     "switch command"
-    "case {'Message','StopRecording','SetOfflineMode'}, varargout={0};"
+    "case 'Message'"
+    "    assert(all(cellfun(@(v) ischar(v) || isnumeric(v),varargin)), ..."
+    "        'RecalTest:MessageType','EyeLink Message accepts character and numeric arguments, not logicals.');"
+    "    COPS_RECAL_TEST.messages{end+1}=sprintf(varargin{:}); varargout={0};"
+    "case {'StopRecording','SetOfflineMode'}, varargout={0};"
     "case 'StartRecording', varargout={COPS_RECAL_TEST.recordingStatus};"
     "case 'CalMessage', varargout={0,'GOOD calibration'};"
     "otherwise, error('RecalTest:UnexpectedTrackerCall','Must not reopen/close/receive the task EDF.');"
@@ -74,7 +78,7 @@ end
 
 function setup(~)
 global COPS_RECAL_TEST
-COPS_RECAL_TEST=struct('commands',{{}},'setupStatus',0,'recordingStatus',0, ...
+COPS_RECAL_TEST=struct('commands',{{}},'messages',{{}},'setupStatus',0,'recordingStatus',0, ...
     'abort',false,'time',100,'checkpoint','','validationCalls',0);
 end
 
@@ -99,6 +103,7 @@ snapshot=load(ex.eyeCal.native.matFile,'ex');
 verifyEqual(testCase,snapshot.ex.Trials,struct('ID',901));
 verifyEmpty(testCase,ex.Recalibration.pending);
 verifyTrue(testCase,ex.Recalibration.history.completed);
+verifyEqual(testCase,ex.quit,0);
 verifyEqual(testCase,ex.Recalibration.history.nextTrial,3);
 verifyEqual(testCase,ex.Recalibration.history.eyeCalBefore,before.eyeCal);
 verifyEqual(testCase,COPS_RECAL_TEST.el.targetbeep,0);
@@ -107,6 +112,8 @@ verifyEqual(testCase,ex.setup.el,before.setup.el);
 verifyEqual(testCase,ex.setup.rewardSound,before.setup.rewardSound);
 verifyEqual(testCase,COPS_RECAL_TEST.commands, ...
     {'Message','StopRecording','SetOfflineMode','CalMessage','StartRecording','Message'});
+verifyEqual(testCase,COPS_RECAL_TEST.messages, ...
+    {'COPS_RECALIBRATION_BEGIN NEXT_TRIAL 3','COPS_RECALIBRATION_END COMPLETED 1'});
 saved=load(file,'ex'); verifyEqual(testCase,saved.ex,ex);
 end
 
@@ -133,6 +140,7 @@ ex=perform(testCase,ex,file);
 verifyEqual(testCase,ex.quit,4);
 verifyFalse(testCase,ex.Recalibration.history.completed);
 verifyEqual(testCase,ex.Recalibration.history.errorIdentifier,'CoPs:RecalibrationSetup');
+verifyEqual(testCase,ex.lastError.identifier,'CoPs:RecalibrationSetup');
 verifyEqual(testCase,ex.Trials,before.Trials);
 verifyEqual(testCase,ex.eyeCal,before.eyeCal);
 verifyEqual(testCase,COPS_RECAL_TEST.validationCalls,0);
@@ -148,6 +156,7 @@ ex=perform(testCase,fixture(testCase));
 verifyEqual(testCase,ex.quit,4);
 verifyEqual(testCase,COPS_RECAL_TEST.validationCalls,0);
 verifyEqual(testCase,ex.Recalibration.history.errorIdentifier,'CoPs:RecalibrationRecording');
+verifyEqual(testCase,ex.lastError.identifier,'CoPs:RecalibrationRecording');
 end
 
 function testValidationAbortEndsSessionWithoutReplacingTrials(testCase)
@@ -159,6 +168,8 @@ verifyEqual(testCase,ex.quit,4);
 verifyFalse(testCase,ex.Recalibration.history.completed);
 verifyFalse(testCase,ex.eyeCal.validation.completed);
 verifyEqual(testCase,ex.Trials,trials);
+verifyEqual(testCase,ex.Recalibration.history.errorIdentifier,'');
+verifyEqual(testCase,COPS_RECAL_TEST.messages{end},'COPS_RECALIBRATION_END COMPLETED 0');
 end
 
 function testAnalogRedoRunsOnCopyWithFileLoadingDisabled(testCase)

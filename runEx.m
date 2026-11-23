@@ -21,6 +21,7 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('mouse_mini', showCursor=false)  % hide the normally visible cursor
 %   runEx('mouse_mini', filePrefix="P001")  % supply the subject ID without a dialog
 %   runEx('mouse_mini', soundOn=false)  % disable reward-threshold beeps
+%   runEx('mouse_mini', participantFeedback=false) % skip the final comment box
 %   runEx('mouse_mini', instrOn=true)  % three instruction pages + two practice trials
 %   runEx('mouse_mini', jointBlocks=true) % preview the configured reward-peak blocks
 %   runEx('mouse_mini', syncMode='binary')  % preview a frame-coded photodiode patch
@@ -59,6 +60,7 @@ arguments
     options.showCursor (1,1) logical = strcmpi(strtrim(eyeStr), 'mouse_mini')
     options.soundOn (1,1) logical = true
     options.showEndScreen (1,1) logical = true % false for unattended diagnostics
+    options.participantFeedback (1,:) logical = [] % [] uses ex.exp.CoPs.fbOn
     options.instrOn (1,:) logical = [] % [] uses setDefaultsCoPs; explicit true/false overrides
     options.jointBlocks (1,:) logical = [] % [] uses profile defaults; true overrides testTrials
     options.syncMode (1,1) string {mustBeMember(options.syncMode, ["","goPulse","binary","off"])} = ""
@@ -103,6 +105,10 @@ if dependencies.datapixxOn && ~Datapixx('Open')
 end
 
 ex = setDefaultsCoPs(ex);
+if ~isempty(options.participantFeedback)
+    validateattributes(options.participantFeedback,{'logical'},{'scalar'});
+    ex.exp.CoPs.fbOn = options.participantFeedback;
+end
 if ~isempty(options.instrOn)
     validateattributes(options.instrOn, {'logical'}, {'scalar'});
     ex.exp.CoPs.instrOn = options.instrOn;
@@ -704,8 +710,8 @@ if eyeOn && Eyelink('IsConnected') == 1 && strcmpi(ex.setup.eyeTracker,'Eyelink'
 
     fprintf('%s transferred and copied as %s\n',ex.Header.edfFileName,...
         edfLocalName);
-    Eyelink('StartRecording')
-    playRandomLines(ex);
+    % The session is over; leave the tracker offline and let displayCleanup
+    % close the windows. Drawing here can mask an earlier trial error.
 end
 
 % remove temporary trial folder

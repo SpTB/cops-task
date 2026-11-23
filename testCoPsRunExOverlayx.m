@@ -78,11 +78,17 @@ for profile = {'test1', 'mouse_mini'}
     verifyFalse(testCase, ex.setup.showExperimenterOverlay);
     verifyEqual(testCase, ex.setup.fullscreen, isFullscreen);
     verifyTrue(testCase, ex.setup.soundOn);
+    verifyTrue(testCase, ex.exp.CoPs.fbOn);
     verifyTrue(testCase, ex.exp.CoPs.rew.soundOn);
     verifyFalse(testCase, ex.setup.keyboards.separate);
     verifyFalse(testCase, ex.setup.keyboards.osKeysIsolated);
     verifyMouseOnly(testCase, ex);
 end
+end
+
+function testParticipantFeedbackCanBeDisabled(testCase)
+ex = captureBeforeDisplay(testCase,'mouse_mini',participantFeedback=false);
+verifyFalse(testCase,ex.exp.CoPs.fbOn);
 end
 
 function testRecordingOverridesReachTheRealRunExSetup(testCase)

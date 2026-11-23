@@ -13,7 +13,7 @@ try
         case 'eyelink'
             % Keep the session EDF open. Tracker setup runs offline; validation
             % and subsequent trials append to the same recording.
-            Eyelink('Message','COPS_RECALIBRATION_BEGIN NEXT_TRIAL %d',request.nextTrial);
+            Eyelink('Message',sprintf('COPS_RECALIBRATION_BEGIN NEXT_TRIAL %d',request.nextTrial));
             Eyelink('StopRecording');
             Eyelink('SetOfflineMode');
             el = ex.setup.el;
@@ -46,7 +46,8 @@ try
             else
                 entry.completed = true;
             end
-            Eyelink('Message','COPS_RECALIBRATION_END COMPLETED %d',entry.completed);
+            % The EyeLink MEX formatter rejects MATLAB logical arguments.
+            Eyelink('Message',sprintf('COPS_RECALIBRATION_END COMPLETED %d',entry.completed));
         case 'eye'
             % The legacy routine replaces counters, Trials and file metadata.
             % Run on a copy and return only its calibration, keeping its own
@@ -72,6 +73,7 @@ catch err
     % Return the completed trial data and the failed attempt to runEx for saving.
     % Never start another trial after an incomplete hardware setup.
     ex.quit = 4;
+    ex.lastError = err;
     entry.completed = false;
     entry.errorIdentifier = err.identifier;
     entry.errorMessage = err.message;

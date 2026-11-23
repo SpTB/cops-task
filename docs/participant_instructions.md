@@ -50,7 +50,27 @@ After calibration the flow is:
    asking the participant to keep their head still and press Q if they have
    questions, now or during any break, before pressing SPACE to start the main task.
 8. After the task, an outro showing earned points, average points per task
-   trial, the cash bonus, and SPACE to finish.
+   trial, the cash bonus, and SPACE to continue.
+9. An optional participant feedback text box asking what worked well, what was
+   confusing/difficult/uncomfortable, and "Did you notice anything about the task
+   that wasn't explicitly explained?" Type a comment and press ENTER
+   to submit, or press ESC to skip. Backspace edits the response; long comments
+   wrap and scroll within the box. The configured participant keyboard supplies
+   text; experimenter F4 skips this page. Q and SPACE are ordinary text here.
+
+Feedback is saved as `ex.ParticipantFeedback.text`, with `submitted`, `skipped`,
+screen `on`/`off` timestamps, and the prompt. A skipped draft is retained.
+The feedback page follows an acknowledged normal or early bonus outro, and is
+checkpointed to the session MAT before shutdown. Set `ex.exp.CoPs.fbOn = false`
+in `setDefaultsCoPs.m` to disable it (`true` enables it). The optional
+`runEx('mouse_mini', participantFeedback=false)` argument overrides that default.
+Unattended
+`showEndScreen=false` runs, movie recordings, and handled errors do not open it.
+On Linux/X11, shared-keyboard feedback uses a temporary X11 keyboard grab so
+typing and the submit key cannot spill into MATLAB's command window. A small
+Python 3 helper forwards characters to the feedback box and releases the grab
+when the screen exits or its parent process closes. Already isolated participant
+keyboards continue to use the PTB queue directly.
 
 Experimenter F4 also shows the outro when at least one paid trial has completed;
 an unfinished trial is excluded from payment. `ex.Payout` is calculated and

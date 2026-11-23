@@ -35,6 +35,12 @@ writeMock(folder,'Screen',[
     "    varargout={t,t,t,0};"
     "case 'getflipinterval', varargout={1/60};"
     "case 'textsize', varargout={24};"
+    "case 'drawdots'"
+    "    xy=varargin{2}; colors=varargin{4};"
+    "    assert((size(xy,1)==2 || numel(xy)==2) && (isscalar(colors) || numel(colors)==3 || numel(colors)==4 || size(colors,2)==size(xy,2)), ..."
+    "        'TrialStartTest:DotColors','Dot colors must match the number of positions.');"
+    "    assert(all(isfinite(xy(:))),'TrialStartTest:MissingDots','Missing gaze must not be drawn.');"
+    "    COPS_TRIAL_START_TEST.dots{end+1}=varargin; varargout={};"
     "case 'fillrect'"
     "    COPS_TRIAL_START_TEST.fills{end+1}=varargin; varargout={};"
     "    COPS_TRIAL_START_TEST.now=COPS_TRIAL_START_TEST.now+COPS_TRIAL_START_TEST.drawCost;"
@@ -128,7 +134,7 @@ end
 
 function setup(~)
 global COPS_TRIAL_START_TEST
-COPS_TRIAL_START_TEST=struct('now',50,'textures',1000,'fills',{{}}, ...
+COPS_TRIAL_START_TEST=struct('now',50,'textures',1000,'fills',{{}},'dots',{{}}, ...
     'gaze',[NaN NaN NaN NaN NaN NaN],'abortAt',Inf, ...
     'clockStep',.005,'scheduledFlips',false,'ifi',1/120,'drawCost',0,'keyboardCost',0, ...
     'adcAllowed',false,'adcStart',NaN,'adcRate',2000,'waitUntil',NaN);
@@ -231,6 +237,41 @@ COPS_TRIAL_START_TEST.gaze=[2500 1800 30 2500 1800 30];
 ex=fixture(); ex.setup.inputMode='eyelink';
 ex=runTrial(testCase,ex,true);
 verifyStartedWithoutPoints(testCase,ex);
+end
+
+function testNativeGazeOverlayCompletesFirstTrial(testCase)
+global COPS_TRIAL_START_TEST
+for gaze={[960 540 30 NaN NaN NaN],[960 540 30 970 550 30],NaN(1,6)}
+    COPS_TRIAL_START_TEST.now=50;
+    COPS_TRIAL_START_TEST.dots={};
+    COPS_TRIAL_START_TEST.gaze=gaze{1};
+    ex=fixture(); ex.setup.inputMode='eyelink';
+    ex.setup.showExperimenterOverlay=true;
+    ex.setup.overlay=201; ex.setup.overlayIsSeparate=true;
+    ex.setup.overlayWindow=202; ex.setup.overlayDisplayRateHz=30;
+    ex=runTrial(testCase,ex,true);
+    verifyTrue(testCase,ex.Trials(1).trialCompleted);
+    draws=COPS_TRIAL_START_TEST.dots;
+    overlayDraws=draws(cellfun(@(c) isequal(c{1},201),draws));
+    if all(isnan(gaze{1}))
+        verifyEmpty(testCase,overlayDraws);
+    else
+        verifyNotEmpty(testCase,overlayDraws);
+        expected=2+double(isfinite(gaze{1}(4)));
+        verifyTrue(testCase,all(cellfun(@(c) size(c{2},2)==expected,overlayDraws)));
+    end
+end
+end
+
+function testMonocularOverlayKeepsEyeAndPointerColors(testCase)
+global COPS_TRIAL_START_TEST
+palette=[255 0 0; 0 255 0; 0 0 255; 255 255 255];
+drawCoPsInputOverlayx(201,[960 540; 100 200],16,palette);
+draw=COPS_TRIAL_START_TEST.dots{end};
+verifyEqual(testCase,draw{2},[960 100; 540 200]);
+verifyEqual(testCase,draw{4},palette([1 end],:)');
+drawCoPsInputOverlayx(201,[960 540; NaN NaN],16,palette);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.dots{end}{4},palette(1,:)');
 end
 
 function testInstructionPracticeStartsWithoutGaze(testCase)

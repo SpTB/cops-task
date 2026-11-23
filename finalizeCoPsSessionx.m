@@ -28,6 +28,17 @@ if ex.quit == 4 && ex.Payout.nTrials > 0 && ~alreadyShown && ~hasError && ~recor
     end
     saveCheckpointLocal(checkpointFile,ex);
 end
+if ~hasError && ~recording && ~isfield(ex,'outroError') && ...
+        isfield(ex,'Outro') && isfield(ex.Outro,'acknowledged') && ex.Outro.acknowledged
+    try
+        ex = showCoPsParticipantFeedbackx(ex);
+    catch err
+        ex.participantFeedbackError = err;
+        warning('CoPs:ParticipantFeedbackFailed', ...
+            'Session data were saved, but participant feedback could not complete: %s',err.message);
+    end
+    saveCheckpointLocal(checkpointFile,ex);
+end
 end
 
 function saveCheckpointLocal(file,ex)

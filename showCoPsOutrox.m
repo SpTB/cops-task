@@ -13,11 +13,15 @@ decimals = min(6,round(decimals));
 heading = 'The session is complete.';
 if endedEarly, heading = 'The session has ended.'; end
 p = ex.Payout;
+advanceText = 'Press SPACE to continue to feedback.';
+if ~isCoPsParticipantFeedbackEnabledx(ex)
+    advanceText = 'Press SPACE to finish.';
+end
 averageDisplayed = floor(100*p.totalPoints/max(1,p.nTrials))/100;
 message = sprintf(['%s\n\nTotal: %.' num2str(decimals) ...
     'f points\nAverage: %.2f points per trial\nBonus earned: $%.2f\n\n' ...
-    'Press SPACE to finish.\n\nPlease inform the experimenter.'], ...
-    heading,p.totalPoints,averageDisplayed,p.bonusDollars);
+    '%s\n\nPlease inform the experimenter.'], ...
+    heading,p.totalPoints,averageDisplayed,p.bonusDollars,advanceText);
 ex.Outro = struct('text',message,'on',NaN,'off',NaN, ...
     'acknowledged',false,'endedEarly',logical(endedEarly));
 window = ex.setup.window;

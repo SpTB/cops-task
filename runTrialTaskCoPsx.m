@@ -609,8 +609,7 @@ elseif strcmp(inputMode, 'eyelink') || ~isempty(ex.eyeCal.LXPos);
         olColBinoc = [ex.idx.overlayRed,ex.idx.overlayGreen,ex.idx.overlayBlue, ex.idx.overlayGreen]; % right,left,binoc, mouse
         olColBinoc = [olColBinoc'*ones(1,3)];
     else
-        olColBinoc = [ex.idx.overlay,ex.idx.overlay ex.idx.overlay ex.idx.overlay]; % right, left, binoc, mouse
-        olColBinoc = [olColBinoc'*ones(1,3)];
+        olColBinoc = ex.idx.overlay * ones(1,3); % shared RGB color for available eyes
     end
     olPSz = 16; %[ceil(ex.setup.eyePSz/2)*ones(2,1); ex.setup.eyePSz; 2]; % eye (R,L,B), mouse
 else olColBinoc = ex.idx.overlay*ones(1,3); %
@@ -1379,10 +1378,10 @@ while state ~= ex.states.BREAKFIX &&...
                 %keyboard
              
                 if isempty(ex.setup.overlay)
-                    Screen('Drawdots',ex.setup.window,olPos',olPSz',olColBinoc');
+                    drawCoPsInputOverlayx(ex.setup.window,olPos,olPSz,olColBinoc);
                     %Screen('Drawdots',ex.setup.window,overlayPos',olPSz',overlayColors');
                 else
-                   Screen('Drawdots',ex.setup.overlay,olPos',olPSz',olColBinoc');
+                   drawCoPsInputOverlayx(ex.setup.overlay,olPos,olPSz,olColBinoc);
                    %Screen('Drawdots',ex.setup.overlay,overlayPos',olPSz',overlayColors');
                 end
 

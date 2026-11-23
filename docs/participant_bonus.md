@@ -121,7 +121,7 @@ Total: 1260 points
 Average: 14.00 points per trial
 Bonus earned: $6.25
 
-Press SPACE to finish.
+Press SPACE to continue to feedback.
 
 Please inform the experimenter.
 ```
@@ -130,6 +130,18 @@ This example has 90 paid trials, so the cap is $12.50 and midpoint performance
 earns $6.25. The displayed average is rounded down to two decimal places. Payment uses the
 unrounded average. The outro appears on normal completion even if instruction
 pages, regular pauses, or between-trial point feedback are disabled.
+
+After SPACE, an optional feedback page offers a text box for participant
+comments. ENTER submits (including an empty response); ESC skips and retains
+any draft. The prompt, complete text, submission/skip status, and screen times
+are saved in `ex.ParticipantFeedback` in the experimental session MAT. Long
+comments scroll within the box without truncating the saved text. The selected
+participant keyboard supplies text; experimenter F4 skips the page. Set
+`ex.exp.CoPs.fbOn = false` in `setDefaultsCoPs.m` to end at the bonus summary
+instead (`true` enables feedback). The `participantFeedback` runEx argument
+can override this default for one run. Feedback is
+also disabled by `showEndScreen=false` and for movie recordings or handled
+errors.
 
 ## F4 and early termination
 

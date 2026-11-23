@@ -574,11 +574,12 @@ function ex = fixture()
 ex = struct('j', 3, 'finish', 3, 'quit', 0, 'totalPoints', 6);
 ex.exp.CoPs.ctl.advance_trial_with_space = true;
 ex.exp.CoPs.pay = resolveCoPsPayx();
+ex.exp.CoPs.fbOn = false;
 ex.exp.CoPs.rew = struct('points_feedback_on', true, ...
     'points_feedback_text_size', 48, 'points_feedback_decimals', 0);
 ex.exp.CoPs.pauseSchedule.afterTrial = false(1, 3);
 ex.setup = struct('window', 101, 'guiWindow', false, 'keyboards', struct('separate', false), ...
-    'recording', false); % Match the real getDefaultSettingsx output.
+    'recording', false); % Exercise the payout page separately.
 ex.idx.white = 255;
 ex.idx.bg_lum = 127;
 ex.Trials = repmat(struct('pointsEarned', 2, 'trialScored', true, 'trialCompleted', true, ...
