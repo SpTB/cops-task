@@ -620,7 +620,7 @@ if eyeOn
 end
 
 % PRE-ALLOCATE MEMORY FOR TIMING AND DATA
-frametimestep = 1/ex.setup.refreshRate;
+frameInterval = Screen('GetFlipInterval', ex.setup.window);
 eyetimestep = 1/ex.setup.adc.Rate;  % 500Hz is the fastest Eyelink sample binocularly
 maxTrialDur = step_wait_secs * ctl.nsteps + 5 + ex.fix.waitstop; % add buffer time
 frame_alloc_n = ceil(maxTrialDur*ex.setup.refreshRate);
@@ -653,6 +653,7 @@ end
 rewardCenterOverlayToggle_t0 = -Inf; % debounce reward-center overlay toggle (F6)
 targetCircleOverlayToggle_t0 = -Inf; % debounce target-circle overlay toggle (F8)
 gazeHeatPlot_t0 = -Inf; % debounce gaze heat plot (F9)
+gazeHeatRequested = false;
 overlayToggleDebounceSecs = 0.25;
 scheduleFixTrial_t0 = -Inf; % debounce one-shot fixation trial scheduler (F3)
 mousePos = [NaN,NaN];%[x+ex.setup.mouseXOffset,y];
@@ -715,7 +716,12 @@ fi = 1; % frame index
 si = 0; % stim frame index
 ei = 1; % eye frame index
 xi = 1; % eye frame index but only for GO (to check reward update freq)
-lastframet = 0;
+lastVbl = NaN;
+flipPending = false;
+stepAfterFlip = current_step;
+% Finish any in-flight flip before textures/windows are released on an error.
+trialWindow = ex.setup.window;
+asyncFlipCleanup = onCleanup(@() finishAsyncFlipLocal(trialWindow)); %#ok<NASGU>
 lasteyepostime = 0;
 ex.loopcnt(ex.j) = 0;
 ex.Trials(ex.j).to = 0; % default is no time-out
@@ -763,6 +769,57 @@ while state ~= ex.states.BREAKFIX &&...
         state ~= ex.states.TRIALCOMPLETE &&...
         state ~= ex.states.NOFIX &&...
         ex.quit == 0 && ttime > 0
+
+    % Display cadence follows completed VBLs. Keep polling gaze/reward while
+    % the submitted frame waits for the next refresh; never draw while pending.
+    if flipPending
+        [vbl, onset, flipEnd, missed] = Screen('AsyncFlipCheckEnd', ex.setup.window);
+        if vbl > 0
+            flip_info(fi,:) = [vbl, onset, flipEnd, missed];
+            lastVbl = vbl;
+            if frameState(fi) == ex.states.GO && isfinite(frameStep(fi))
+                StimStart(si) = vbl;
+            end
+            current_step = stepAfterFlip;
+            fi = fi + 1;
+            flipPending = false;
+        end
+    end
+
+    % The final stimulus frame must finish before ending or blanking the trial.
+    if state == ex.states.GO && current_step > ctl.nsteps
+        state = ex.states.TRIALCOMPLETE;
+        if rewOn
+            Datapixx('SetDoutValues',0);
+            Datapixx('RegWr');
+        end
+        stimulus_active = false;
+        reward_active = false;
+        disp('trial complete');
+        break
+    end
+
+    % MATLAB figure rendering must also wait until the display flip is idle.
+    if ~flipPending && gazeHeatRequested
+        gazeHeatRequested = false;
+        lastCompletedTrial = min(ex.j - 1, numel(ex.Trials));
+        if lastCompletedTrial < 1
+            disp('gazeHeat skipped (F9): no completed trials yet');
+        else
+            if exist('gazeHeat', 'file') ~= 2
+                thisFileDir = fileparts(mfilename('fullpath'));
+                addpath(fullfile(thisFileDir, 'cops_analysis'));
+            end
+            try
+                gazeHeat(ex, 1:lastCompletedTrial);
+                drawnow;
+                disp(['gazeHeat plotted trials 1-' num2str(lastCompletedTrial) ' (F9)']);
+            catch err
+                warning('runTrialTaskCoPsx:gazeHeatF9', ...
+                    'gazeHeat failed on F9: %s', err.message);
+            end
+        end
+    end
     
     % --------------------------------------------------------------------
     % STATE UPDATE SECTION -----------------------------------------------
@@ -1030,7 +1087,7 @@ while state ~= ex.states.BREAKFIX &&...
     % Screen('FillRect', ex.setup.overlay, ex.idx.bg);
 % Screen('CopyWindow', ex.setup.overlay, ex.setup.window);
 % Screen('Flip', ex.setup.window);
-    if ttime > lastframet + frametimestep
+    if ~flipPending
         
         % --------------------------------------------------------------------
         % CONTINUOUS REWARD CALCULATION SECTION -------------------------------
@@ -1120,6 +1177,7 @@ while state ~= ex.states.BREAKFIX &&...
         frameStepToSave = NaN;
         frameStateToSave = state;
         frameSyncPulseToSave = false;
+        stepAfterFlip = current_step;
 
         % Draw fixation point (if no stim)
         if inFixationPeriod && ~stimulus_active && showFixationDot
@@ -1269,7 +1327,9 @@ while state ~= ex.states.BREAKFIX &&...
             if state == ex.states.GO
                 step_duration = GetSecs() - (time_stimOn + trstart);
                 if step_duration > (current_step - 1) * step_wait_secs
-                    current_step = current_step + 1;
+                    % Match the synchronous path: advance behavioral state
+                    % only after the frame has actually been presented.
+                    stepAfterFlip = current_step + 1;
                     %fprintf('Moving to step %d/%d\n', current_step, ctl.nsteps);
                 end
                 si = si + 1; % what is the purpose of keeping track of si?
@@ -1288,7 +1348,6 @@ while state ~= ex.states.BREAKFIX &&...
             if si > numel(StimStart)
                 StimStart(end+1:end+stimstart_grow_chunk) = NaN;
             end
-            StimStart(si) = flip_info(fi,1);
         end
         
 
@@ -1315,13 +1374,12 @@ while state ~= ex.states.BREAKFIX &&...
         frameStep(fi) = frameStepToSave;
         frameState(fi) = frameStateToSave;
         frameSyncPulse(fi) = frameSyncPulseToSave;
-        [flip_info(fi,1), flip_info(fi,2), flip_info(fi,3), flip_info(fi,4)] =...
-            Screen('Flip', ex.setup.window);
-        fi = fi + 1;
-        if fi > 500 
-            %keyboard
+        when = 0;
+        if isfinite(lastVbl)
+            when = lastVbl + 0.5 * frameInterval;
         end
-        lastframet = ttime;
+        Screen('AsyncFlipBegin', ex.setup.window, when);
+        flipPending = true;
     end
     
     % --------------------------------------------------------------------
@@ -1393,40 +1451,11 @@ while state ~= ex.states.BREAKFIX &&...
     elseif strcmpi(KbName(keyCode),'F9')
         if GetSecs - gazeHeatPlot_t0 > 1.0
             gazeHeatPlot_t0 = GetSecs;
-            lastCompletedTrial = min(ex.j - 1, numel(ex.Trials));
-            if lastCompletedTrial < 1
-                disp('gazeHeat skipped (F9): no completed trials yet');
-            else
-                if exist('gazeHeat', 'file') ~= 2
-                    thisFileDir = fileparts(mfilename('fullpath'));
-                    addpath(fullfile(thisFileDir, 'cops_analysis'));
-                end
-                try
-                    gazeHeat(ex, 1:lastCompletedTrial);
-                    drawnow;
-                    disp(['gazeHeat plotted trials 1-' num2str(lastCompletedTrial) ' (F9)']);
-                catch err
-                    warning('runTrialTaskCoPsx:gazeHeatF9', ...
-                        'gazeHeat failed on F9: %s', err.message);
-                end
-            end
+            gazeHeatRequested = true;
         end
 
     
 
-    end
-    
-    % Check for trial completion
-    if state == ex.states.GO && current_step > ctl.nsteps
-        state = ex.states.TRIALCOMPLETE;
-        if rewOn
-            Datapixx('SetDoutValues',0);
-            Datapixx('RegWr');
-        end
-        % been_here2(end+1) = GetSecs() - trstart;
-        stimulus_active = false;
-        reward_active = false;
-        disp('trial complete');
     end
     
     ex.loopcnt(ex.j) = ex.loopcnt(ex.j) + 1;
@@ -1435,6 +1464,17 @@ end
 % ------------------------------------------------------------------------
 % TRIAL END AND DATA STORAGE
 % ------------------------------------------------------------------------
+% Abort/pause can leave a submitted frame pending. Retain its real timing and
+% finish it before blanking the window or closing its textures.
+if flipPending
+    [flip_info(fi,1), flip_info(fi,2), flip_info(fi,3), flip_info(fi,4)] = ...
+        Screen('AsyncFlipEnd', ex.setup.window);
+    if frameState(fi) == ex.states.GO && isfinite(frameStep(fi))
+        StimStart(si) = flip_info(fi,1);
+    end
+    fi = fi + 1;
+end
+clear asyncFlipCleanup
 % blank screen at the end of trial
 Screen('FillRect', ex.setup.window, window_background_color);
 Screen('FillRect', ex.setup.window, texture_background_color, texture_background_rect);
@@ -1503,6 +1543,7 @@ end
 ex.goodtrial = ex.goodtrial + abs(good);
 
 % store display timing
+ex.Trials(ex.j).displayRefreshIntervalSec = frameInterval;
 ex.Trials(ex.j).flip_info = flip_info(1:fi-1,:);
 ex.Trials(ex.j).frameStep = frameStep(1:fi-1);
 ex.Trials(ex.j).frameState = frameState(1:fi-1);
@@ -1525,6 +1566,15 @@ if ~isempty(stimTextures)
     Screen('Close', stimTextures);
 end
 
+end
+
+
+function finishAsyncFlipLocal(window)
+% Error cleanup must not hide the original exception.
+try
+    Screen('AsyncFlipEnd', window);
+catch
+end
 end
 
 
