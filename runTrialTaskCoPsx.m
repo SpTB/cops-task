@@ -1559,7 +1559,7 @@ while state ~= ex.states.BREAKFIX &&...
             else
                 if exist('gazeHeat', 'file') ~= 2
                     thisFileDir = fileparts(mfilename('fullpath'));
-                    addpath(fullfile(thisFileDir, 'cops_analysis'));
+                    addpath(fullfile(thisFileDir, 'helpers'));
                 end
                 try
                     gazeHeat(ex, 1:lastCompletedTrial);

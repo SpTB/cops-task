@@ -3,9 +3,9 @@ function hFig = plotCalibFunc(exOrFile, figNumber)
 % Plot calibration validation from the current vsg experiment format.
 %
 % Usage:
-%   plotCalib(ex)
-%   plotCalib('/path/to/file.mat')
-%   plotCalib(ex, 2)
+%   plotCalibFunc(ex)
+%   plotCalibFunc('/path/to/file.mat')
+%   plotCalibFunc(ex, 2)
 
 arguments
     exOrFile

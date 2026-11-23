@@ -236,7 +236,8 @@ Native EyeLink data remain in `Eye` on the tracker clock. Legacy analog-eye
 runs retain `Eye` and also expose the ADC trace as `Analog`; the diode channel
 does not receive eye gain/position calibration.
 
-The existing `checkSynch` examines the GO marker only. Use `decodeCoPsSyncx` for
+The legacy `checkSynch` utility in the separate `cops-analysis` repository
+examines the GO marker only. Use `decodeCoPsSyncx` for
 the full binary protocol; its frame-rate edges should not be fed through the
 old 20 ms edge-separation rule.
 

@@ -37,6 +37,8 @@ function ex = runEx(eyeStr, varargin)
 % Supply the default before validation so an explicit calibration mode is
 % required by the inner function. Otherwise MATLAB parses 't', 0 as the
 % abbreviated name-value pair testTrials=0.
+addpath(fullfile(fileparts(mfilename('fullpath')), 'helpers'), '-begin');
+
 if nargin == 0
     eyeStr = 't';
 end

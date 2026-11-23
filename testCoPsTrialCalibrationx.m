@@ -4,7 +4,7 @@ end
 
 function setupOnce(testCase)
 testCase.TestData.originalPath=path;
-addpath(fullfile(fileparts(mfilename('fullpath')),'cops_analysis','helpers'));
+addpath(fullfile(fileparts(mfilename('fullpath')),'helpers'));
 end
 
 function teardownOnce(testCase)

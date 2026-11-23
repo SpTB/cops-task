@@ -154,7 +154,7 @@ ex.eyeCal=ec;
 repo=fileparts(fileparts(mfilename('fullpath')));
 oldPath=path;
 cleanup=onCleanup(@() path(oldPath)); %#ok<NASGU>
-addpath(fullfile(repo,'cops_analysis','helpers'));
+addpath(fullfile(repo,'helpers'));
 [x,y]=reconstructEyePx(ex,T,true);
 verifyEqual(testCase,[x y],s(1).targetPx,'AbsTol',1e-10);
 verifyEqual(testCase,T.Eye.v,raw);

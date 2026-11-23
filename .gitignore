@@ -15,6 +15,7 @@ to_be_integrated/*
 *.bin
 *.zip
 *.tar.gz
-cops_analysis/example_data/experimental_ka/ka_jul17.mat
-cops_analysis/lqg-main/notebooks/exports/rewlearn/
 test_data/output/
+
+# Generated calibration validation reports
+validation_reports/

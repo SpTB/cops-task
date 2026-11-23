@@ -37,7 +37,7 @@ end
 
 function testNativeAnalysisBypassesAnalogCalibrationAndPreservesGaps(testCase)
 testDir = fileparts(mfilename('fullpath'));
-helperPath = fullfile(fileparts(testDir), 'cops_analysis', 'helpers');
+helperPath = fullfile(fileparts(testDir), 'helpers');
 originalPath = path;
 cleanup = onCleanup(@() path(originalPath)); %#ok<NASGU>
 addpath(helperPath);

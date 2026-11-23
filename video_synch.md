@@ -27,7 +27,14 @@ In `getDefaultSettingsx.m`, binocular mode currently schedules channels `0:5` pl
    - Task events in trial structs are in PTB/GetSecs (`ex.Trials(i).times.*`).
    - Use `TrialStartDatapixx` and/or `PsychDataPixx('BoxsecsToGetsecs', ...)` remapping from `runEx.m` to convert task event times into a common clock, then match to camera pulse times.
 
-## Example usage
+## Offline example in cops-analysis
+
+The `extractVideoSyncFromTrial` helper is maintained in the separate
+`cops-analysis` repository. Add its `legacy/matlab` directory to the MATLAB
+path for the saved-session example below. The exact human-branch utility,
+including its native-eye ADC handling, is preserved with the analysis
+migration archive; consult that variant when analyzing native-eye recordings.
+Acquisition and the binary decoder remain available in this task repository.
 
 ```matlab
 % Suppose `ex` is loaded from a session .mat file.
