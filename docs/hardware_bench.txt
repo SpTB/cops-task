@@ -1,0 +1,107 @@
+Subject-free CoPs hardware timing test
+
+Run from a fresh MATLAB session with the projector/controller and photodiode
+connected (a loaded Screen module can retain the old manual output mapping):
+
+    results = runCoPsHardwareBenchx(rewardOutput=true);
+
+The real reward valve must be disconnected or routed into a collection cup
+when rewardOutput=true. With the default false, the same reward/refractory
+state machine runs but the physical output stays low. ESC or F4 aborts;
+cleanup returns the output low, stops acquisition and closes the test window.
+
+The default run contains four approximately 18-second trials: a legacy/VBL
+pair with a fixed central target and a pair with normal experiment movies.
+Use pairs=5 for ten trials per timing version. Example:
+
+    results = runCoPsHardwareBenchx(pairs=5,rewardOutput=true);
+
+For a two-second optical connection check, without any reward pulses:
+
+    results = runCoPsHardwareBenchx(probeOnly=true);
+
+For a separate high-rate optical control, with reward output held low:
+
+    optical = runCoPsHardwareBenchx(adcRateHz=10000,conditions="movie", ...
+                                  durationSec=6,rewardOutput=false);
+
+This retains the 500 Hz behavioral polling target but increases ADC data
+throughput, so its absolute polling rates are not the production-rate result.
+
+The test uses the production rig geometry, projector X screen 1, stereo mode 8,
+Cumming3D mode, overlay, stimulus generation and 500 Hz ADC configuration.
+Psychtoolbox synchronization tests are enforced. The photodiode defaults to
+physical ADC channel 6. The initial probe must show a clear black/white patch
+response before any trial runs. The initial optical probe runs at 10 kHz;
+its measured polarity/threshold are reused. PTB's automatic output mapping
+is used. initDisplayxx was corrected after the historical ScreenToHead
+override selected a nonexistent gamma-table output on this X configuration.
+The bench calls that production initializer with skipSyncTests=false.
+
+The eye tracker and a subject are not required. The actual checkEyex ADC read
+and voltage-decoding code runs first; an artificial gaze trace then replaces
+its behavioral position. That trace follows target 1 according to elapsed
+time and the configured target rate, rather than the number of input polls.
+The raw eye and photodiode ADC samples are retained. Calibration/eye-tracker
+tracking quality are outside this test's scope.
+
+Both timing variants use identical instrumentation. The legacy trial loop
+comes from the parent of VBL commit c825eb7 in local Git history. The VBL loop
+comes from the current working copy. Instrumented copies are generated into
+the run's sources directory with exact-match source anchors; incompatible
+future source changes cause an error. No production source or default file
+is rewritten. Original source snapshots are retained with the recording.
+
+The fixed condition uses one stationary central target with full visibility,
+noise level 1 and a central reward peak, isolating reward/polling behavior.
+The movie condition uses the selected experiment stimuli and trial schedules
+with a central reward peak. Joint blocks and special phases are disabled only
+in these test structures. Both versions receive the same random seed and gaze
+trace. Pair order alternates to reduce warmup/order effects.
+Clock synchronization preserves the trial RNG state because PTB uses rand
+internally. Each completed pair is checked for identical target-position and
+stimulus metadata before accepting the comparison.
+
+The marker is at the normal upper-right sync-patch position. Its first 100 ms
+are white followed by 50 ms black, providing an identifiable GO-onset pulse.
+After that it alternates at target-step changes in the fixed condition and
+at submitted frame changes in the movie condition. The initial 200 ms are
+excluded from steady marker analysis.
+
+Reward output bit 0 is recorded by the controller's internal DOUT-to-DIN
+loopback. These are actual output transitions, not reward-request counters.
+Pre-GO pulses are reported separately through total-versus-GO pulse counts.
+The final pulse can be truncated when the trial ends; it is excluded from the
+median complete-pulse width. These measurements do not measure liquid volume
+or mechanical valve latency. DIN logging uses RAM starting at 48 MB so it
+does not overlap the ADC buffer at address 0.
+
+Files are saved incrementally under test_data/output/hardware_bench/<time>:
+  probe.mat: raw optical connection check and measured threshold/polarity.
+  trial_NN.mat: raw ADC, actual VBL times, frame states/steps/marker values,
+               individual poll timestamps/frame counts, actual DIN log,
+               paired hardware/PTB clock anchors, settings and summary.
+  summary.csv: one row per completed trial, including polling, ADC integrity,
+               skipped refreshes, target cadence, GO delay, reward requests,
+               measured TTL counts/widths and photodiode agreement.
+  results.mat: all completed trials, configuration and run status/error.
+  report.txt: brief interpretation notes.
+  overview.png/.pdf: polling, frame pacing, reward counts and GO delay.
+  traces.png/.pdf: raw photodiode onset and recorded reward-bit transitions.
+  sources/: exact generated and original source files.
+
+At 500 Hz, optical sample spacing is about 2 ms and short DLP illumination
+bursts can be missed entirely. Optical frame-check results at that rate are
+diagnostic only, not pass/fail evidence. Use the 10 kHz control for that
+purpose (nominal sample spacing 0.1 ms). Optical onset delay is
+estimated from the initial marker and the separately calibrated clocks.
+Steady optical agreement compares mean light level per presented frame
+against the recorded marker, allowing for that onset delay. Inspect raw
+traces as well, especially with projector subframe illumination. This test
+does not establish submillisecond optical accuracy. The instrumentation adds
+processing work, equally in both versions, so absolute poll rates may differ
+from an uninstrumented subject session.
+
+Software-only checks (no display or controller needed):
+    runtests({'testCoPsHardwareBenchx.m','testCoPsFrameTimingx.m', ...
+              'testCoPsJointBlocksx.m','testCoPsTestProfilex.m'})

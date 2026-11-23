@@ -14,7 +14,7 @@ calib.avgain = 0; % whether to average gain vals across the two eyes
 calib.yOffset = 0; % how much to add to RY0 and LY0 at the end
 calib.background_color = 0; % 0: black, 255: white (useless)
 calib.validate = 1; % whether to follow calibration with validation
-calib.file ='/home/vpixx/Desktop/ly.mat' % only validates if file provided
+calib.file =''%'/home/vpixx/Desktop/ka.mat' % only validates if file provided
 %'/home/vpixx/data/lychee/2026.03.18/ly_15.33.EyeCal/ly_15.33.EyeCal.mat'
 %'/home/vpixx/data/lychee/2026.03.13/ly_14.39.EyeCal/ly_14.39.EyeCal.mat'%'/home/vpixx/data/lychee/2026.03.11/ly_15.21.EyeCal/ly_15.21.EyeCal.mat'
 %mouse:%'/home/vpixx/data/test/2026.03.09/t_12.19.EyeCal/t_12.19.EyeCal.mat' ;% path to calibration file (leave empty if want to run calibration)

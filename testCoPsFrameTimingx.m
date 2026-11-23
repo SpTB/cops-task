@@ -24,6 +24,10 @@ writeMock(folder,'Screen',[
     "case 'getflipinterval', varargout={s.ifi};"
     "case {'fillrect','drawingfinished','drawtexture','drawdots','framerect','frameoval','drawline','drawtext','filloval'}"
     "    assert(isnan(s.pendingVbl),'FrameTimingTest:PendingDraw','Drew to a window with an unfinished flip.');"
+    "    if strcmpi(command,'drawdots') && numel(varargin)>=4"
+    "        xy=varargin{2}; colors=varargin{4};"
+    "        assert(isvector(colors) || size(colors,2)==size(xy,2),'FrameTimingTest:DotColors','Overlay position/color counts differ.');"
+    "    end"
     "    if strcmpi(command,'fillrect')"
     "        s.now=s.now+s.drawCost;"
     "        if s.now>=s.overloadAt && ~s.overloaded"
@@ -143,6 +147,12 @@ for rate=[60 120]
 end
 end
 
+function testBinocularOverlayBeforeFirstInputPoll(testCase)
+ex=runSimulatedTrial(testCase,120,Inf,4,'earlyBinocular');
+verifyEqual(testCase,ex.quit,4);
+verifyEqual(testCase,numel(ex.Trials(1).frameState),1);
+end
+
 function testOverloadRemainsVisibleAndPlaybackRecovers(testCase)
 rate=120;
 ex=runSimulatedTrial(testCase,rate,52.3);
@@ -224,7 +234,11 @@ COPS_FRAME_TIMING_TEST=struct('now',50,'ifi',1/rate,'drawCost',.0008, ...
     'heatWhilePending',false,'injectError',strcmp(scenario,'error'),'errorInjected',false);
 if abortKey>0, COPS_FRAME_TIMING_TEST.abortAfter=10; end
 ex=fixture(rate);
-if strcmp(scenario,'heat')
+if strcmp(scenario,'earlyBinocular')
+    ex.setup.inputMode='eye'; ex.setup.stereo.Display=true;
+    ex.eyeCal.LXPos=zeros(1,4);
+    COPS_FRAME_TIMING_TEST.abortAfter=1;
+elseif strcmp(scenario,'heat')
     ex.j=2; ex.Trials(1).ID=0; ex.loopcnt=zeros(1,2);
     ex.exp.nreps=2; ex.finish=2; ex.exp.total_nreps=2;
     ex.stim.seq=repmat(ex.stim.seq,1,2);

@@ -664,7 +664,9 @@ pass_eye = 0; % currently this one's init is doubled for convenience..
 pass_eye_accum = 0; %number of eye frames that were passed in a row
 %freeViewing = 0; % for checkEye, 0 for assessing fixation (switched off for GO state); 1 for skipping fixation assesment
 mousePositions = [];
-olPos = [NaN,NaN];
+% An async frame can be drawn before the first input sample arrives.
+% Keep one placeholder position per overlay color (including binocular gaze).
+olPos = NaN(size(olColBinoc, 1), 2);
 inputSample = struct('position', [NaN NaN], 'inBounds', false);
 closeness_vec = [];
 reward_vec = [];

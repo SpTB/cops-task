@@ -1,10 +1,10 @@
-function ex = initDisplayxx(ex, overlayOn)
-% Minimal display initialization for testing
-% This function creates a basic Psychtoolbox window without hardware dependencies
+function ex = initDisplayxx(ex, overlayOn, options)
+% Initialize the DataPixx/Cumming3D rig display.
 
 arguments
     ex = struct
     overlayOn {mustBeNumericOrLogical} = false
+    options.skipSyncTests (1,1) logical = true
 end
 
 ex.setup.screenNum = max(Screen('Screens'));
@@ -18,9 +18,9 @@ if ex.setup.stereo.Display
     Datapixx('RegWr');
 end
 
-Screen('Preference','ScreenToHead',1,1,2);
-Screen('Preference','ScreenToHead',1,1,2);  % for some reason this has to be called twice
-Screen('Preference', 'SkipSyncTests', 1);
+% PTB detects the GPU output for each X screen. The historical head=1,
+% crtc=2 override selected a nonexistent gamma-table output on this rig.
+Screen('Preference', 'SkipSyncTests', double(options.skipSyncTests));
 % Get screen number
 ex.setup.screenNum = max(Screen('Screens'));
 

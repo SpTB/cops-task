@@ -15,7 +15,7 @@ ctl.rewPeakDistFromPrev = 5; % minimum consecutive-peak distance in visual degre
 %main params
 graph.texture_root = '/home/vpixx/stim';%;
 %'/run/user/1000/gvfs/smb-share:server=lsr-isilon.nei.nih.gov,share=lsr-nienborg/data/CoPs'
-graph.texture_folder = 'jul11_stim2';% -> /home/vpixx/stim/ly_jun5_stim
+graph.texture_folder = 'nov6_stim1';% -> /home/vpixx/stim/ly_jun5_stim
 
 pre.nreps = 0; % numeric = total pre trials; 'all' = one trial per selected texture
 pur.nreps = 0;
@@ -30,7 +30,7 @@ pur.priority = true; % true: run pursuit block before main trials
 
 %thresholding
 rew.threshold = 250; % kaki: 250->260bler; Lychee: 250 (at waitHz=20/30)
-rew.threshold_noiseNull=325;%kaki: 300; Lychee: 325
+rew.threshold_noiseNull=250;%kaki: 300; Lychee: 325
 rew.threshold_noise0 = 250;%kaki:300; Lychee: 350 % threshold for fixed-background (noise=0) trials
 %0.8402, 0.5661
 rew.gauss_center_free = true; % true: sample free [x y] center within current center radius
@@ -57,7 +57,7 @@ ctl.nsteps = 18*timing.waitHz;
 graph.target_visibilityNull=1; %for no background
 %graph.targetVisibilityNull = graph.target_visibilityNull;
 graph.target_visibility0 =1;%[.2,.6, 1];%for fixed background linspace(.6, 1, 5);%[1,.8]; % [0,1] scales target/background blending without changing blend normalization
-graph.target_visibility =[1,.9,.8,.7,.6];
+graph.target_visibility =[1,.8,.6];
 graph.sequenceMode_vis = false; % true: target_visibility values are presented in listed order, cycling as needed
 
 ctl.target_num = 2; % scalar or vector; e.g. [1 2 2 2] gives 25% single-target trials
