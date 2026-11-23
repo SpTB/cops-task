@@ -24,7 +24,9 @@ hasPrefix = isfield(ex.setup, 'filePrefix') && ~isempty(ex.setup.filePrefix);
 
 if hasPrefix && (hasAnimal || hasSubjectID)
     % Explicit subject input takes priority over the old animal-name mapping.
-    filePrefix = sanitizeCoPsFilePrefixx(ex.setup.filePrefix);
+    filePrefix = normalizeCoPsSubjectIDx(ex.setup.filePrefix);
+elseif hasSubjectID
+    filePrefix = normalizeCoPsSubjectIDx(header.subjectID);
 elseif hasAnimal
     [filePrefix, ~] = localAnimalIdentity(header.animal);
 else
@@ -33,10 +35,13 @@ else
     if isempty(strtrim(enteredPrefix))
         enteredPrefix = 't';
     end
-    filePrefix = sanitizeCoPsFilePrefixx(enteredPrefix);
+    filePrefix = normalizeCoPsSubjectIDx(enteredPrefix);
 end
 
-if hasAnimal
+if hasSubjectID
+    % Keep all participant data together, including calibration and test runs.
+    subjectFolder = normalizeCoPsSubjectIDx(header.subjectID);
+elseif hasAnimal
     [~, subjectFolder] = localAnimalIdentity(header.animal);
 else
     subjectFolder = localFolderForPrefix(filePrefix);
@@ -93,7 +98,7 @@ folders = {'kiwi', 'mango', 'kaki', 'lychee', 'lemieux', ...
     'tempura', 'hummus', 'shocktop', 'barnum', 'jocamo'};
 idx = find(strcmpi(prefix, prefixes), 1);
 if isempty(idx)
-    folder = 'test';
+    folder = prefix;
 else
     folder = folders{idx};
 end

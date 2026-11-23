@@ -48,7 +48,8 @@ pd.timing % missed refresh count, recording-tail coverage, timing/coverage pass
 This runs the actual task loop using explicit mouse simulation, with the binary
 sequence enabled. It skips instruction pages, practice, reward-peak blocks,
 sound, and the final SPACE prompt. EyeLink and reward hardware are disabled.
-F4 stops early. The normal task MAT file is saved in `test_data/output/test`;
+F4 stops early. The task MAT file is saved under `test_data/output/photCheck`
+(or the supplied `filePrefix` subject ID);
 `pd` also returns the selected ADC trace and submitted bits on aligned clocks.
 The comparison plot opens after the task window closes; use `showPlot=false`
 to suppress it. `stimulusDir` selects a generated stimulus bank.

@@ -3,6 +3,7 @@ function ex = runEx(eyeStr, varargin)
 %
 % usage examples:
 %   runEx() native eyelink gaze and tracker calibration (default)
+%   runEx('t', filePrefix="P001") % save under <data root>/P001/<date>/
 %   runEx('t', 0) disable the experimenter overlay
 %   runEx('t', 1, 1) windowed desktop overlay with DataPixx enabled
 %   runEx('t', 1, 1, overlayScreen=0, overlayWindowSizePx=[960 540])
@@ -162,27 +163,32 @@ if ~isempty(options.jointBlocks)
     ex.exp.CoPs.ctl.jointBlocks = options.jointBlocks;
 end
 if recordingEnabled, ex = configureCoPsRecordingx(ex,options.recording); end
-if isTestProfile || strlength(options.filePrefix) > 0
-    subjectID = strtrim(char(options.filePrefix));
-    if isempty(subjectID) && isfield(ex.Header, 'subjectID')
-        subjectID = strtrim(char(ex.Header.subjectID));
+% Resolve identity once, before calibration or any session output is created.
+subjectIDEntered = strtrim(char(options.filePrefix));
+if isempty(subjectIDEntered) && isfield(ex, 'Header')
+    if isfield(ex.Header, 'subjectIDEntered') && ~isempty(ex.Header.subjectIDEntered)
+        subjectIDEntered = strtrim(char(ex.Header.subjectIDEntered));
+    elseif isfield(ex.Header, 'subjectID')
+        subjectIDEntered = strtrim(char(ex.Header.subjectID));
     end
-    if isempty(subjectID)
-        defaultPrefix = 'test';
-        if isfield(ex.setup, 'filePrefix') && ~isempty(ex.setup.filePrefix)
-            defaultPrefix = char(ex.setup.filePrefix);
-        end
-        answer = inputdlg('Subject ID / filename prefix:', 'CoPs subject', ...
-            [1 50], {defaultPrefix});
-        if isempty(answer)
-            ex.quit = 4;
-            return
-        end
-        subjectID = strtrim(answer{1});
-    end
-    ex.setup.filePrefix = sanitizeCoPsFilePrefixx(subjectID);
-    ex.Header.subjectID = subjectID;
 end
+if isempty(subjectIDEntered)
+    defaultPrefix = 'test';
+    if isfield(ex.setup, 'filePrefix') && ~isempty(ex.setup.filePrefix)
+        defaultPrefix = char(ex.setup.filePrefix);
+    end
+    answer = inputdlg('Subject ID / filename prefix:', 'CoPs subject', ...
+        [1 50], {defaultPrefix});
+    if isempty(answer)
+        ex.quit = 4;
+        return
+    end
+    subjectIDEntered = strtrim(answer{1});
+end
+ex.Header.subjectIDEntered = subjectIDEntered;
+ex.Header.subjectID = normalizeCoPsSubjectIDx(subjectIDEntered);
+ex.setup.filePrefix = ex.Header.subjectID;
+fprintf('CoPs subject ID: %s.\n', ex.Header.subjectID);
 ex.setup.dependencies = dependencies;
 ex.setup.inputMode = dependencies.inputMode;
 fprintf('CoPs behavioral input: %s.\n', dependencies.inputMode);

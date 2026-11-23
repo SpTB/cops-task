@@ -1,5 +1,39 @@
 # Participant instructions and practice
 
+## Subject ID and output files
+
+Every `runEx` profile captures the subject ID before calibration. Supply it as
+`runEx('t', filePrefix="P001")`, or enter it in the subject dialog. A subject ID
+already supplied by the initial questionnaire is reused. A trailing number is
+automatically padded to at least three digits: `4` / `04` / `004` all become
+`004`, and `t4` / `t04` / `t004` all become `t004`. Letter prefixes and their
+case are preserved, as are numbers already three or more digits wide. IDs
+without a trailing number, such as `demo`, are kept as entered.
+
+The normalized ID is saved as `ex.Header.subjectID` and used for folders and
+filenames. `ex.Header.subjectIDEntered` retains the original trimmed entry.
+Unsafe path characters are replaced with underscores. Existing output folders
+are not renamed or merged when this rule is applied.
+
+Participant output is grouped as `<data root>/<subject ID>/YYYY.MM.DD/`,
+including calibration MAT/EDF files, session data in `experimental/`, task EDF
+files in `edf/`, daily logs, and temporary trial checkpoints. Repeated sessions
+retain the existing timestamp and collision suffixes. Existing data are not moved.
+
+The human rig's normal data root is `/home/nei-op4/Desktop/CoPs`. Explicit
+`test1` and `mouse_mini` runs use `<repo>/test_data/output`, which is ignored by
+Git. `recEx` uses that test root too, with movies under the participant's date
+folder unless `outputDir` is supplied. Ordinary `runEx` reads the selected
+stimulus bank; it does not generate or rewrite that bank. Whether the normal
+data root is itself inside a repository depends on where the repository was
+cloned.
+
+The Command Window prints the resolved session MAT path as `CoPs output:`.
+After `ex = runEx(...)`, it can also be obtained with
+`fullfile(ex.Header.onlineExperimentalDirName, ex.Header.onlineFileName)`.
+
+## Instructions and practice
+
 Enable the three instruction pages and two practice trials with:
 
 ```matlab

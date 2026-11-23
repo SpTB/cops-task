@@ -42,11 +42,6 @@ end
 if exist(outputRoot, 'dir') ~= 7
     mkdir(outputRoot);
 end
-testOutputRoot = fullfile(outputRoot, 'test');
-if exist(testOutputRoot, 'dir') ~= 7
-    mkdir(testOutputRoot);
-end
-
 ex.eyeCal = eyeCal;
 ex.setup.testMode = true;
 ex.setup.inputMode = 'mouse';

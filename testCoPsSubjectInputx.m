@@ -80,6 +80,20 @@ verifyEqual(testCase, ex.Header.animal, 'kaki');
 verifyEqual(testCase, COPS_SUBJECT_INPUT_TEST.inputCalls, 1);
 end
 
+function testQuestionnairePadsNumericSuffixAndPreservesEnteredID(testCase)
+global COPS_SUBJECT_INPUT_TEST
+entries = {'4', '004'; 't04', 't004'};
+for idx = 1:size(entries,1)
+    COPS_SUBJECT_INPUT_TEST.answer = {entries{idx,1}};
+    COPS_SUBJECT_INPUT_TEST.inputCalls = 0;
+    ex = collectSettings(testCase);
+    verifyEqual(testCase, ex.Header.subjectID, entries{idx,2});
+    verifyEqual(testCase, ex.setup.filePrefix, entries{idx,2});
+    verifyEqual(testCase, ex.Header.subjectIDEntered, entries{idx,1});
+    verifyEqual(testCase, COPS_SUBJECT_INPUT_TEST.inputCalls, 1);
+end
+end
+
 function ex = collectSettings(testCase)
 evalc('ex = setDefaultsCoPs(struct());');
 ex.setup = struct('testMode', true, 'viewingDistance', 55, 'monitorWidth', 54);

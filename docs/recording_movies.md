@@ -112,9 +112,10 @@ The console prints the absolute movie directory and each completed file.
 Default output is:
 
 ```text
-test_data/output/test/YYYY.MM.DD/movies/<session-name>/trial_001.mp4
+test_data/output/demo/YYYY.MM.DD/movies/<session-name>/trial_001.mp4
 ```
 
+The `demo` folder is the default subject ID; `filePrefix` selects another ID.
 An explicit `outputDir` also gets a per-session subfolder. Session naming
 follows the regular filename mechanism, using `filePrefix`. Existing movies
 are preserved by adding a numeric suffix if a trial filename already exists.

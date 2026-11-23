@@ -318,10 +318,10 @@ else
     if isempty(animalPrefix)
         error('getDefaultSettingsx:SubjectCancelled', 'Subject entry cancelled.');
     end
-    ex.Header.subjectID = strtrim(animalPrefix{1});
-    ex.setup.filePrefix = sanitizeCoPsFilePrefixx(ex.Header.subjectID);
-    % Retain legacy animal-folder routing while preserving the full entered
-    % string for filenames and participant metadata.
+    ex.Header.subjectIDEntered = strtrim(animalPrefix{1});
+    ex.Header.subjectID = normalizeCoPsSubjectIDx(ex.Header.subjectIDEntered);
+    ex.setup.filePrefix = ex.Header.subjectID;
+    % Retain legacy animal labels alongside the normalized participant ID.
     animalCode = lower(ex.setup.filePrefix(1:min(2, numel(ex.setup.filePrefix))));
     switch animalCode
         case 'ki'

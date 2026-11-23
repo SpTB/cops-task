@@ -23,6 +23,9 @@ writeMock(mockDir, 'getDefaultSettingsx', [
     "    ex.Header.subjectID = COPS_RUNEX_SUBJECT_TEST.existingSubjectID;"
     "    ex.setup.filePrefix = COPS_RUNEX_SUBJECT_TEST.existingSubjectID;"
     "end"
+    "if ~isempty(COPS_RUNEX_SUBJECT_TEST.existingSubjectIDEntered)"
+    "    ex.Header.subjectIDEntered = COPS_RUNEX_SUBJECT_TEST.existingSubjectIDEntered;"
+    "end"
     "end"]);
 writeMock(mockDir, 'inputdlg', [
     "function answer = inputdlg(varargin)"
@@ -67,7 +70,8 @@ end
 function setup(~)
 global COPS_RUNEX_SUBJECT_TEST
 global COPS_RUNEX_ADC_TEST
-COPS_RUNEX_SUBJECT_TEST = struct('answer', {{'test'}}, 'calls', 0, 'existingSubjectID', '');
+COPS_RUNEX_SUBJECT_TEST = struct('answer', {{'test'}}, 'calls', 0, ...
+    'existingSubjectID', '', 'existingSubjectIDEntered', '');
 COPS_RUNEX_ADC_TEST = struct('enabled',false,'calls',{{}},'resetSetup',struct());
 end
 
@@ -311,6 +315,94 @@ end
 verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 2);
 end
 
+function testCalibrationProfileCapturesSubjectBeforeDisplay(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+COPS_RUNEX_SUBJECT_TEST.answer = {' P001 '};
+ex = captureBeforeDisplay(testCase, 't', false, false, false, false);
+verifyEqual(testCase, ex.setup.filePrefix, 'P001');
+verifyEqual(testCase, ex.Header.subjectID, 'P001');
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 1);
+end
+
+function testCalibrationProfileExplicitSubjectBypassesPrompt(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+ex = captureBeforeDisplay(testCase, 't', false, false, false, false, ...
+    filePrefix="P001");
+verifyEqual(testCase, ex.setup.filePrefix, 'P001');
+verifyEqual(testCase, ex.Header.subjectID, 'P001');
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 0);
+end
+
+function testCalibrationProfileReusesQuestionnaireSubject(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+COPS_RUNEX_SUBJECT_TEST.existingSubjectID = 'P001';
+ex = captureBeforeDisplay(testCase, 't', false, false, false, false);
+verifyEqual(testCase, ex.setup.filePrefix, 'P001');
+verifyEqual(testCase, ex.Header.subjectID, 'P001');
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 0);
+end
+
+function testAllProfilesNormalizePromptedSubjectAndRetainEntry(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+COPS_RUNEX_SUBJECT_TEST.answer = {' t4 '};
+for profile = {'t','test1','mouse_mini'}
+    ex = captureBeforeDisplay(testCase, profile{1}, false, false, false, false);
+    verifyEqual(testCase, ex.setup.filePrefix, 't004');
+    verifyEqual(testCase, ex.Header.subjectID, 't004');
+    verifyEqual(testCase, ex.Header.subjectIDEntered, 't4');
+end
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 3);
+end
+
+function testAllProfilesNormalizeExplicitSubjectAndRetainEntry(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+for profile = {'t','test1','mouse_mini'}
+    ex = captureBeforeDisplay(testCase, profile{1}, false, false, false, false, ...
+        filePrefix="04");
+    verifyEqual(testCase, ex.setup.filePrefix, '004');
+    verifyEqual(testCase, ex.Header.subjectID, '004');
+    verifyEqual(testCase, ex.Header.subjectIDEntered, '04');
+end
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 0);
+end
+
+function testAllProfilesRetainOriginalQuestionnaireEntry(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+COPS_RUNEX_SUBJECT_TEST.existingSubjectID = 't004';
+COPS_RUNEX_SUBJECT_TEST.existingSubjectIDEntered = 't4';
+for profile = {'t','test1','mouse_mini'}
+    ex = captureBeforeDisplay(testCase, profile{1}, false, false, false, false);
+    verifyEqual(testCase, ex.setup.filePrefix, 't004');
+    verifyEqual(testCase, ex.Header.subjectID, 't004');
+    verifyEqual(testCase, ex.Header.subjectIDEntered, 't4');
+end
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 0);
+end
+
+function testQuestionnaireWithoutEntryMetadataIsNormalized(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+COPS_RUNEX_SUBJECT_TEST.existingSubjectID = 'P12';
+for profile = {'t','test1','mouse_mini'}
+    ex = captureBeforeDisplay(testCase, profile{1}, false, false, false, false);
+    verifyEqual(testCase, ex.setup.filePrefix, 'P012');
+    verifyEqual(testCase, ex.Header.subjectID, 'P012');
+    verifyEqual(testCase, ex.Header.subjectIDEntered, 'P12');
+end
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 0);
+end
+
+function testExplicitSubjectReplacesQuestionnaireIdentityAndEntry(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+COPS_RUNEX_SUBJECT_TEST.existingSubjectID = 't004';
+COPS_RUNEX_SUBJECT_TEST.existingSubjectIDEntered = 't4';
+ex = captureBeforeDisplay(testCase, 't', false, false, false, false, ...
+    filePrefix="P2");
+verifyEqual(testCase, ex.setup.filePrefix, 'P002');
+verifyEqual(testCase, ex.Header.subjectID, 'P002');
+verifyEqual(testCase, ex.Header.subjectIDEntered, 'P2');
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 0);
+end
+
 function testExplicitFilePrefixBypassesSubjectPrompt(testCase)
 global COPS_RUNEX_SUBJECT_TEST
 for profile = {'test1', 'mouse_mini'}
@@ -348,6 +440,11 @@ for profile = {'test1', 'mouse_mini'}
     verifyEmpty(testCase, COPS_RUNEX_OVERLAY_TEST);
 end
 verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 2);
+COPS_RUNEX_OVERLAY_TEST = [];
+evalc('ex = runEx(''t'', false, false, false, false);');
+verifyEqual(testCase, ex.quit, 4);
+verifyEmpty(testCase, COPS_RUNEX_OVERLAY_TEST);
+verifyEqual(testCase, COPS_RUNEX_SUBJECT_TEST.calls, 3);
 end
 
 function ex = captureBeforeDisplay(testCase, varargin)
