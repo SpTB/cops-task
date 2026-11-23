@@ -26,6 +26,8 @@ arguments
     options.syncSequence (1,:) double = []
 end
 
+taskRoot = fileparts(mfilename('fullpath'));
+addpath(fullfile(taskRoot, 'helpers'), '-begin');
 dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn);
 pixOn = dependencies.pixOn;
 eyeOn = dependencies.eyeOn;

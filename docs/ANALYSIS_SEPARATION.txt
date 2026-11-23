@@ -1,0 +1,26 @@
+The standalone cops-analysis repository owns offline preprocessing, model
+fitting, statistics and plots. The acquisition repository does not load it.
+
+The F9 gaze heat diagnostic remains available during the task. Its existing
+implementation and the eight helpers it calls are kept in top-level helpers/.
+runEx adds that local directory when starting. Direct runTrialTaskCoPsx calls
+also add it if the F9 function is not already available. PlotEyeCalibData uses
+the same px2deg helper; add helpers/ when running that inspection script alone.
+
+These nine files were relocated byte-for-byte from this repository's original
+cops_analysis tree. They preserve the acquisition version of calibration,
+eye/target timing and the live diagnostic. Do not automatically import newer
+analysis implementations: review and test any shared-helper update explicitly
+in both repositories. Offline ccg_script.m and ridge_script.m now belong with
+the analysis code, not task startup.
+
+The complete pre-cleanup cops_analysis tree and the two offline root scripts
+are preserved in the local archive recorded by cops-analysis migration files.
+No raw data, task settings, seeds, stimulus/reward equations or hardware
+switches were changed by this separation.
+
+Hardware-free verification from this repository root in MATLAB:
+  results = runtests({'testCoPsTaskHelpersx.m','testCoPsFrameTimingx.m', ...
+      'testCoPsTestProfilex.m','testCoPsJointBlocksx.m','testCoPsSyncx.m', ...
+      'testCoPsSyncOptionsx.m','testCoPsHardwareBenchx.m'});
+  assertSuccess(results);
