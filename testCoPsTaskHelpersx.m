@@ -18,7 +18,7 @@ end
 
 function testHelpersResolveInsideTask(testCase)
 names = {'gazeHeat','getGaussianCenterPx','mapTargetsByStep','px2deg', ...
-    'reconstructEyePx','computeStepIndices','getfieldOrNaN','inferFs','safeDeltaField'};
+    'reconstructEyePx','computeStepIndices','getfieldOrNaN','inferFs','safeDeltaField','clip'};
 for index = 1:numel(names)
     expected = fullfile(testCase.TestData.root, 'helpers', [names{index} '.m']);
     verifyEqual(testCase, lower(which(names{index})), lower(expected));
@@ -54,5 +54,5 @@ end
 
 function clearTaskHelpers
 clear gazeHeat getGaussianCenterPx mapTargetsByStep px2deg ...
-    reconstructEyePx computeStepIndices getfieldOrNaN inferFs safeDeltaField
+    reconstructEyePx computeStepIndices getfieldOrNaN inferFs safeDeltaField clip
 end

@@ -1,0 +1,8 @@
+clip.m is the existing matlabPyrTools helper used by makeStimulusCoPsx.
+It is copied unchanged from the human branch's vendored
++copsstim/private/clip.m so the live renderer has an explicit local dependency.
+Only this needed function is exposed; the remaining generator helpers stay private.
+
+Source: human f81a76147a957631af4afcef75042278825e6b73
+SHA256: 3e7a3fe8ff865af28f89c4fa331bc2d8084d945b8972cc9290f37b31d5a64701
+License: LICENSE.matlabPyrTools.txt (MIT, LabForComputationalVision).

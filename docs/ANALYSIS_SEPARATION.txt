@@ -4,15 +4,23 @@ fitting, statistics and plots. The acquisition repository does not load it.
 The F9 gaze heat diagnostic remains available during the task. Its existing
 implementation and the eight helpers it calls are kept in top-level helpers/.
 runEx adds that local directory when starting. Direct runTrialTaskCoPsx calls
-also add it if the F9 function is not already available. PlotEyeCalibData uses
-the same px2deg helper; add helpers/ when running that inspection script alone.
+also add it if the F9 function is not already available. Live calibration
+continues to use plotCalibFunc; it is part of the calibration runtime.
 
 These nine files were relocated byte-for-byte from this repository's original
 cops_analysis tree. They preserve the acquisition version of calibration,
 eye/target timing and the live diagnostic. Do not automatically import newer
 analysis implementations: review and test any shared-helper update explicitly
 in both repositories. Offline ccg_script.m and ridge_script.m now belong with
-the analysis code, not task startup.
+the analysis code, not task startup. Recorded-session inspection, calibration
+file plots, target-autocorrelation simulations, trial subsetting, timing
+tables, saved-sync extraction and standalone texture/reward plots also belong
+in cops-analysis. Their original versions are archived with migration hashes.
+
+Live F9/calibration displays, hardware benchmark tools and tests remain here.
+Acquisition configuration, stimulus generation, display/stimulus checks,
+recording and crash-recovery utilities remain task responsibilities. They do
+not require any offline analysis folder or a sibling repository on the path.
 
 The complete pre-cleanup cops_analysis tree and the two offline root scripts
 are preserved in the local archive recorded by cops-analysis migration files.
@@ -24,3 +32,8 @@ Hardware-free verification from this repository root in MATLAB:
       'testCoPsTestProfilex.m','testCoPsJointBlocksx.m','testCoPsSyncx.m', ...
       'testCoPsSyncOptionsx.m','testCoPsHardwareBenchx.m'});
   assertSuccess(results);
+
+The live stimulus renderer also calls clip.m. Its existing matlabPyrTools
+implementation is provided explicitly in helpers/ with its original license
+and provenance (helpers/THIRD_PARTY.txt). Stimulus equations and trial settings
+are unchanged; the private generator dependency directory is not exposed.
