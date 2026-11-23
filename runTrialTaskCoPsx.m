@@ -628,6 +628,28 @@ flip_info = NaN(frame_alloc_n,4);
 frameStep = NaN(frame_alloc_n,1);
 frameState = NaN(frame_alloc_n,1);
 frameSyncPulse = false(frame_alloc_n,1);
+sync = struct('mode','goPulse');
+if isfield(ex.exp.CoPs,'sync'), sync = ex.exp.CoPs.sync; end
+if ~isfield(sync,'protocolVersion') || sync.refreshIntervalSec ~= frameInterval
+    sync = prepareCoPsSyncx(sync,frameInterval);
+end
+binarySync = strcmp(sync.mode,'binary');
+if binarySync
+    % Keep the rig's existing top-right diode placement for either protocol.
+    requiredBits = ceil(maxTrialDur / (frameInterval * sync.framesPerBit));
+    if numel(sync.sequence) < requiredBits
+        error('runTrialTaskCoPsx:SyncSequenceTooShort', ...
+            'Photodiode code needs at least %d bits including the trial timing margin.',requiredBits);
+    end
+end
+sync.patchRect = spRects(:)';
+sync.lowColor = ex.idx.black;
+sync.highColor = ex.idx.white;
+syncCursor = 0;
+syncClock = struct('ptbSec',NaN,'datapixxSec',NaN,'uncertaintySec',NaN);
+frameSyncBit = NaN(frame_alloc_n,1);
+frameSyncIndex = NaN(frame_alloc_n,1);
+frameSyncPhase = zeros(frame_alloc_n,1,'uint8');
 StimStart = NaN*ones(1,ceil(ex.setup.refreshRate*ex.fix.stimDuration));
 
 flip_info_grow_chunk = ceil(10 * ex.setup.refreshRate); % grow by ~10s if trial runs longer than expected
@@ -750,6 +772,14 @@ if eyeOn
 end
 trstart = GetSecs;  % start of trial time
 toc_trstartGETSECS = toc;
+if binarySync && eyeOn
+    clockBefore = GetSecs;
+    Datapixx('RegWrRd');
+    deviceTime = Datapixx('GetTime');
+    clockAfter = GetSecs;
+    syncClock = struct('ptbSec',(clockBefore+clockAfter)/2, ...
+        'datapixxSec',deviceTime,'uncertaintySec',(clockAfter-clockBefore)/2);
+end
 
 % this synchronizes the ripple and the datapixOnx clocks
 if pixOn 
@@ -1320,7 +1350,7 @@ while state ~= ex.states.BREAKFIX &&...
             %Screen('DrawDots', ex.setup.window, spPos, spSz, spCol);
             
             %Draw synch pulse briefly when entering GO state
-            if GetSecs <= goSyncPulseEndTime
+            if strcmp(sync.mode,'goPulse') && GetSecs <= goSyncPulseEndTime
                 Screen('FillRect', ex.setup.window, spCol, spRects);
                 frameSyncPulseToSave = true;
             end
@@ -1346,6 +1376,9 @@ while state ~= ex.states.BREAKFIX &&...
                 frameStep(end+1:end+flip_info_grow_chunk, 1) = NaN;
                 frameState(end+1:end+flip_info_grow_chunk, 1) = NaN;
                 frameSyncPulse(end+1:end+flip_info_grow_chunk, 1) = false;
+                frameSyncBit(end+1:end+flip_info_grow_chunk, 1) = NaN;
+                frameSyncIndex(end+1:end+flip_info_grow_chunk, 1) = NaN;
+                frameSyncPhase(end+1:end+flip_info_grow_chunk, 1) = uint8(0);
             end
             if si > numel(StimStart)
                 StimStart(end+1:end+stimstart_grow_chunk) = NaN;
@@ -1366,16 +1399,30 @@ while state ~= ex.states.BREAKFIX &&...
         end
         
         % Flip screen
-        Screen('DrawingFinished', ex.setup.window);
          if fi > size(flip_info,1)
             flip_info(end+1:end+flip_info_grow_chunk, :) = NaN;
             frameStep(end+1:end+flip_info_grow_chunk, 1) = NaN;
             frameState(end+1:end+flip_info_grow_chunk, 1) = NaN;
             frameSyncPulse(end+1:end+flip_info_grow_chunk, 1) = false;
+            frameSyncBit(end+1:end+flip_info_grow_chunk, 1) = NaN;
+            frameSyncIndex(end+1:end+flip_info_grow_chunk, 1) = NaN;
+            frameSyncPhase(end+1:end+flip_info_grow_chunk, 1) = uint8(0);
          end
         frameStep(fi) = frameStepToSave;
         frameState(fi) = frameStateToSave;
         frameSyncPulse(fi) = frameSyncPulseToSave;
+        if binarySync
+            [syncCursor, bit, index, phase] = advanceCoPsSyncx( ...
+                sync,syncCursor,state == ex.states.GO && stimulus_active);
+            % Draw last: the code and stimulus are presented by the same flip.
+            Screen('FillRect',ex.setup.window, ...
+                sync.lowColor+bit*(sync.highColor-sync.lowColor),sync.patchRect);
+            frameSyncBit(fi) = bit;
+            frameSyncIndex(fi) = index;
+            frameSyncPhase(fi) = phase;
+            frameSyncPulse(fi) = phase == 1;
+        end
+        Screen('DrawingFinished', ex.setup.window);
         when = 0;
         if isfinite(lastVbl)
             when = lastVbl + 0.5 * frameInterval;
@@ -1480,7 +1527,19 @@ clear asyncFlipCleanup
 % blank screen at the end of trial
 Screen('FillRect', ex.setup.window, window_background_color);
 Screen('FillRect', ex.setup.window, texture_background_color, texture_background_rect);
-Screen('Flip', ex.setup.window);
+if binarySync, Screen('FillRect',ex.setup.window,sync.lowColor,sync.patchRect); end
+syncOffTime = Screen('Flip', ex.setup.window);
+% Capture the final optical edge while the ADC continues running in hardware.
+if binarySync && eyeOn
+    if rewOn
+        Datapixx('SetDoutValues',0);
+        Datapixx('RegWr');
+    end
+    if sync.captureTailSecs > 0
+        WaitSecs('UntilTime',syncOffTime+sync.captureTailSecs);
+    end
+    [~,trEye] = checkEyex(trEye,ex,pass_eye,freeViewing,lastEyePos,0,0,tolerance_scalar);
+end
 
 % Store trial information
 ex.Trials(ex.j).ID = fix(clock);
@@ -1550,6 +1609,12 @@ ex.Trials(ex.j).flip_info = flip_info(1:fi-1,:);
 ex.Trials(ex.j).frameStep = frameStep(1:fi-1);
 ex.Trials(ex.j).frameState = frameState(1:fi-1);
 ex.Trials(ex.j).frameSyncPulse = frameSyncPulse(1:fi-1);
+ex.Trials(ex.j).sync = sync;
+ex.Trials(ex.j).syncClock = syncClock;
+ex.Trials(ex.j).syncOffTime = syncOffTime;
+ex.Trials(ex.j).frameSyncBit = frameSyncBit(1:fi-1);
+ex.Trials(ex.j).frameSyncIndex = frameSyncIndex(1:fi-1);
+ex.Trials(ex.j).frameSyncPhase = frameSyncPhase(1:fi-1);
 ex.Trials(ex.j).frameStateLookup = ex.states;
 
 % -------------------------------------------------------------------------

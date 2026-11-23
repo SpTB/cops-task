@@ -6,6 +6,8 @@ function ex = runEx(eyeStr, overlayOn, pixOn, rewOn, eyeOn, skipQuest, options)
 %   runEx('test1', testTrials=5)
 %   runEx('test1', viewingDistanceCm=60, monitorWidthCm=53)
 %   runEx('test1', fullscreen=true)  % opt in to fullscreen
+%   runEx('t', syncMode='binary')  % optional frame-coded photodiode patch
+%   runEx('test1', syncMode='binary', syncFramesPerBit=2) % hardware-free preview
 
 arguments
     eyeStr {mustBeText} = 't' % calibration mode, or 'test1' for the portable mouse test
@@ -19,6 +21,9 @@ arguments
     options.monitorWidthCm (1,1) double {mustBePositive} = 50
     options.fullscreen (1,1) logical = false
     options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = [1280 720]
+    options.syncMode (1,1) string {mustBeMember(options.syncMode,["","goPulse","binary","off"])} = ""
+    options.syncFramesPerBit (1,:) double {mustBeInteger, mustBePositive, mustBeFinite} = []
+    options.syncSequence (1,:) double = []
 end
 
 dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn);
@@ -38,6 +43,12 @@ if dependencies.datapixxOn && ~Datapixx('Open')
 end
 
 ex = setDefaultsCoPs(ex);
+if strlength(options.syncMode) > 0, ex.exp.CoPs.sync.mode = char(options.syncMode); end
+if ~isempty(options.syncFramesPerBit)
+    validateattributes(options.syncFramesPerBit, {'numeric'}, {'scalar'});
+    ex.exp.CoPs.sync.framesPerBit = options.syncFramesPerBit;
+end
+if ~isempty(options.syncSequence), ex.exp.CoPs.sync.sequence = options.syncSequence; end
 
 if strcmp(dependencies.profile, 'test1')
     % Make the portable display geometry explicit before the host-specific
@@ -67,6 +78,8 @@ else
     ex = initDisplayx(ex );%can run initDisplayx for normal view
 end
 displayCleanup = onCleanup(@closeCoPsDisplayx); %#ok<NASGU>
+ex.exp.CoPs.sync = prepareCoPsSyncx(ex.exp.CoPs.sync, ...
+    Screen('GetFlipInterval', ex.setup.window));
 pause(1)
 
 if eyeOn

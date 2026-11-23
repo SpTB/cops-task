@@ -8,6 +8,10 @@ ctl.blockMeanTrials = 30;
 ctl.blockTransRange = 6; % integer uniform range: blockMeanTrials +/- this value
 ctl.rewPeakDistFromPrev = 5; % minimum consecutive-peak distance in visual degrees
 
+% Optional frame-coded photodiode patch; the legacy GO flash remains default.
+sync = struct('mode','goPulse','framesPerBit',1,'seed',1,'sequence',[], ...
+    'preambleSec',0.1,'gapSec',0.05,'physicalChannel',6,'captureTailSecs',0.1);
+
 % do a intro minisession for Kaki: 5 pur; 10 normal (lo thresh) 5 Null (lo thresh) 
 
 %drawRewPeak(6,10)
@@ -234,6 +238,7 @@ ex.exp.CoPs.pre = pre;
 ex.exp.CoPs.tut = tut;
 ex.exp.CoPs.pur = pur;
 ex.exp.CoPs.analysis = analysis;
+ex.exp.CoPs.sync = sync;
 end
 
 

@@ -24,6 +24,7 @@ writeMock(folder,'Screen',[
     "case 'getflipinterval', varargout={s.ifi};"
     "case {'fillrect','drawingfinished','drawtexture','drawdots','framerect','frameoval','drawline','drawtext','filloval'}"
     "    assert(isnan(s.pendingVbl),'FrameTimingTest:PendingDraw','Drew to a window with an unfinished flip.');"
+    "    s.drawLog{end+1}=struct('command',lower(command),'args',{varargin});"
     "    if strcmpi(command,'drawdots') && numel(varargin)>=4"
     "        xy=varargin{2}; colors=varargin{4};"
     "        assert(isvector(colors) || size(colors,2)==size(xy,2),'FrameTimingTest:DotColors','Overlay position/color counts differ.');"
@@ -39,6 +40,7 @@ writeMock(folder,'Screen',[
     "    assert(isnan(s.pendingVbl),'FrameTimingTest:PendingBegin','Submitted two pending flips.');"
     "    when=0; if numel(varargin)>1, when=varargin{2}; end"
     "    t=ceil((max(s.now,when)+1e-10)/s.ifi)*s.ifi;"
+    "    s.submittedDraws{end+1}=s.drawLog; s.drawLog={};"
     "    s.requests(end+1)=when; s.vbl(end+1)=t; s.pendingVbl=t; varargout={};"
     "case {'asyncflipcheckend','asyncflipend'}"
     "    if strcmpi(command,'AsyncFlipEnd'), s.endCalls=s.endCalls+1; end"
@@ -52,6 +54,7 @@ writeMock(folder,'Screen',[
     "    assert(isnan(s.pendingVbl),'FrameTimingTest:PendingFlip','Synchronous flip before pending flip was collected.');"
     "    when=0; if numel(varargin)>1, when=varargin{2}; end"
     "    t=ceil((max(s.now,when)+1e-10)/s.ifi)*s.ifi; s.now=t;"
+    "    s.finalDraws=s.drawLog; s.drawLog={}; s.finalVbl=t;"
     "    s.lastVbl=t; varargout={t,t,t,0,-1};"
     "otherwise, varargout=cell(1,nargout);"
     "end"
@@ -92,9 +95,44 @@ writeMock(folder,'WaitSecs',[
     "global COPS_FRAME_TIMING_TEST"
     "if isnumeric(varargin{1}), d=varargin{1};"
     "elseif strcmpi(varargin{1},'UntilTime')"
+    "    COPS_FRAME_TIMING_TEST.waitUntil=varargin{2};"
     "    COPS_FRAME_TIMING_TEST.now=max(COPS_FRAME_TIMING_TEST.now,varargin{2}); return;"
     "else, d=varargin{2}; end"
     "COPS_FRAME_TIMING_TEST.now=COPS_FRAME_TIMING_TEST.now+d;"
+    "end"]);
+writeMock(folder,'resetAdcBuffer',[
+    "function resetAdcBuffer(ex)"
+    "global COPS_FRAME_TIMING_TEST"
+    "assert(COPS_FRAME_TIMING_TEST.adcAllowed,'FrameTimingTest:UnexpectedADC','ADC must remain disabled.');"
+    "COPS_FRAME_TIMING_TEST.adcStart=COPS_FRAME_TIMING_TEST.now;"
+    "COPS_FRAME_TIMING_TEST.adcRate=ex.setup.adc.Rate; COPS_FRAME_TIMING_TEST.adcRead=0;"
+    "end"]);
+writeMock(folder,'Datapixx',[
+    "function varargout=Datapixx(command,varargin)"
+    "global COPS_FRAME_TIMING_TEST"
+    "assert(COPS_FRAME_TIMING_TEST.adcAllowed,'FrameTimingTest:UnexpectedADC','ADC must remain disabled.');"
+    "switch lower(command)"
+    "case 'regwrrd', varargout={};"
+    "case 'gettime', varargout={COPS_FRAME_TIMING_TEST.now+4900};"
+    "otherwise, error('FrameTimingTest:UnexpectedADC','Unexpected DataPixx command.');"
+    "end"
+    "end"]);
+writeMock(folder,'Eyelink',[
+    "function t=Eyelink(command,varargin)"
+    "global COPS_FRAME_TIMING_TEST"
+    "assert(COPS_FRAME_TIMING_TEST.adcAllowed && strcmpi(command,'TrackerTime'),'FrameTimingTest:UnexpectedEyeLink','Unexpected EyeLink access.');"
+    "t=COPS_FRAME_TIMING_TEST.now;"
+    "end"]);
+writeMock(folder,'checkEyex',[
+    "function [pass,trEye,pos]=checkEyex(trEye,ex,varargin)"
+    "global COPS_FRAME_TIMING_TEST"
+    "s=COPS_FRAME_TIMING_TEST; assert(s.adcAllowed,'FrameTimingTest:UnexpectedADC','ADC must remain disabled.');"
+    "n=1+floor((s.now-s.adcStart)*s.adcRate); count=n-s.adcRead;"
+    "if count>0"
+    "    idx=trEye.n+(1:count); trEye.v(:,idx)=zeros(numel(ex.setup.adc.Channels),count);"
+    "    trEye.t(idx)=s.adcStart+(s.adcRead:n-1)/s.adcRate+4900; trEye.n=trEye.n+count;"
+    "end"
+    "s.adcRead=n; s.lastDrainTime=s.now; COPS_FRAME_TIMING_TEST=s; pass=true; pos=[960 540];"
     "end"]);
 writeMock(folder,'getComputerName',[
     "function name=getComputerName"
@@ -222,18 +260,187 @@ verifyEqual(testCase,ex.setup.refreshRate,60);
 verifyEqual(testCase,intervals,repmat(1/120,size(intervals)),'AbsTol',1e-9);
 end
 
-function ex=runSimulatedTrial(testCase,rate,overloadAt,abortKey,scenario)
+function testBinaryPlaybackPreservesCadenceAndFastBehavioralPolling(testCase)
+for workload={'binaryLight','binaryHeavy'}
+    for rate=[60 120]
+        ex=runSimulatedTrial(testCase,rate,Inf,0,workload{1},binaryConfig(1));
+        trial=ex.Trials(1); intervals=goIntervals(trial);
+        verifyGreaterThan(testCase,numel(intervals),rate);
+        verifyEqual(testCase,intervals,repmat(1/rate,size(intervals)),'AbsTol',1e-9);
+        samples=trial.mousePositions(:,3);
+        samples=samples(samples>=trial.times.stimOn & samples<=trial.flip_info(end,1));
+        sampleRate=(numel(samples)-1)/(samples(end)-samples(1));
+        fprintf('Binary %s %g Hz display: GO polling %.1f Hz.\n',workload{1},rate,sampleRate);
+        if strcmp(workload{1},'binaryLight')
+            verifyGreaterThan(testCase,sampleRate,400);
+        else
+            % Heavy drawing consumes polling time without locking it to VBL.
+            verifyGreaterThan(testCase,sampleRate,2*rate);
+        end
+        verifyGreaterThan(testCase,numel(trial.scaledReward), ...
+            nnz(trial.frameState==trial.frameStateLookup.GO));
+        verifyDeadlinesUseActualVbl(testCase,trial,1/rate);
+        verifyBinaryMetadata(testCase,trial);
+    end
+end
+end
+
+function testBinaryPatchIsDrawnLastAndFinalBlankIsBlack(testCase)
+global COPS_FRAME_TIMING_TEST
+ex=runSimulatedTrial(testCase,120,Inf,0,'',binaryConfig(1));
+trial=ex.Trials(1);
+expectedRect=[1920-ex.synch.PSz 0 1920 ex.synch.PSz];
+verifyEqual(testCase,trial.sync.patchRect,expectedRect);
+draws=COPS_FRAME_TIMING_TEST.submittedDraws;
+verifyNumElements(testCase,draws,size(trial.flip_info,1));
+for idx=1:numel(draws)
+    ops=draws{idx};
+    assertGreaterThanOrEqual(testCase,numel(ops),2);
+    verifyEqual(testCase,ops{end}.command,'drawingfinished');
+    patch=ops{end-1};
+    verifyEqual(testCase,patch.command,'fillrect');
+    verifyEqual(testCase,patch.args{1},ex.setup.window);
+    verifyEqual(testCase,patch.args{3},expectedRect);
+    expectedColor=ex.idx.black+trial.frameSyncBit(idx)*(ex.idx.white-ex.idx.black);
+    verifyEqual(testCase,patch.args{2},expectedColor);
+end
+finalPatch=COPS_FRAME_TIMING_TEST.finalDraws{end};
+verifyEqual(testCase,finalPatch.command,'fillrect');
+verifyEqual(testCase,finalPatch.args{2},ex.idx.black);
+verifyEqual(testCase,finalPatch.args{3},expectedRect);
+verifyEqual(testCase,trial.syncOffTime,COPS_FRAME_TIMING_TEST.finalVbl,'AbsTol',1e-12);
+verifyTrue(testCase,all(trial.frameSyncBit(trial.frameSyncPhase==0)==0));
+end
+
+function testBinaryFramesPerBitAndCursorResetEachTrial(testCase)
+ex=runSimulatedTrial(testCase,120,Inf,0,'twoTrials',binaryConfig(2));
+for trial=ex.Trials
+    verifyBinaryMetadata(testCase,trial);
+    payload=find(trial.frameSyncPhase==3);
+    verifyGreaterThan(testCase,numel(payload),20);
+    indices=trial.frameSyncIndex(payload);
+    verifyEqual(testCase,indices,floor((0:numel(payload)-1)'/2)+1);
+    verifyEqual(testCase,indices(1),1);
+    verifyEqual(testCase,trial.frameSyncBit(payload(1)),double(trial.sync.sequence(1)));
+end
+first=ex.Trials(1); second=ex.Trials(2);
+a=first.frameSyncBit(first.frameSyncPhase>0);
+b=second.frameSyncBit(second.frameSyncPhase>0);
+n=min(numel(a),numel(b));
+verifyEqual(testCase,a(1:n),b(1:n));
+end
+
+function testBinaryAbortKeepsMetadataForEveryCompletedSubmittedFrame(testCase)
+global COPS_FRAME_TIMING_TEST
+ex=runSimulatedTrial(testCase,120,Inf,4,'binaryGoAbort',binaryConfig(1));
+trial=ex.Trials(1);
+verifyEqual(testCase,ex.quit,4);
+verifyGreaterThan(testCase,nnz(trial.frameSyncPhase==3),10);
+verifyBinaryMetadata(testCase,trial);
+verifyEqual(testCase,trial.flip_info(:,1),COPS_FRAME_TIMING_TEST.completed(:),'AbsTol',1e-12);
+verifyNumElements(testCase,trial.frameSyncBit,numel(COPS_FRAME_TIMING_TEST.requests));
+verifyTrue(testCase,isnan(COPS_FRAME_TIMING_TEST.pendingVbl));
+verifyGreaterThan(testCase,trial.syncOffTime,trial.flip_info(end,1));
+end
+
+function testBinaryShortSequenceIsRejectedBeforeSubmittingFrames(testCase)
+global COPS_FRAME_TIMING_TEST
+sync=binaryConfig(1); sync.sequence=[0 1];
+verifyError(testCase,@() runSimulatedTrial(testCase,120,Inf,0,'',sync), ...
+    'runTrialTaskCoPsx:SyncSequenceTooShort');
+verifyEmpty(testCase,COPS_FRAME_TIMING_TEST.requests);
+verifyEmpty(testCase,COPS_FRAME_TIMING_TEST.completed);
+end
+
+function testBinaryEyeRecordingCapturesClockAndFinalBlackTail(testCase)
+global COPS_FRAME_TIMING_TEST
+sync=binaryConfig(1); sync.captureTailSecs=.1;
+ex=runSimulatedTrial(testCase,120,Inf,0,'binaryEye',sync);
+trial=ex.Trials(1);
+verifyEqual(testCase,trial.inputSource,'eye');
+verifyGreaterThan(testCase,trial.Eye.n,500);
+verifyTrue(testCase,isfinite(trial.syncClock.ptbSec));
+verifyTrue(testCase,isfinite(trial.syncClock.datapixxSec));
+verifyGreaterThanOrEqual(testCase,trial.syncClock.uncertaintySec,0);
+verifyEqual(testCase,COPS_FRAME_TIMING_TEST.waitUntil,trial.syncOffTime+.1,'AbsTol',1e-12);
+verifyGreaterThanOrEqual(testCase,COPS_FRAME_TIMING_TEST.lastDrainTime,trial.syncOffTime+.1);
+sampleEnd=trial.Eye.t(trial.Eye.n)-trial.syncClock.datapixxSec+trial.syncClock.ptbSec;
+verifyGreaterThanOrEqual(testCase,sampleEnd,trial.syncOffTime+.1-1/ex.setup.adc.Rate- ...
+    trial.syncClock.uncertaintySec);
+verifyBinaryMetadata(testCase,trial);
+end
+
+function testLegacyGoPulseRemainsTopRightAndOffDisablesMarker(testCase)
+global COPS_FRAME_TIMING_TEST
+for mode={'goPulse','off'}
+    ex=runSimulatedTrial(testCase,120,Inf,0,'',struct('mode',mode{1}));
+    trial=ex.Trials(1);
+    verifyEqual(testCase,string(trial.sync.mode),string(mode{1}));
+    rect=[1920-ex.synch.PSz 0 1920 ex.synch.PSz];
+    patchCount=0;
+    for frame=COPS_FRAME_TIMING_TEST.submittedDraws
+        ops=frame{1};
+        for idx=1:numel(ops)
+            op=ops{idx};
+            if strcmp(op.command,'fillrect') && numel(op.args)>=3 && isequal(op.args{3}(:)',rect)
+                patchCount=patchCount+1;
+                verifyEqual(testCase,op.args{2},ex.synch.Col);
+            end
+        end
+    end
+    if strcmp(mode{1},'goPulse')
+        verifyGreaterThan(testCase,patchCount,0);
+        verifyEqual(testCase,nnz(trial.frameSyncPulse),patchCount);
+    else
+        verifyEqual(testCase,patchCount,0);
+        verifyFalse(testCase,any(trial.frameSyncPulse));
+    end
+end
+end
+
+function verifyBinaryMetadata(testCase,trial)
+n=size(trial.flip_info,1);
+verifyNumElements(testCase,trial.frameSyncBit,n);
+verifyNumElements(testCase,trial.frameSyncIndex,n);
+verifyNumElements(testCase,trial.frameSyncPhase,n);
+verifyTrue(testCase,all(isfinite(trial.flip_info(:,1))));
+active=trial.frameState==trial.frameStateLookup.GO & isfinite(trial.frameStep);
+verifyEqual(testCase,trial.frameSyncPhase>0,active);
+verifyEqual(testCase,trial.frameSyncPulse,trial.frameSyncPhase==1);
+phases=trial.frameSyncPhase(active);
+verifyEqual(testCase,nnz(phases==1),trial.sync.preambleFrames);
+verifyEqual(testCase,nnz(phases==2),trial.sync.gapFrames);
+payload=trial.frameSyncPhase==3;
+indices=trial.frameSyncIndex(payload);
+expected=double(trial.sync.sequence(indices));
+verifyEqual(testCase,trial.frameSyncBit(payload),expected(:));
+end
+
+function sync=binaryConfig(framesPerBit)
+sync=struct('mode','binary','framesPerBit',framesPerBit, ...
+    'sequence',logical(repmat([1 0 0 1 1 0 1],1,1024)));
+end
+
+function ex=runSimulatedTrial(testCase,rate,overloadAt,abortKey,scenario,syncConfig)
 if nargin<4, abortKey=0; end
 if nargin<5, scenario=''; end
+if nargin<6, syncConfig=struct(); end
 global COPS_FRAME_TIMING_TEST
 COPS_FRAME_TIMING_TEST=struct('now',50,'ifi',1/rate,'drawCost',.0008, ...
     'keyboardCost',.0004,'overloadAt',overloadAt,'overloaded',false, ...
     'requests',[],'vbl',[],'completed',[],'pendingVbl',NaN,'lastVbl',0, ...
     'endCalls',0,'abortAfter',Inf,'abortKey',abortKey, ...
     'requestHeat',strcmp(scenario,'heat'),'heatRequested',false,'heatCalls',0, ...
-    'heatWhilePending',false,'injectError',strcmp(scenario,'error'),'errorInjected',false);
+    'heatWhilePending',false,'injectError',strcmp(scenario,'error'),'errorInjected',false, ...
+    'drawLog',{{}},'submittedDraws',{{}},'finalDraws',{{}},'finalVbl',NaN, ...
+    'adcAllowed',strcmp(scenario,'binaryEye'),'adcStart',NaN,'adcRead',0, ...
+    'adcRate',500,'waitUntil',NaN,'lastDrainTime',NaN);
 if abortKey>0, COPS_FRAME_TIMING_TEST.abortAfter=10; end
+if strcmp(scenario,'binaryLight'), COPS_FRAME_TIMING_TEST.drawCost=.0001; end
 ex=fixture(rate);
+for name=fieldnames(syncConfig)'
+    ex.exp.CoPs.sync.(name{1})=syncConfig.(name{1});
+end
 if strcmp(scenario,'earlyBinocular')
     ex.setup.inputMode='eye'; ex.setup.stereo.Display=true;
     ex.eyeCal.LXPos=zeros(1,4);
@@ -243,12 +450,23 @@ elseif strcmp(scenario,'heat')
     ex.exp.nreps=2; ex.finish=2; ex.exp.total_nreps=2;
     ex.stim.seq=repmat(ex.stim.seq,1,2);
 elseif strcmp(scenario,'nominalMismatch'), ex.setup.refreshRate=rate/2;
+elseif strcmp(scenario,'binaryGoAbort'), COPS_FRAME_TIMING_TEST.abortAfter=250;
+elseif strcmp(scenario,'binaryEye'), ex.setup.inputMode='eye';
+elseif strcmp(scenario,'twoTrials')
+    ex.exp.nreps=2; ex.finish=2; ex.exp.total_nreps=2;
+    ex.stim.seq=repmat(ex.stim.seq,1,2);
 end
 trialIdx=ex.j;
 original=pwd; cd(testCase.TestData.folder);
 cleanup=onCleanup(@() cd(original)); %#ok<NASGU>
-evalc('ex=runTrialTaskCoPsx(ex,false,false,false);');
-verifyEqual(testCase,ex.j,trialIdx+1);
+eyeOn=strcmp(scenario,'binaryEye');
+evalc('ex=runTrialTaskCoPsx(ex,false,eyeOn,false);');
+if strcmp(scenario,'twoTrials')
+    evalc('ex=runTrialTaskCoPsx(ex,false,false,false);');
+    verifyEqual(testCase,ex.j,trialIdx+2);
+else
+    verifyEqual(testCase,ex.j,trialIdx+1);
+end
 verifyEqual(testCase,ex.quit,abortKey);
 verifyEqual(testCase,ex.Trials(trialIdx).displayRefreshIntervalSec,1/rate,'AbsTol',1e-12);
 if abortKey==0, verifyTrue(testCase,isfinite(ex.Trials(trialIdx).times.stimOn)); end
@@ -291,7 +509,8 @@ end
 
 function clearMocks()
 clear GetSecs Screen KbCheck KbName GetMouse WaitSecs getComputerName ...
-    CenterRectOnPointd makeStimulusCoPsx gazeHeat drawnow
+    CenterRectOnPointd makeStimulusCoPsx gazeHeat drawnow ...
+    resetAdcBuffer Datapixx Eyelink checkEyex
 end
 
 function writeMock(folder,name,lines)
