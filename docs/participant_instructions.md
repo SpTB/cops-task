@@ -81,8 +81,8 @@ After calibration the flow is:
    `instr.targetVisibility` (default 1).
 6. Separate practice feedback.
 7. Ready page explaining automatic trials, configured self-paced breaks, and
-   asking the participant to keep their head still and press Q if they have
-   questions, now or during any break, before pressing SPACE to start the main task.
+   asking the participant to keep their head still before pressing SPACE to
+   start the main task.
 8. After the task, an outro showing earned points, average points per task
    trial, the cash bonus, and SPACE to continue.
 9. An optional participant feedback text box asking what worked well, what was
@@ -148,9 +148,10 @@ the page describes automatic trials without promising scheduled breaks.
 
 ## Questions without head movement
 
-Every instruction page, practice feedback, and scheduled between-trial pause
-offers Q for questions and reminds the participant to keep their head still.
-Q remains available on the final outro, without a displayed question prompt.
+Q remains available on every instruction page, practice feedback, scheduled
+between-trial pause, and final outro. Participant screens do not display
+instructions to press Q for questions. The ready page retains its reminder
+to keep the head still throughout the task.
 Q is read from the participant keyboard; Q on a separate
 experimenter keyboard does not trigger it. A held Q produces one request until
 released and pressed again. Q does not advance the page; SPACE still requires

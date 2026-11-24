@@ -174,8 +174,7 @@ ex.totalPoints = 4;
 ex.exp.CoPs.pauseSchedule.afterTrial(2) = true;
 ex = showFeedback(testCase, ex);
 verifyEqual(testCase, COPS_FEEDBACK_TEST.messages, ...
-    {sprintf(['Previous trial: 2 points\n\nTotal: 4 points\n\nPress SPACE to continue\n\n' ...
-    'To ask a question, press Q and keep your head still.'])});
+    {sprintf('Previous trial: 2 points\n\nTotal: 4 points\n\nPress SPACE to continue')});
 verifyEqual(testCase, [ex.Trials(2).pointsFeedbackOn ex.Trials(2).pointsFeedbackOff], [101 102]);
 verifyFalse(testCase, ex.Trials(2).endScreenAcknowledged);
 end
@@ -208,8 +207,7 @@ ex.Trials(1).pointsEarned = 2.9;
 ex.Trials(2).pointsEarned = 2.9;
 ex = showFeedback(testCase, ex);
 verifyEqual(testCase, COPS_FEEDBACK_TEST.messages, ...
-    {sprintf(['Previous trial: 2 points\n\nTotal: 4 points\n\nPress SPACE to continue\n\n' ...
-    'To ask a question, press Q and keep your head still.'])});
+    {sprintf('Previous trial: 2 points\n\nTotal: 4 points\n\nPress SPACE to continue')});
 verifyEqual(testCase, ex.totalPoints, 5.8);
 end
 
@@ -289,8 +287,7 @@ ex.exp.CoPs.ctl.advance_trial_with_space = false;
 ex.exp.CoPs.rew.points_feedback_on = false;
 ex = showFeedback(testCase,ex);
 verifyEqual(testCase,COPS_FEEDBACK_TEST.messages,{sprintf(['Practice trial: 2 points\n\n' ...
-    'Practice points do not count toward your winnings.\n\nPress SPACE to continue\n\n' ...
-    'To ask a question, press Q and keep your head still.'])});
+    'Practice points do not count toward your winnings.\n\nPress SPACE to continue'])});
 verifyEqual(testCase,ex.Trials(1).trialAdvanceWaitOn,101);
 end
 
@@ -346,11 +343,10 @@ for kind={'points','blank','practice','outro'}
     ex=showFeedback(testCase,ex);
     verifyEqual(testCase,COPS_FEEDBACK_TEST.questions,1);
     verifyNumElements(testCase,ex.Trials(ex.j).pauseQuestionRequests,1);
+    verifyFalse(testCase,contains(lower(COPS_FEEDBACK_TEST.messages{1}),'press q'));
     if strcmp(kind{1},'outro')
         verifyFalse(testCase,contains(COPS_FEEDBACK_TEST.messages{1},'To ask a question'));
         verifyEqual(testCase,ex.Outro.questionRequests,ex.Trials(ex.j).pauseQuestionRequests);
-    else
-        verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'press Q and keep your head still');
     end
 end
 end

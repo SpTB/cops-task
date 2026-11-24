@@ -285,13 +285,13 @@ verifyEqual(testCase,graph.background_noise_lvl,1);
 verifyFalse(testCase,isfield(graph,'nullBackgroundGray'));
 end
 
-function testReadyCopyUsesPauseSettingsAndAsksForQuestions(testCase)
+function testReadyCopyUsesPauseSettingsAndHeadStillReminder(testCase)
 ctl=struct('between_trial_pause_mean',5,'between_trial_pause_range',1);
 [body,prompt]=formatCoPsInstructionTextx(struct(),'ready',ctl);
 verifySubstring(testCase,body,'average of 5 trials');
 verifySubstring(testCase,body,'range from 4 to 6');
 verifySubstring(testCase,body,'Breaks are self-paced');
-verifySubstring(testCase,body,'press Q now');
+verifyFalse(testCase,contains(lower(body),'press q'));
 verifySubstring(testCase,body,'keep your head still throughout the task');
 verifyEqual(testCase,prompt,'Press the SPACE BAR to start the main task.');
 ctl.between_trial_pause_range=0;

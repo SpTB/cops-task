@@ -79,7 +79,7 @@ ctl.step_size_mult = .4; %/2% 10hz: 1, 20hz: .6; 30Hz: .4
 % for controlling step size (.6 for 30Hz is roughly equal 1 for 10Hz in terms of area explored) General rule: dx_mult=sqrt(speed_mult)
 
 timing.wait_secs = 1 / timing.waitHz; % derived legacy field for older analysis code
-ctl.nsteps = 18*timing.waitHz;
+ctl.nsteps = 18*timing.waitHz; % controls length of trial
 %%%
 graph.target_visibilityNull=1; %for no background
 %graph.targetVisibilityNull = graph.target_visibilityNull;

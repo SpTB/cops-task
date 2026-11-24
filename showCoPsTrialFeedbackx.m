@@ -54,7 +54,6 @@ elseif showPoints
 else
     feedbackText = 'Press SPACE to start the next trial';
 end
-feedbackText = sprintf('%s\n\nTo ask a question, press Q and keep your head still.',feedbackText);
 
 setup = ex.setup;
 window = setup.window;
