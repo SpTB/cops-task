@@ -9,7 +9,7 @@ GO-onset marker; binary coding is optional.
 | `binary` | White GO marker, black gap, then a saved sequence of black/white bits. |
 | `off` | No GO marker or binary code. |
 
-Both active modes use main's existing **top-right** patch (120 pixels by default), so switching
+Both active modes use main's existing **top-right** patch (60 × 60 pixels by default), so switching
 protocols does not require moving the sensor. Binary levels use `ex.idx.black`
 and `ex.idx.white`; the patch rectangle and levels are saved in `trial.sync`.
 

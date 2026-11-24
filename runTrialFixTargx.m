@@ -51,7 +51,7 @@ showMouseTrace = isfield(ex, 'valid') && isfield(ex.valid, 'showMouseTrace') && 
     logical(ex.valid.showMouseTrace);
 
 % initial color assignments------------------------------------
-fpCol = ex.idx.bg;
+fpCol = ex.valid.background_color;
 t1Col = ex.idx.bg;
 t2Col = ex.idx.bg;
 targWinCol = ex.idx.bg;
@@ -138,7 +138,12 @@ ex.tocsGETMOUSE{ex.j} = [];
 ex.stim.vals.framecnt = 0;
 
 % MAKE STIMULUS AND REFRESH BACKGROUND-----------------------------------
+% The shared stimulus helpers also flip a blank frame. Keep that frame at
+% validation luminance, then restore the task's normal background setting.
+taskBackground = ex.idx.bg_lum;
+ex.idx.bg_lum = ex.valid.background_color;
 [ex,RDS]=makeStimulus(ex);
+ex.idx.bg_lum = taskBackground;
 StimStart = NaN*ones(1,ceil(ex.setup.refreshRate*ex.fix.duration));
 
 % new: rotation setting
@@ -162,6 +167,7 @@ end
 % DRAW OVERLAY ITEMS THAT ARE FIXED DURING THE TRIAL --------------------
 % (RF, FP frame, helper lines, correct target, if needed)
 % draw these first to save timing during the while loop
+clearCoPsCalibrationBackgroundx(ex, ex.valid.background_color);
 drawOverlayHelperLines(ex);
 drawOverlayFrames(ex,ex.targ.Pos(1,:));
 
@@ -275,7 +281,7 @@ while state ~= ex.states.BREAKFIX && state~=ex.states.REWARD &&...
         dotCol =  [fpCol*ones(1,3)];
         
         %% draw eye dots, mouse position
-        Screen('FillRect', ex.setup.window, ex.valid.background_color); % xx new: background color
+        clearCoPsCalibrationBackgroundx(ex, ex.valid.background_color, false);
         Screen('Drawdots',ex.setup.overlay,olPos',olPSz',olColBinoc');
         
         %% draw FP,target and eye dots
@@ -437,7 +443,8 @@ while state ~= ex.states.BREAKFIX && state~=ex.states.REWARD &&...
             strcmpi(KbName(keyCode),'c'), strcmpi(KbName(keyCode),'l')])>=3
         ex.extras.line = [];
         % center Eye when 'x' and 'y' are pressed
-    elseif sum([strcmpi(KbName(keyCode),'z'), ...
+    elseif ~(isfield(ex.valid, 'freezeCalibration') && ex.valid.freezeCalibration) && ...
+        sum([strcmpi(KbName(keyCode),'z'), ...
             strcmpi(KbName(keyCode),'x')]) >=2
         % to make sure we only re-center once per keyboard press
         if GetSecs - centerEye_t0 > .5
@@ -462,7 +469,9 @@ sendStrobe(ex.strobe.TRIAL_END)
 
 
 % blank screen at the end of trial, close offscreen stimulus windows----
+ex.idx.bg_lum = ex.valid.background_color;
 ex=closeStimulus(ex);
+ex.idx.bg_lum = taskBackground;
 
 
 % -------------------------------------------------------------------------

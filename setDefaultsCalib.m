@@ -12,7 +12,7 @@ calib.distance_scaling = 1; % target locations
 calib.initGain = 400; %'kaki':300; 'fullNew': 500
 calib.avgain = 0; % whether to average gain vals across the two eyes
 calib.yOffset = 0; % how much to add to RY0 and LY0 at the end
-calib.background_color = 0; % 0: black, 255: white (useless)
+calib.background_color = 80; % 0: black, 255: white (useless)
 calib.validate = 1; % whether to follow calibration with validation
 calib.file =''%'/home/vpixx/Desktop/ka.mat' % only validates if file provided
 %'/home/vpixx/data/lychee/2026.03.18/ly_15.33.EyeCal/ly_15.33.EyeCal.mat'

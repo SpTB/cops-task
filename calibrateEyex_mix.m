@@ -74,7 +74,7 @@ else
     ex.fix.PSz = cal.Psz;
     
     % Background color is set here
-    Screen('FillRect', ex.setup.window,cal.background_color);%ex.idx.bg_lum);
+    clearCoPsCalibrationBackgroundx(ex, cal.background_color);
     
     Screen('Flip', ex.setup.window);
     disp('click mouse on command window')
@@ -84,6 +84,7 @@ else
     KbWait ; % wait for subject to be ready
     pause(.3)
     resetAdcBuffer(ex);
+    clearCoPsCalibrationBackgroundx(ex, cal.background_color);
     Screen('SelectStereoDrawBuffer', ex.setup.window, 0);
     Screen('Drawdots',ex.setup.window,ex.fix.PCtr',ex.fix.PSz',ex.idx.white); % draw FP
     
@@ -533,7 +534,7 @@ olPSz = [ceil(ex.setup.eyePSz/2)*ones(1,2), ex.setup.eyePSz]; % eye (R,L,B)
 
 fpPos = ex.fix.PCtr+ex.targ.Pos(1,:);
 fpCol = ex.idx.bg * ones(1,3);
-bgColor = ones(1,3) * ex.idx.bg;
+bgColor = ex.calib.background_color;
 
 nBuffers = 10^6;
 v = cell(1,nBuffers);
@@ -552,6 +553,7 @@ keyIsDown = false;
 i = 0;
 waitframes = 10;
 ifi = Screen('GetFlipInterval',ex.setup.window);
+clearCoPsCalibrationBackgroundx(ex, bgColor);
 vbl = Screen('Flip',ex.setup.window);
 
 rotStepDeg = ex.calib.rotSpeedDegPerSec * waitframes * ifi; % new: rotation speed
@@ -609,11 +611,7 @@ while ~keyIsDown && i <= nBuffers
     olPos = [p, mean(p,2)];
     
     % background
-    if isempty(ex.setup.overlay)
-        Screen('FillRect', ex.setup.window, bgColor);
-    else
-        Screen('FillRect', ex.setup.overlay, bgColor);
-    end
+    clearCoPsCalibrationBackgroundx(ex, bgColor);
     
     % make sizes and colors match number of dots in olPos
     if sizev(1)<4
@@ -674,11 +672,7 @@ if hasCalibImage
 end
 
 
-if isempty(ex.setup.overlay)
-    Screen('FillRect',ex.setup.window,bgColor);
-else
-    Screen('FillRect',ex.setup.overlay,bgColor);
-end
+clearCoPsCalibrationBackgroundx(ex, bgColor);
 Screen('Flip',ex.setup.window);
 
 v = cell2mat(v(1:i));

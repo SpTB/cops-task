@@ -8,6 +8,8 @@ function ex = runEx(eyeStr, overlayOn, pixOn, rewOn, eyeOn, skipQuest, options)
 %   runEx('test1', fullscreen=true)  % opt in to fullscreen
 %   runEx('t', syncMode='binary')  % optional frame-coded photodiode patch
 %   runEx('test1', syncMode='binary', syncFramesPerBit=2) % hardware-free preview
+%   runEx('t', calibrationTransitionCheck=true) % centre check, then exit
+%   runEx('t', calibrationValidationCheck=true) % centre checks + six validation trials
 
 arguments
     eyeStr {mustBeText} = 't' % calibration mode, or 'test1' for the portable mouse test
@@ -21,13 +23,21 @@ arguments
     options.monitorWidthCm (1,1) double {mustBePositive} = 50
     options.fullscreen (1,1) logical = false
     options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = [1280 720]
-    options.syncMode (1,1) string {mustBeMember(options.syncMode,["","goPulse","binary","off"])} = ""
+    options.syncMode (1,1) string {mustBeMember(options.syncMode,["","goPulse","binary","off"])} = "binary"
     options.syncFramesPerBit (1,:) double {mustBeInteger, mustBePositive, mustBeFinite} = []
     options.syncSequence (1,:) double = []
+    options.calibrationTransitionCheck (1,1) logical = false
+    options.calibrationValidationCheck (1,1) logical = false
 end
 
 taskRoot = fileparts(mfilename('fullpath'));
 addpath(fullfile(taskRoot, 'helpers'), '-begin');
+calibrationCheck = options.calibrationTransitionCheck || options.calibrationValidationCheck;
+if calibrationCheck && ...
+        (~strcmpi(eyeStr, 't') || ~eyeOn || ~pixOn)
+    error('CoPs:CalibrationTransitionMode', ...
+        'The calibration transition check requires mode t, eyeOn=true and pixOn=true.');
+end
 dependencies = resolveCoPsRunDependenciesx(eyeStr, pixOn, eyeOn, rewOn);
 pixOn = dependencies.pixOn;
 eyeOn = dependencies.eyeOn;
@@ -94,6 +104,10 @@ if eyeOn
     % ex.idx.bg = 0; % black test
     ex.calib = setDefaultsCalib(); % default eye calibration settings
     ex.valid = setDefaultsValid(); % default eye validation settings
+    if calibrationCheck
+        ex.calib.transitionCheck = true;
+        ex.calib.validationCheck = options.calibrationValidationCheck;
+    end
     ex = resolveCalibrationValidationDisplaySizes(ex);
 
     switch lower(eyeStr)
@@ -165,6 +179,11 @@ if eyeOn
             end
 
         otherwise
+    end
+    if calibrationCheck
+        fprintf('Calibration transition check finished. Results: %s\n', ...
+            ex.calibrationTransition.outputDir);
+        return
     end
 end
 

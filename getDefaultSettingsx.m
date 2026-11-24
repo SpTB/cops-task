@@ -585,7 +585,7 @@ ex.fix.searchW = 200; % search window width for ex.freeViewing=2 in pixels
 ex.fix.searchH = 200; % search window height for ex.freeViewing=2 in pixels
 ex.fix.SSz = 46; %deg2pixel(2,ex.setup); % surround of the fixation
 % synch pulse for photodiode (white point in top right corner of screen)
-ex.synch.PSz = 120; % use an even number
+ex.synch.PSz = 60; % square side in pixels (use an even number)
 ex.synch.Col = ex.idx.white;
 
 % target parameters

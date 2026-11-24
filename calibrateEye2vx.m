@@ -6,6 +6,10 @@ end
 ex = resolveCalibrationValidationDisplaySizes(ex);
 val = ex.valid;
 cal = ex.calib;
+validationPasses = [];
+if cal.validate
+    validationPasses = localValidationPasses(val, cal);
+end
 if ~isfield(cal, 'signedGain') || isempty(cal.signedGain)
     cal.signedGain = true;
 end
@@ -74,7 +78,7 @@ else
     ex.fix.PSz = cal.Psz;
     
     % Background color is set here
-    Screen('FillRect', ex.setup.window,cal.background_color);%ex.idx.bg_lum);
+    clearCoPsCalibrationBackgroundx(ex, cal.background_color);
     
     Screen('Flip', ex.setup.window);
     disp('click mouse on command window')
@@ -84,6 +88,7 @@ else
     KbWait ; % wait for subject to be ready
     pause(.3)
     resetAdcBuffer(ex);
+    clearCoPsCalibrationBackgroundx(ex, cal.background_color);
     Screen('SelectStereoDrawBuffer', ex.setup.window, 0);
     Screen('Drawdots',ex.setup.window,ex.fix.PCtr',ex.fix.PSz',ex.idx.white); % draw FP
     
@@ -288,6 +293,12 @@ else
     
 end
 
+% Diagnostic mode stops before normal validation and task acquisition.
+if isfield(cal, 'transitionCheck') && cal.transitionCheck
+    ex.calibrationTransition = runCoPsCalibrationTransitionCheckx(ex);
+    return
+end
+
 % extra valid settings here...
 %ex.fix.WinW = 0; xx ????
 ex.fix.duration = val.fixDur;
@@ -350,14 +361,15 @@ end
 %% validation
 if cal.validate
     eyeCal = ex.eyeCal;
-    skipFirstValidation = isfield(cal, 'file') && strlength(string(cal.file)) > 0;
-    if ~skipFirstValidation
+    if ismember(1, validationPasses)
         [ex, eyeCal] = runValidationPassLocal(ex, val, pos, val.targetWin, eyeCal);
     end
-    if ex.quit ~= 4
+    if ex.quit ~= 4 && ismember(2, validationPasses)
         [ex, eyeCal] = runValidationPassLocal(ex, val, pos2, val.targetWin2, eyeCal);
     end
-    ex.eyeCal = eyeCal;
+    if isfield(val, 'update') && val.update
+        ex.eyeCal = eyeCal;
+    end
 end
 
 cur_dir = pwd;
@@ -441,6 +453,25 @@ for i=1:length(eyeFields)
     end
 end
 
+end
+
+function passes = localValidationPasses(val, cal)
+if isfield(val, 'passes')
+    passes = val.passes;
+else
+    % Preserve the historical choice for callers without the new setting.
+    passes = [1 2];
+    if isfield(cal, 'file') && strlength(string(cal.file)) > 0
+        passes = 2;
+    end
+end
+if isnumeric(passes) && isreal(passes) && isvector(passes)
+    passes = double(passes(:)');
+    if isequal(passes, [1 2]) || isequal(passes, 1) || isequal(passes, 2)
+        return
+    end
+end
+error('CoPs:InvalidValidationPasses', 'valid.passes must be [1,2], 1, or 2.');
 end
 
 function pos = localValidationGridPx(offsetsDeg, distanceScaling, setup)
@@ -608,7 +639,7 @@ olPSz = [ceil(ex.setup.eyePSz/2)*ones(1,2), ex.setup.eyePSz]; % eye (R,L,B)
 
 fpPos = ex.fix.PCtr+ex.targ.Pos(1,:);
 fpCol = ex.idx.bg * ones(1,3);
-bgColor = ones(1,3) * ex.idx.bg;
+bgColor = ex.calib.background_color;
 
 nBuffers = 10^6;
 v = cell(1,nBuffers);
@@ -627,6 +658,7 @@ keyIsDown = false;
 i = 0;
 waitframes = 10;
 ifi = Screen('GetFlipInterval',ex.setup.window);
+clearCoPsCalibrationBackgroundx(ex, bgColor);
 vbl = Screen('Flip',ex.setup.window);
 
 rotStepDeg = ex.calib.rotSpeedDegPerSec * waitframes * ifi; % new: rotation speed
@@ -685,11 +717,7 @@ while ~keyIsDown && i <= nBuffers
     olPos = [p, mean(p,2)];
     
     % background
-    if isempty(ex.setup.overlay)
-        Screen('FillRect', ex.setup.window, bgColor);
-    else
-        Screen('FillRect', ex.setup.overlay, bgColor);
-    end
+    clearCoPsCalibrationBackgroundx(ex, bgColor);
     
     % make sizes and colors match number of dots in olPos
     if sizev(1)<4
@@ -750,11 +778,7 @@ if hasCalibImage
 end
 
 
-if isempty(ex.setup.overlay)
-    Screen('FillRect',ex.setup.window,bgColor);
-else
-    Screen('FillRect',ex.setup.overlay,bgColor);
-end
+clearCoPsCalibrationBackgroundx(ex, bgColor);
 Screen('Flip',ex.setup.window);
 
 v = cell2mat(v(1:i));
