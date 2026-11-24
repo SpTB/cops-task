@@ -4,14 +4,14 @@ ex.exp.CoPs.instrOn = 1; % three instruction screens + two practice trials
 ex.exp.CoPs.fbOn = true; % optional participant feedback screen after the bonus summary
 % Reward-peak blocks, shared with main's rewSwitches task.
 ctl.jointBlocks = true; % false keeps one center and uses exp.nreps
-ctl.numBlocks = 3;
-ctl.blockMeanTrials = 50;
+ctl.numBlocks = 1;
+ctl.blockMeanTrials = 150;
 ctl.blockTransRange = 6; % integer block length: mean +/- range
 ctl.rewPeakDistFromPrev = 5; % minimum consecutive-peak distance in degrees
 
 pay.minPointsPerTrial = 3; % this average earns zero bonus; higher averages earn more
 pay.maxPointsPerTrial = 25; % this average or higher earns the maximum bonus
-pay.max_bonus_dollar = 25; % maximum bonus per nominal hour (trials_per_hour paid trials)
+pay.max_bonus_dollar = 20; % maximum bonus per nominal hour (trials_per_hour paid trials)
 pay.trials_per_hour = 180; % trial-count reference for scaling the session bonus cap
 pay.transform = 'linear'; % 'linear' or 'logit' (normalized inverse-logit / sigmoid)
 pay.logitSlope = 10; % steepness of the S-curve; used only for 'logit'
@@ -56,9 +56,9 @@ rew.soundOn = true; % reward-threshold cue; controlled by runEx soundOn option
 
 
 %thresholding
-rew.threshold = 250; % kaki: 250->260bler; Lychee: 250 (at waitHz=20/30)
-rew.threshold_noiseNull=325;%kaki: 300; Lychee: 325
-rew.threshold_noise0 = 250;%kaki:300; Lychee: 350 % threshold for fixed-background (noise=0) trials
+rew.threshold = 150; % kaki: 250->260bler; Lychee: 250 (at waitHz=20/30)
+rew.threshold_noiseNull=150;%kaki: 300; Lychee: 325
+rew.threshold_noise0 = 150;%kaki:300; Lychee: 350 % threshold for fixed-background (noise=0) trials
 %0.8402, 0.5661
 rew.gauss_center_free = true; % true: sample free [x y] center within current center radius
 rew.gauss_center_coords = [0.8099  0.6289]; % resolved [x y] normalized coords when gauss_center_free=true
@@ -88,7 +88,7 @@ graph.target_visibility =[1,.9,.8,.7,.6];
 graph.sequenceMode_vis = false; % true: target_visibility values are presented in listed order, cycling as needed
 
 ctl.target_num = 2; % scalar or vector; e.g. [1 2 2 2] gives 25% single-target trials
-ctl.target_numNULL = 2;%[1,2];
+ctl.target_numNULL = [1,2];
 %kaki:    desert4, river3, ice2,river2(?)
 % lychee: desert4, river3, sea1, river1,
 % OUT: water1, desert1, desert3, ice1, ice3,river2

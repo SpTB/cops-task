@@ -2,13 +2,15 @@ function ex = runEx(eyeStr, varargin)
 % Run the CoPs task.
 %
 % usage examples:
-%   runEx() native eyelink gaze and tracker calibration (default)
-%   runEx('t', filePrefix="P001") % save under <data root>/P001/<date>/
-%   runEx('t', 0) disable the experimenter overlay
-%   runEx('t', 1, 1) windowed desktop overlay with DataPixx enabled
-%   runEx('t', 1, 1, overlayScreen=0, overlayWindowSizePx=[960 540])
-%   runEx('t', eyeSource='analog') legacy analog eye calibration
-%   runEx('t', nativeValidation=false) save tracker calibration, skip custom validation
+%   runEx() normal human run, equivalent to runEx('h') (default)
+%   runEx('h', filePrefix="P001") % save under <data root>/P001/<date>/
+%   runEx('h', 0) disable the experimenter overlay
+%   runEx('h', 1, 1) windowed desktop overlay with DataPixx enabled
+%   runEx('h', 1, 1, overlayScreen=0, overlayWindowSizePx=[960 540])
+%   runEx('h', eyeSource='analog') legacy analog eye calibration
+%   runEx('h', nativeValidation=false) save tracker calibration, skip custom validation
+%   runEx('t') full task for solo testing; no eye tracking/calibration/validation
+%   runEx('t', 1, 0) solo test with DataPixx strobes disabled
 %   runEx('test1')  % fullscreen mouse test
 %   runEx('test1', 0)  % disable the experimenter overlay
 %   runEx('test1', overlayOn=true, overlayScreen=0)
@@ -28,7 +30,7 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('mouse_mini', syncMode='binary')  % preview a frame-coded photodiode patch
 %   runEx('test1', syncMode='binary', photodiodeRecord=true, photodiodeSampleRate=2000)
 % See docs/photodiode_sync.md before using photodiode acquisition on the rig.
-%   runEx('t', participantKeyboard=participantID, experimenterKeyboard=operatorID)
+%   runEx('h', participantKeyboard=participantID, experimenterKeyboard=operatorID)
 % Separate keyboards require Linux/X11; omit both IDs for shared-keyboard testing.
 %   runEx('test1', fullscreen=false)  % use a window with test1 settings
 % overlayOn can be the second positional argument or a name-value option
@@ -40,7 +42,7 @@ function ex = runEx(eyeStr, varargin)
 addpath(fullfile(fileparts(mfilename('fullpath')), 'helpers'), '-begin');
 
 if nargin == 0
-    eyeStr = 't';
+    eyeStr = 'h';
 end
 ex = runCoPsWithOptions(eyeStr, varargin{:});
 end
@@ -48,7 +50,7 @@ end
 
 function ex = runCoPsWithOptions(eyeStr, overlayEnabled, pixOn, rewOn, eyeOn, skipQuest, options)
 arguments
-    eyeStr {mustBeText} % calibration mode, 't', 'test1', or 'mouse_mini'
+    eyeStr {mustBeText} % 'h' human, 't' no-eye solo test, 'test1', or 'mouse_mini'
     overlayEnabled {mustBeNumericOrLogical} = 1;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
     pixOn  {mustBeNumericOrLogical} = 1
     rewOn {mustBeNumericOrLogical} = false
@@ -192,7 +194,13 @@ ex.Header.subjectID = normalizeCoPsSubjectIDx(subjectIDEntered);
 ex.setup.filePrefix = ex.Header.subjectID;
 fprintf('CoPs subject ID: %s.\n', ex.Header.subjectID);
 ex.setup.dependencies = dependencies;
+ex.setup.runProfile = dependencies.profile;
 ex.setup.inputMode = dependencies.inputMode;
+if ~eyeOn, ex.setup.eyeTracker = 'none'; end
+if strcmp(dependencies.profile,'t')
+    ex.exp.CoPs.freeViewing = true; % advance trials by time without gaze input
+    fprintf('CoPs solo test: full task, no eye tracking, calibration, or validation.\n');
+end
 fprintf('CoPs behavioral input: %s.\n', dependencies.inputMode);
 ex.setup.showCursor = options.showCursor;
 ex.setup.soundOn = options.soundOn;
@@ -297,7 +305,7 @@ elseif eyeOn
             %ex = calibrateEye_rev(ex);
             ex = calibrateEyex(ex);
             disp('eye calibration done')
-        case 't'
+        case 'h'
                ex = calibrateEye2vx(ex);
         case 'l' % long version
                ex = calibrateEyexx(ex);
@@ -526,6 +534,7 @@ if ex.exp.CoPs.instrOn
 end
 
 ex = completeCoPsPauseActionsx(ex,fullfile(trDir,fname));
+ex = runCoPsInstructionPracticex(ex,pixOn,eyeOn,rewOn,fullfile(trDir,fname));
 
 while ex.j <= ex.finish && ex.quit~=4
     if options.showCursor
@@ -579,13 +588,6 @@ while ex.j <= ex.finish && ex.quit~=4
         Trials = ex.Trials(ex.j-1);
         save(['tr' num2str(ex.j-1)],'Trials');
         cd(cur_dir)
-        ex = completeCoPsPauseActionsx(ex,fullfile(trDir,fname));
-        [ex,instructionPageShown] = advanceCoPsInstructionFlowx(ex);
-        if instructionPageShown
-            cur_dir = cd(trDir);
-            save(fname,'ex'); % save page acknowledgements before the next trial
-            cd(cur_dir);
-        end
         ex = completeCoPsPauseActionsx(ex,fullfile(trDir,fname));
         
     elseif ex.quit ==1

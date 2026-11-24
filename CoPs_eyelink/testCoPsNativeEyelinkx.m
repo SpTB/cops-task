@@ -3,12 +3,12 @@ tests = functiontests(localfunctions);
 end
 
 function testNativeEyelinkDoesNotRequireDatapixx(testCase)
-deps = resolveCoPsRunDependenciesx('t', false, true, false);
+deps = resolveCoPsRunDependenciesx('h', false, true, false);
 verifyEqual(testCase, deps.inputMode, 'eyelink');
 verifyTrue(testCase, deps.eyelinkOn);
 verifyFalse(testCase, deps.adcOn);
 verifyFalse(testCase, deps.datapixxOn);
-deps = resolveCoPsRunDependenciesx('t', false, true, false, 'analog');
+deps = resolveCoPsRunDependenciesx('h', false, true, false, 'analog');
 verifyEqual(testCase, deps.inputMode, 'eye');
 verifyTrue(testCase, deps.adcOn);
 verifyTrue(testCase, deps.datapixxOn);

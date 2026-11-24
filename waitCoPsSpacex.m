@@ -1,8 +1,9 @@
-function [quitRequested,requests,recalibrate] = waitCoPsSpacex(setup, redraw, onQuestion, allowCalibration, requireFreshQuit)
+function [quitRequested,requests,recalibrate,repeatPractice] = waitCoPsSpacex(setup, redraw, onQuestion, allowCalibration, requireFreshQuit, allowRepeat)
 % Pause controls: participant SPACE/Q, operator F4/F6. Require fresh presses.
 if nargin < 3, onQuestion = []; end
 if nargin < 4, allowCalibration = false; end
 if nargin < 5, requireFreshQuit = false; end
+if nargin < 6, allowRepeat = false; end
 requests = struct('time',{},'target',{});
 notificationCleanup = []; %#ok<NASGU> Keep the latest popup alive until this screen ends.
 notificationPoll = [];
@@ -11,7 +12,10 @@ quitKey = KbName('F4');
 calibrationKey = [];
 if allowCalibration, calibrationKey = KbName('F6'); end
 questionDown = false;
-if isempty(onQuestion)
+enterDown = false;
+if allowRepeat
+    [keys,spaceDown,~,questionDown,enterDown] = readCoPsKeyboardx(setup);
+elseif isempty(onQuestion)
     [keys,spaceDown] = readCoPsKeyboardx(setup);
 else
     [keys,spaceDown,~,questionDown] = readCoPsKeyboardx(setup);
@@ -24,9 +28,14 @@ spaceReady = ~spaceDown;
 waitingForSpaceRelease = false;
 quitRequested = false;
 recalibrate = false;
+repeatPractice = false;
+enterReady = ~enterDown;
+waitingForEnterRelease = false;
 while true
     if refreshCoPsPreviewWindowx(setup), redraw(); end
-    if isempty(onQuestion)
+    if allowRepeat
+        [keys,spaceDown,~,questionDown,enterDown] = readCoPsKeyboardx(setup);
+    elseif isempty(onQuestion)
         [keys,spaceDown] = readCoPsKeyboardx(setup);
     else
         [keys,spaceDown,~,questionDown] = readCoPsKeyboardx(setup);
@@ -53,6 +62,8 @@ while true
             waitingForSpaceRelease = false;
             calibrationReady = false;
             waitingForCalibrationRelease = false;
+            enterReady = false;
+            waitingForEnterRelease = false;
         elseif ~questionDown
             questionReady = true;
         end
@@ -69,6 +80,21 @@ while true
             waitingForCalibrationRelease = true;
         end
         if waitingForCalibrationRelease
+            WaitSecs('YieldSecs',0.01);
+            continue
+        end
+    end
+    if allowRepeat
+        if ~enterDown
+            if waitingForEnterRelease
+                repeatPractice = true;
+                return
+            end
+            enterReady = true;
+        elseif enterReady
+            waitingForEnterRelease = true;
+        end
+        if waitingForEnterRelease
             WaitSecs('YieldSecs',0.01);
             continue
         end

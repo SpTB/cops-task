@@ -3,7 +3,7 @@
 ## Subject ID and output files
 
 Every `runEx` profile captures the subject ID before calibration. Supply it as
-`runEx('t', filePrefix="P001")`, or enter it in the subject dialog. A subject ID
+`runEx('h', filePrefix="P001")`, or enter it in the subject dialog. A subject ID
 already supplied by the initial questionnaire is reused. A trailing number is
 automatically padded to at least three digits: `4` / `04` / `004` all become
 `004`, and `t4` / `t04` / `t004` all become `t004`. Letter prefixes and their
@@ -38,13 +38,29 @@ Enable the three instruction pages and two practice trials with:
 
 ```matlab
 ex = runEx('mouse_mini', instrOn=true); % preview with mouse input
-ex = runEx('t', instrOn=true);          % configured gaze-input rig
+ex = runEx('h', instrOn=true);          % human run with configured eye tracker
+ex = runEx('t', instrOn=true);          % full task for solo testing without eyes
 ```
 
 Only the explicit `mouse_mini` and `test1` simulation profiles use the mouse
-as gaze. Ordinary `runEx()` / `runEx('t')` runs use the configured eye signal;
+as gaze. Ordinary `runEx()` / `runEx('h')` runs use the configured eye signal;
 disabling eye input supplies no behavioral signal and earns no points.
 Missing, invalid, stale, or off-screen gaze does not add reward evidence.
+
+`'h'` (human) is the default. `'t'` runs the normal stimulus bank, task length,
+reward blocks, instructions, practice (including voluntary repeats), feedback,
+and task trials with eye tracking forced off. It skips all calibration and
+validation, including for `eyeSource='analog'`. Trials advance by time without
+gaze, `inputSource` is `'none'`, and `Eye.v`, `Eye.t`, and `mousePositions`
+remain empty. Gaze-dependent points stay zero. The default shared keyboard
+allows one person to operate the whole flow; F6 calibration is unavailable.
+The saved `ex.setup.runProfile` records the selected mode.
+
+`'t'` keeps the normal DataPixx/strobe and reward switches. Use
+`runEx('t', 1, 0)` to disable DataPixx strobes too (reward output is off by
+default). An explicit `photodiodeRecord=true` still enables independent ADC
+recording without eye data. The `test1` and `mouse_mini` profiles retain their
+short mouse-driven preview behavior.
 
 `instrOn` in `setDefaultsCoPs.m` controls whether this flow runs. An explicit
 runEx argument overrides that setting. Instruction pages use regular body
@@ -79,7 +95,8 @@ After calibration the flow is:
 4. Instructions explaining changing backgrounds and clearer/more blurred targets.
 5. Practice trial 2: two targets on a dynamic background, using
    `instr.targetVisibility` (default 1).
-6. Separate practice feedback.
+6. Separate practice feedback. ENTER requests another dynamic-background
+   practice trial; SPACE continues. Up to three extra trials are allowed.
 7. Ready page explaining automatic trials, configured self-paced breaks, and
    asking the participant to keep their head still before pressing SPACE to
    start the main task.
@@ -129,15 +146,40 @@ record how it was scaled. The original top-level `ex.Instructions` fields still
 describe the welcome page. Completed trial data are saved before showing the
 next page, and page acknowledgements are checkpointed before the next trial.
 
-Practice is logged in `ex.Trials` with `isInstructionTutorial=true`,
-`isTutorialTrial=true`, `instructionTrialNumber` (1 or 2),
+Practice is saved separately in `ex.Instructions.Trials` (two required trials,
+plus up to three voluntary dynamic repeats) with
+`trialNumber` (1 through 5), `instructionTrialNumber` (1 for gray, 2 for dynamic),
+`instructionRepeatNumber` (0 for required trials, 1 through 3 for repeats),
+`trialType='instructionPractice'`, `isInstructionTutorial=true`,
+`isTutorialTrial=true`,
 `runPhase='instructionPractice'`, and
 `pointsCountTowardTotal=false`. Its earned points and reward/beep events are
 retained, but excluded from `ex.totalPoints` and all displayed session totals.
+The first actual task trial is `ex.Trials(1)`, with `trialNumber=1` and
+`trialType='task'`. `ex.j`, `ex.finish`, condition schedules, reward blocks,
+and regular pause schedules refer only to task trials. Practice has separate
+loop counters in `ex.Instructions.loopcnt`. Individual practice checkpoints are
+`instruction_practice/practice1.mat`, `practice2.mat`, and optional
+`practice3.mat` through `practice5.mat` under the session's
+trial directory, each containing a `Trials` variable. The directory is recorded
+in `ex.Header.onlineInstructionDirName`. Task checkpoints start at `tr1.mat`.
+The session MAT contains both collections, including their gaze, calibration,
+timing, points and reward records. Raw trial-number strobes use the ordinal
+within each phase, restarting at 1 for the task; use the saved timestamps to
+distinguish practice from task in continuous recordings. Earlier saved sessions
+keep their original combined `ex.Trials` layout.
+
 Practice feedback explicitly says these points do not count toward winnings,
-then asks for SPACE to continue to the next instruction page. This transition
-is shown even if normal between-trial pauses are disabled. Regular pause cadence
-starts after both practice trials.
+then asks for SPACE to continue to the next instruction page. After each
+dynamic practice, ENTER instead requests another freshly generated dynamic
+trial, with the remaining repeat count displayed. There can be at most four
+dynamic attempts (one required plus three extra); the ENTER option disappears
+after the third repeat. Holding ENTER does not request another trial: each
+feedback screen requires a fresh press and release from the participant
+keyboard. `practiceRepeatRequested` logs the choice in each practice record.
+The ready page appears once the participant continues or uses all repeats.
+This feedback is shown even if normal between-trial pauses are disabled.
+Regular pause cadence starts with the first task trial after practice.
 The reward accumulator and reward-event count reset in each trial as usual.
 
 The ready page reads `ctl.between_trial_pause_mean` and
@@ -171,7 +213,7 @@ For example, choose the experimenter monitor using Psychtoolbox screen IDs:
 
 ```matlab
 Screen('Screens')
-ex = runEx('t', overlayScreen=0); % Linux example: Q popup uses experimenter X-screen 0
+ex = runEx('h', overlayScreen=0); % Linux example: Q popup uses experimenter X-screen 0
 ```
 
 If Psychtoolbox exposes no separate experimenter screen, a nonmodal MATLAB
@@ -194,9 +236,10 @@ applicable. Targets are `experimenterPopup`, `experimenterDesktop`, or `console`
 ## Recalibration at a pause
 
 On the experimenter keyboard, press and release **F6** during any instruction
-page, practice feedback, or between-trial pause to repeat calibration **and
-validation**, then continue. F6 also acknowledges that pause; no extra SPACE
-is needed. Remaining instruction pages still appear in their normal order.
+page, practice feedback, or between-trial pause to repeat calibration, then
+continue without the custom `setDefaultsValid` validation procedure.
+F6 also acknowledges that pause; no extra SPACE is needed. Remaining
+instruction pages still appear in their normal order.
 The final outro has no next trial and does not offer recalibration. Mouse
 profiles ignore F6 at pauses because there is no gaze tracker to calibrate.
 During a live trial, F6 retains its existing reward-center overlay shortcut.
@@ -208,21 +251,22 @@ data are saved before entering hardware setup. The trial counter, point
 totals, condition schedules, filename, and task data remain intact; successful
 calibration resumes with the next trial, without repeating the completed one.
 
-For native EyeLink input, the existing tracker setup UI runs offline, followed
-by the configured custom validation grid. The session EDF stays open;
-recording restarts into the same file for validation and subsequent trials.
-`COPS_RECALIBRATION_BEGIN/END` messages delimit it. F6 explicitly requests both
-steps even if initial `nativeValidation=false` or `calib.validate=false` was
-used. Calibration feedback tones are disabled during this repeat setup to
-avoid opening another audio device; task reward beeps remain enabled according
-to `soundOn`. Native EyeCal snapshots reference the shared session EDF rather
-than creating another EDF.
+For native EyeLink input, the existing tracker setup UI runs offline, then
+the task resumes without launching the custom validation grid. EyeLink's own
+validation remains available within tracker setup. The session EDF stays open;
+recording restarts into the same file for subsequent trials.
+`COPS_RECALIBRATION_BEGIN/END` messages delimit it. Initial validation settings
+are unchanged. Any previous custom CoPs pixel correction is discarded because
+it belongs to the old tracker calibration. Calibration feedback tones are
+disabled during this repeat setup to avoid opening another audio device;
+task reward beeps remain enabled according to `soundOn`. Native EyeCal
+snapshots reference the shared session EDF rather than creating another EDF.
 
 For legacy analog input (`eyeSource='analog'`), F6 runs `calibrateEye2vx` on a
-copy of the session, with calibration-file loading disabled and validation
-enabled. It saves its separate EyeCal/validation MAT and returns the new fit
+copy of the session, with calibration-file loading and custom validation
+disabled. It saves its separate EyeCal MAT and returns the new fit
 without replacing task trials, session counters, or the open task EDF.
-Calibration/validation aborts or errors end the session with data saved.
+Calibration aborts or errors end the session with data saved.
 
 `ex.Recalibration.history` records request source, upcoming trial number,
 on/off times, completion, old/new calibration, and any error. Pending requests
@@ -249,9 +293,9 @@ to hardware. On the rig, verify:
    on each pause type, including the outro, without replacing the overlay.
 2. Held Q gives one request; SPACE closes it and advances. Participant F6/F4
    and experimenter Q/SPACE have no task action with separate keyboards.
-3. Experimenter F6 at a pause opens tracker setup, then custom validation,
+3. Experimenter F6 at a pause opens tracker setup, skips custom validation,
    and resumes the correct next trial with unchanged points and conditions.
-4. Repeat calibration twice, and abort one validation; inspect the saved
+4. Repeat calibration twice, and fail one setup; inspect the saved
    history, per-trial calibration, session EDF continuity, and error/abort save.
 5. Check reward beeps after recalibration, ordinary trial frame timing,
    instruction readability, and practice/main transitions.

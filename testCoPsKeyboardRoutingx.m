@@ -10,7 +10,7 @@ testCase.TestData.folder = folder;
 testCase.TestData.originalPath = path;
 writeMock(folder, 'KbName', [
     "function value = KbName(name)"
-    "names = {'space','F1','F2','F3','F4','F6','F7','F8','F9','c','Control_L','q'};"
+    "names = {'space','F1','F2','F3','F4','F6','F7','F8','F9','c','Control_L','q','Return'};"
     "if strcmp(name, 'UnifyKeyNames'), value = []; return; end"
     "value = find(strcmp(name, names), 1);"
     "if isempty(value), error('CoPsKeyboardTest:UnknownKey', 'Unknown key.'); end"
@@ -113,6 +113,28 @@ verifyTrue(testCase, space);
 verifyTrue(testCase, question);
 verifyEqual(testCase, find(operator), 5);
 verifyEqual(testCase, COPS_KEYBOARD_TEST.calls, {{-1}});
+end
+
+function testRepeatEnterComesOnlyFromParticipantKeyboard(testCase)
+global COPS_KEYBOARD_TEST
+COPS_KEYBOARD_TEST.states{2}(13)=true;
+[~,~,~,~,enter]=readCoPsKeyboardx(separateSetup());
+verifyFalse(testCase,enter);
+COPS_KEYBOARD_TEST.states{1}(13)=true;
+[operator,space,~,question,enter]=readCoPsKeyboardx(separateSetup());
+verifyTrue(testCase,enter);
+verifyFalse(testCase,space);
+verifyFalse(testCase,question);
+verifyFalse(testCase,any(operator));
+end
+
+function testSharedKeyboardRepeatEnter(testCase)
+global COPS_KEYBOARD_TEST
+COPS_KEYBOARD_TEST.states{3}(13)=true;
+[operator,space,~,~,enter]=readCoPsKeyboardx(struct());
+verifyTrue(testCase,enter);
+verifyFalse(testCase,space);
+verifyFalse(testCase,any(operator));
 end
 
 function value = separateSetup()

@@ -2,13 +2,14 @@ function dependencies = resolveCoPsRunDependenciesx(profileName, pixOn, eyeOn, r
 % Resolve optional hardware dependencies and the behavioral input source.
 %
 % The test1 and mouse_mini profiles are hardware-free unless photodiodeRecord
-% is explicitly enabled (ADC only). Other profiles preserve
+% is explicitly enabled (ADC only). Profile t disables eye tracking only;
+% h is the normal human profile. Other profiles preserve
 % the caller-provided switches. Keeping this policy in one place makes mixed
 % dependency configurations easier to exercise without adding profile checks
 % throughout the task code.
 
 arguments
-    profileName {mustBeText} = ''
+    profileName {mustBeText} = 'h'
     pixOn {mustBeNumericOrLogical} = true
     eyeOn {mustBeNumericOrLogical} = true
     rewOn {mustBeNumericOrLogical} = true
@@ -21,6 +22,9 @@ dependencies.profile = lower(strtrim(char(profileName)));
 dependencies.pixOn = logical(pixOn);
 dependencies.eyeOn = logical(eyeOn);
 dependencies.rewOn = logical(rewOn);
+if strcmp(dependencies.profile,'t')
+    dependencies.eyeOn = false;
+end
 
 if ismember(dependencies.profile, {'test1', 'mouse_mini'})
     dependencies.pixOn = false;

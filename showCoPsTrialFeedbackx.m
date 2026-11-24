@@ -3,8 +3,14 @@ function ex = showCoPsTrialFeedbackx(ex, backgroundColor)
 if isCoPsMovieRecordingx(ex), return; end
 ctl = ex.exp.CoPs.ctl;
 rew = ex.exp.CoPs.rew;
-isFinalTrial = ex.j == ex.finish;
 isPractice = isPracticeLocal(ex.Trials(ex.j));
+repeatsRemaining = 0;
+if isPractice && isfield(ex.setup,'practiceRepeatsRemaining')
+    repeatsRemaining = ex.setup.practiceRepeatsRemaining;
+end
+allowRepeat = isPractice && ex.j >= 2 && repeatsRemaining > 0;
+ex.Trials(ex.j).practiceRepeatRequested = false;
+isFinalTrial = ex.j == ex.finish && ~isPractice;
 pausesEnabled = ~isfield(ctl, 'advance_trial_with_space') || ctl.advance_trial_with_space;
 pauseScheduled = ~isFinalTrial && (isPractice || (pausesEnabled && ...
     ex.exp.CoPs.pauseSchedule.afterTrial(ex.j)));
@@ -47,6 +53,10 @@ end
 if isPractice
     feedbackText = sprintf(['Practice trial: ' numberFormat ' points\n\n' ...
         'Practice points do not count toward your winnings.\n\nPress SPACE to continue'],trialPoints);
+    if allowRepeat
+        feedbackText = sprintf('%s\nor\nPress ENTER for more practice (%d remaining).', ...
+            feedbackText,repeatsRemaining);
+    end
 elseif showPoints
     feedbackText = sprintf(['Previous trial: ' numberFormat ' points\n\nTotal: ' numberFormat ...
         ' points\n\nPress SPACE to continue'], ...
@@ -67,9 +77,10 @@ feedbackOn = Screen('Flip', window);
 Screen('TextSize', window, oldTextSize);
 
 allowCalibration = isfield(setup,'inputMode') && ismember(setup.inputMode,{'eyelink','eye'});
-[quitRequested,questionRequests,recalibrate] = waitCoPsSpacex(setup, ...
+[quitRequested,questionRequests,recalibrate,repeatPractice] = waitCoPsSpacex(setup, ...
     @() redrawLocal(ex,backgroundColor,feedbackText,textSize,oldTextSize), ...
-    @() notifyCoPsQuestionx(ex),allowCalibration);
+    @() notifyCoPsQuestionx(ex),allowCalibration,false,allowRepeat);
+ex.Trials(ex.j).practiceRepeatRequested = repeatPractice;
 ex.Trials(ex.j).pauseQuestionRequests = questionRequests;
 ex.Trials(ex.j).pauseCalibrationRequested = recalibrate;
 if recalibrate

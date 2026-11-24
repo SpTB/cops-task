@@ -207,17 +207,22 @@ for dims=[1920 1080;1280 720;1080 1080]'
 end
 end
 
-function testInstructionPracticeIsAdditionalAndPrecedesMainTrials(testCase)
+function testInstructionPracticeUsesSeparatePlan(testCase)
 ex=planningFixture();
 info=getCoPsTrialBlockInfox(ex);
+verifyEmpty(testCase,info.instructionIdx);
+verifyEqual(testCase,info.mainIdx,1:3);
+verifyEqual(testCase,getCoPsTotalRepsx(ex),3);
+ex.setup.instructionPractice=true;
+info=getCoPsTrialBlockInfox(ex);
 verifyEqual(testCase,info.instructionIdx,[1 2]);
-verifyEqual(testCase,info.mainIdx,3:5);
-verifyEqual(testCase,getCoPsTotalRepsx(ex),5);
+verifyEmpty(testCase,info.mainIdx);
+verifyEqual(testCase,getCoPsTotalRepsx(ex),2);
 ex=prepareCoPsTrialParamSchedules(ex);
 s=ex.exp.CoPs.trialParamSchedules;
 verifyEqual(testCase,[s.background_noise_lvl(1) s.target_num(1) s.target_visibility(1) s.coherence(1)],[-1 2 1 1]);
 verifyEqual(testCase,[s.background_noise_lvl(2) s.target_num(2) s.target_visibility(2) s.coherence(2)],[1 2 1 1]);
-ex.exp.CoPs.instrOn=false;
+ex.setup.instructionPractice=false;
 verifyEqual(testCase,getCoPsTotalRepsx(ex),3);
 end
 
@@ -255,12 +260,14 @@ end
 function testPracticeDoesNotShiftRegularPauseCadence(testCase)
 ex=planningFixture(); ex.exp.nreps=11; ex.finish=13;
 ex.exp.CoPs.ctl.between_trial_pause_mean=5;
+ex.exp.CoPs.ctl.between_trial_pause_range=0;
 ex=prepareCoPsPauseSchedulex(ex);
-verifyEqual(testCase,find(ex.exp.CoPs.pauseSchedule.afterTrial),[7 12]);
+verifyEqual(testCase,find(ex.exp.CoPs.pauseSchedule.afterTrial),[5 10]);
 end
 
 function testSecondPracticeUsesConfiguredVisibilityAndDynamicNoise(testCase)
 ex=planningFixture();
+ex.setup.instructionPractice=true;
 ex.exp.CoPs.graph.background_noise_lvl=[-1 0 5 1];
 ex.exp.CoPs.instr.targetVisibility=0.35;
 ex=prepareCoPsTrialParamSchedules(ex);
@@ -276,6 +283,7 @@ end
 
 function testDynamicPracticeFallsBackWhenMainHasOnlyNullBackground(testCase)
 ex=planningFixture();
+ex.setup.instructionPractice=true;
 ex.exp.CoPs.graph.background_noise_lvl=-1;
 ex.exp.CoPs.graph.nullBackgroundGray=128;
 ex=prepareCoPsTrialParamSchedules(ex);
@@ -308,16 +316,27 @@ verifySubstring(testCase,body,'Trials will start automatically');
 verifyFalse(testCase,contains(body,'self-paced'));
 end
 
+function testRepeatRequestDefersReadyPage(testCase)
+ex=fixture();
+ex.Instructions.Trials=repmat(struct('practiceRepeatRequested',false),1,3);
+ex.Instructions.Trials(end).practiceRepeatRequested=true;
+[actual,shown]=advanceInstructions(testCase,ex);
+verifyFalse(testCase,shown);
+verifyEqual(testCase,actual,ex);
+end
+
 function testThreePagesAppearInOrderAroundBothPracticeTrials(testCase)
 global COPS_INSTRUCTIONS_TEST
 COPS_INSTRUCTIONS_TEST.spaces=repmat([false true false],1,3);
 ex=fixture(); ex.j=1;
 ex=showInstructions(testCase,ex);
-ex.j=2; [ex,shown]=advanceInstructions(testCase,ex);
+ex.Instructions.Trials=struct('instructionTrialNumber',1);
+[ex,shown]=advanceInstructions(testCase,ex);
 verifyTrue(testCase,shown);
 verifyEqual(testCase,{ex.Instructions.pages.stage},{'welcome','dynamic'});
 verifySubstring(testCase,ex.Instructions.pages(2).body,'changing, noisy background');
-ex.j=3; [ex,shown]=advanceInstructions(testCase,ex);
+ex.Instructions.Trials(2).instructionTrialNumber=2;
+[ex,shown]=advanceInstructions(testCase,ex);
 verifyTrue(testCase,shown);
 verifyEqual(testCase,{ex.Instructions.pages.stage},{'welcome','dynamic','ready'});
 verifyTrue(testCase,all([ex.Instructions.pages.acknowledged]));
@@ -553,7 +572,7 @@ function ex=planningFixture()
 evalc('ex=setDefaultsCoPs(struct());');
 ex.exp.CoPs.instrOn=true;
 ex.exp.CoPs.pre.nreps=0; ex.exp.CoPs.tut.nreps=0; ex.exp.CoPs.pur.nreps=0;
-ex.exp.nreps=3; ex.finish=5;
+ex.exp.nreps=3; ex.finish=3;
 end
 
 function resetMock()

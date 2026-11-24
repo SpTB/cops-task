@@ -1,12 +1,12 @@
-function [operatorKeys, spaceDown, timestamp, questionDown] = readCoPsKeyboardx(setup)
-% Read operator shortcuts separately from participant SPACE and optional Q.
+function [operatorKeys, spaceDown, timestamp, questionDown, enterDown] = readCoPsKeyboardx(setup)
+% Read operator shortcuts separately from participant SPACE, Q and Enter.
 % This filters task actions only. OS/MATLAB keyboard isolation is configured
 % separately; filtering a key here does not suppress MATLAB's Ctrl+C.
 arguments
     setup struct = struct()
 end
 
-persistent spaceKey controlKeys questionKey
+persistent spaceKey controlKeys questionKey enterKey
 if isempty(spaceKey)
     KbName('UnifyKeyNames');
     spaceKey = KbName('space');
@@ -32,5 +32,10 @@ questionDown = false;
 if nargout >= 4
     if isempty(questionKey), questionKey = KbName('q'); end
     questionDown = logical(participantRaw(questionKey));
+end
+enterDown = false;
+if nargout >= 5
+    if isempty(enterKey), enterKey = KbName('Return'); end
+    enterDown = any(participantRaw(enterKey));
 end
 end

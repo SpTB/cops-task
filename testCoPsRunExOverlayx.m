@@ -120,12 +120,29 @@ for profile = {'test1','mouse_mini'}
     verifyTrue(testCase,ex.exp.CoPs.ctl.jointBlocks);
 end
 % Disable hardware positionally while retaining the ordinary human profile.
-ex = captureBeforeDisplay(testCase,'t',0,0,0,0);
+ex = captureBeforeDisplay(testCase,'h',0,0,0,0);
 verifyTrue(testCase,ex.exp.CoPs.ctl.jointBlocks);
 verifyEqual(testCase,ex.setup.inputMode,'none');
-ex = captureBeforeDisplay(testCase,'t',0,0,0,0,jointBlocks=false);
+ex = captureBeforeDisplay(testCase,'h',0,0,0,0,jointBlocks=false);
 verifyFalse(testCase,ex.exp.CoPs.ctl.jointBlocks);
 verifyEqual(testCase,ex.exp.nreps,120);
+end
+
+function testSoloModeSkipsEyeHardwareAndKeepsTheNormalTask(testCase)
+for source={'eyelink','analog'}
+    ex=captureBeforeDisplay(testCase,'t',true,false,false,true,eyeSource=source{1});
+    verifyEqual(testCase,ex.setup.runProfile,'t');
+    verifyEqual(testCase,ex.setup.inputMode,'none');
+    verifyEqual(testCase,ex.setup.eyeTracker,'none');
+    verifyFalse(testCase,ex.setup.dependencies.eyeOn);
+    verifyFalse(testCase,ex.setup.dependencies.eyelinkOn);
+    verifyFalse(testCase,ex.setup.dependencies.datapixxOn);
+    verifyTrue(testCase,ex.exp.CoPs.freeViewing);
+    verifyTrue(testCase,logical(ex.exp.CoPs.instrOn));
+    verifyTrue(testCase,ex.exp.CoPs.ctl.jointBlocks);
+    verifyFalse(testCase,isfield(ex.setup,'testConfig'));
+    verifyEqual(testCase,ex.exp.nreps,120);
+end
 end
 
 function testMovieTrialsRemainIndependentOfRewardBlocks(testCase)
@@ -178,7 +195,7 @@ for profile = {'test1','mouse_mini'}
     ex = captureBeforeDisplay(testCase,profile{1},instrOn=true);
     verifyTrue(testCase,ex.exp.CoPs.instrOn);
     verifyEqual(testCase,ex.exp.CoPs.pay.max_bonus_dollar,25);
-    verifyEqual(testCase,getCoPsTotalRepsx(ex),5);
+    verifyEqual(testCase,getCoPsTotalRepsx(ex),3);
     ex = captureBeforeDisplay(testCase,profile{1},instrOn=false);
     verifyFalse(testCase,ex.exp.CoPs.instrOn);
     verifyEqual(testCase,getCoPsTotalRepsx(ex),3);

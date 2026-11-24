@@ -16,7 +16,7 @@ end
 
 
 function testNonTestDependencySwitchesRemainIndependent(testCase)
-deps = resolveCoPsRunDependenciesx('t', true, false, true);
+deps = resolveCoPsRunDependenciesx('h', true, false, true);
 verifyTrue(testCase, deps.pixOn);
 verifyFalse(testCase, deps.eyeOn);
 verifyTrue(testCase, deps.rewOn);
@@ -27,15 +27,41 @@ end
 
 function testOrdinaryProfileUsesEyesByDefaultAndNeverFallsBackToMouse(testCase)
 deps = resolveCoPsRunDependenciesx();
+verifyEqual(testCase,deps.profile,'h');
+verifyEqual(testCase,deps.inputMode,'eyelink');
+deps = resolveCoPsRunDependenciesx('h');
 verifyEqual(testCase,deps.inputMode,'eyelink');
 for source = {'eyelink','analog'}
-    deps = resolveCoPsRunDependenciesx('t',false,false,false,source{1});
+    deps = resolveCoPsRunDependenciesx('h',false,false,false,source{1});
     verifyEqual(testCase,deps.inputMode,'none');
     verifyFalse(testCase,deps.eyelinkOn);
     verifyFalse(testCase,deps.datapixxOn);
 end
 end
 
+function testSoloProfileForcesEyeHardwareOffAndKeepsOtherSwitches(testCase)
+for source = {'eyelink','analog'}
+    deps=resolveCoPsRunDependenciesx(' T ',true,true,true,source{1});
+    verifyEqual(testCase,deps.profile,'t');
+    verifyEqual(testCase,deps.inputMode,'none');
+    verifyFalse(testCase,deps.eyeOn);
+    verifyFalse(testCase,deps.eyelinkOn);
+    verifyFalse(testCase,deps.adcOn);
+    verifyTrue(testCase,deps.pixOn);
+    verifyTrue(testCase,deps.rewOn);
+    deps=resolveCoPsRunDependenciesx('t',false,true,false,source{1});
+    verifyFalse(testCase,deps.datapixxOn);
+end
+end
+
+function testSoloProfileCanStillRecordIndependentPhotodiodeAdc(testCase)
+deps=resolveCoPsRunDependenciesx('t',false,true,false,'analog',true);
+verifyFalse(testCase,deps.eyeOn);
+verifyFalse(testCase,deps.eyelinkOn);
+verifyEqual(testCase,deps.inputMode,'none');
+verifyTrue(testCase,deps.adcOn);
+verifyTrue(testCase,deps.datapixxOn);
+end
 
 function testMiniProfileDisablesAllHardwareWithAnalogSource(testCase)
 deps = resolveCoPsRunDependenciesx(' Mouse_Mini ', true, true, true, 'analog');

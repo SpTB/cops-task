@@ -6,7 +6,13 @@ tutN = localNonnegativeRound(localNestedNumeric(ex, {'exp', 'CoPs', 'tut', 'nrep
 purN = localNonnegativeRound(localNestedNumeric(ex, {'exp', 'CoPs', 'pur', 'nreps'}, 0));
 preN = localNonnegativeRound(getCoPsPreTrialCountx(ex));
 purPriority = localNestedLogical(ex, {'exp', 'CoPs', 'pur', 'priority'}, true);
-instructionN = 2 * double(localNestedLogical(ex, {'exp', 'CoPs', 'instrOn'}, false));
+% Instruction practice has its own plan and numbering, outside task trials.
+instructionN = 0;
+if localNestedLogical(ex, {'setup', 'instructionPractice'}, false)
+    instructionN = localNestedNumeric(ex, {'setup','instructionPracticeCount'}, 2);
+    validateattributes(instructionN,{'numeric'},{'scalar','integer','>=',2,'<=',5});
+    mainN = 0; tutN = 0; purN = 0; preN = 0;
+end
 
 info = struct();
 info.mainN = mainN;

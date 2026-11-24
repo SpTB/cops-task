@@ -127,8 +127,8 @@ if numel(idx) > 1
         practiceVisibility = ex.exp.CoPs.instr.targetVisibility;
     end
     validateattributes(practiceVisibility,{'numeric'},{'scalar','real','finite','>=',0,'<=',1});
-    sched.background_noise_lvl(idx(2)) = dynamicNoise(1);
-    sched.target_visibility(idx(2)) = practiceVisibility;
+    sched.background_noise_lvl(idx(2:end)) = dynamicNoise(1);
+    sched.target_visibility(idx(2:end)) = practiceVisibility;
 end
 sched.target_num(idx) = 2;
 sched.coherence(idx) = 1;

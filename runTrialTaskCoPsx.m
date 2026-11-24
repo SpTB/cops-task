@@ -115,9 +115,14 @@ isPursuitTrial = any(ex.j == blockInfo.pursuitIdx);
 isPreTrial = any(ex.j == blockInfo.preIdx);
 isInstructionTrial = any(ex.j == blockInfo.instructionIdx);
 ex.Trials(ex.j).isInstructionTutorial = isInstructionTrial;
-practiceNumber = find(blockInfo.instructionIdx == ex.j,1);
+practiceNumber = min(2,find(blockInfo.instructionIdx == ex.j,1));
 ex.Trials(ex.j).instructionTrialNumber = NaN;
 if isInstructionTrial, ex.Trials(ex.j).instructionTrialNumber = practiceNumber; end
+ex.Trials(ex.j).instructionRepeatNumber = NaN;
+if isInstructionTrial, ex.Trials(ex.j).instructionRepeatNumber = max(0,ex.j-2); end
+ex.Trials(ex.j).trialNumber = ex.j;
+ex.Trials(ex.j).trialType = 'task';
+if isInstructionTrial, ex.Trials(ex.j).trialType = 'instructionPractice'; end
 
 if isTutorialTrial && isfield(tut, 'threshold')
     reward_threshold = tut.threshold;
@@ -982,7 +987,7 @@ while state ~= ex.states.BREAKFIX &&...
 
             [pass_eye, trEye, lastEyePos, inputSample] = sampleCoPsInputx( ...
                 inputMode, trEye, ex, pass_eye, freeViewing, lastEyePos, tolerance_scalar);
-            if adcOn && strcmp(inputMode, 'mouse')
+            if adcOn && ismember(inputMode, {'mouse','none'})
                 analog = readCoPsAnalogx(analog);
             end
             current_xy_abs = inputSample.position;
@@ -1619,7 +1624,7 @@ if strcmp(inputMode, 'eyelink')
     trEye.t = trEye.t(1:trEye.n);
     ex.Trials(ex.j).Analog = trEye.analog;
     trEye = rmfield(trEye,'analog');
-elseif adcOn && strcmp(inputMode, 'mouse')
+elseif adcOn && ismember(inputMode, {'mouse','none'})
     analog = readCoPsAnalogx(analog);
     ex.Trials(ex.j).Analog = analog;
 elseif adcOn && strcmp(inputMode, 'eye')
@@ -1692,6 +1697,13 @@ end
 ex = finalizeCoPsPointsx(ex, scaled_reward_vec, reward_threshold, ...
     state == ex.states.TRIALCOMPLETE, ex.quit == 0);
 
+% Experimenter-only running mean, matching the whole points used for payout.
+if ex.Trials(ex.j).trialCompleted && ~isInstructionTrial
+    [earnedPoints,~,countedTrials] = getCoPsEarnedPointsx(ex.Trials(1:ex.j));
+    if any(countedTrials)
+        fprintf('points per trial: %.2f\n',earnedPoints/nnz(countedTrials));
+    end
+end
 
 % number of successfully completed trials
 ex.goodtrial = ex.goodtrial + abs(good);

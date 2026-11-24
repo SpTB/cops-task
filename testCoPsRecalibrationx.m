@@ -94,13 +94,16 @@ verifyEqual(testCase,[ex.j ex.finish ex.goodtrial ex.totalPoints], ...
     [before.j before.finish before.goodtrial before.totalPoints]);
 verifyEqual(testCase,rng,randomState);
 verifyEqual(testCase,COPS_RECAL_TEST.beforeSetup,before);
-verifyEqual(testCase,ex.eyeCal.RXGain,17);
+verifyEqual(testCase,ex.eyeCal.RXGain,1);
+verifyEqual(testCase,COPS_RECAL_TEST.validationCalls,0);
+verifyFalse(testCase,isfield(ex.eyeCal,'validation'));
 verifyEqual(testCase,ex.eyeCal.native.edfHostName,'task.edf');
 verifyEqual(testCase,ex.eyeCal.native.edfFile,fullfile(before.Header.onlineEdfDirName,'task.edf'));
 verifyTrue(testCase,ex.eyeCal.native.edfSharedWithSession);
 verifyTrue(testCase,isfile(ex.eyeCal.native.matFile));
 snapshot=load(ex.eyeCal.native.matFile,'ex');
-verifyEqual(testCase,snapshot.ex.Trials,struct('ID',901));
+verifyEmpty(testCase,snapshot.ex.Trials);
+verifyEqual(testCase,snapshot.ex.eyeCal,ex.eyeCal);
 verifyEmpty(testCase,ex.Recalibration.pending);
 verifyTrue(testCase,ex.Recalibration.history.completed);
 verifyEqual(testCase,ex.quit,0);
@@ -159,17 +162,25 @@ verifyEqual(testCase,ex.Recalibration.history.errorIdentifier,'CoPs:Recalibratio
 verifyEqual(testCase,ex.lastError.identifier,'CoPs:RecalibrationRecording');
 end
 
-function testValidationAbortEndsSessionWithoutReplacingTrials(testCase)
+function testNativeRedoDropsPreviousValidationAndCorrection(testCase)
 global COPS_RECAL_TEST
+% Even when initial validation fitted a correction, F6 must use the new
+% tracker calibration without launching another custom grid.
 COPS_RECAL_TEST.abort=true;
-ex=fixture(testCase); trials=ex.Trials;
+ex=fixture(testCase);
+ex.eyeCal.validation=struct('completed',true,'Trials',struct('ID',901));
+ex.eyeCal.correction=struct('enabled',true,'gain',2*ones(2));
+before=ex;
 ex=perform(testCase,ex);
-verifyEqual(testCase,ex.quit,4);
-verifyFalse(testCase,ex.Recalibration.history.completed);
-verifyFalse(testCase,ex.eyeCal.validation.completed);
-verifyEqual(testCase,ex.Trials,trials);
+verifyEqual(testCase,COPS_RECAL_TEST.validationCalls,0);
+verifyEqual(testCase,ex.quit,0);
+verifyTrue(testCase,ex.Recalibration.history.completed);
+verifyFalse(testCase,isfield(ex.eyeCal,'validation'));
+verifyFalse(testCase,isfield(ex.eyeCal,'correction'));
+verifyEqual(testCase,ex.Trials,before.Trials);
+verifyEqual(testCase,ex.Recalibration.history.eyeCalBefore,before.eyeCal);
 verifyEqual(testCase,ex.Recalibration.history.errorIdentifier,'');
-verifyEqual(testCase,COPS_RECAL_TEST.messages{end},'COPS_RECALIBRATION_END COMPLETED 0');
+verifyEqual(testCase,COPS_RECAL_TEST.messages{end},'COPS_RECALIBRATION_END COMPLETED 1');
 end
 
 function testAnalogRedoRunsOnCopyWithFileLoadingDisabled(testCase)
@@ -182,7 +193,7 @@ verifyEqual(testCase,[ex.j ex.finish ex.totalPoints],[before.j before.finish bef
 verifyEqual(testCase,ex.eyeCal.RXGain,23);
 verifyTrue(testCase,COPS_RECAL_TEST.analogInput.setup.inTaskRecalibration);
 verifyEmpty(testCase,COPS_RECAL_TEST.analogInput.calib.file);
-verifyTrue(testCase,COPS_RECAL_TEST.analogInput.calib.validate);
+verifyFalse(testCase,COPS_RECAL_TEST.analogInput.calib.validate);
 verifyEmpty(testCase,COPS_RECAL_TEST.commands);
 end
 

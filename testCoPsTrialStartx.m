@@ -178,11 +178,16 @@ verifyEqual(testCase,COPS_TRIAL_START_TEST.closed,[1001 1002]);
 end
 
 function testFreeViewingStartsAndCompletesWithoutAnyInput(testCase)
-ex=fixture(); ex.setup.inputMode='none';
-ex=runTrial(testCase,ex,false);
+ex=fixture();
+deps=resolveCoPsRunDependenciesx('t',false,true,false);
+ex.setup.dependencies=deps; ex.setup.inputMode=deps.inputMode;
+ex=runTrial(testCase,ex,deps.eyeOn);
 verifyStartedWithoutPoints(testCase,ex);
 verifyEqual(testCase,ex.Trials(1).inputSource,'none');
 verifyEmpty(testCase,ex.Trials(1).mousePositions);
+verifyEmpty(testCase,ex.Trials(1).Eye.v);
+verifyEmpty(testCase,ex.Trials(1).Eye.t);
+verifyEqual(testCase,ex.Trials(1).Eye.n,0);
 end
 
 function testBothPhotodiodeProtocolsDrawAtBottomRight(testCase)
@@ -227,7 +232,7 @@ end
 
 function testBinaryAdcCaptureIncludesFinalPhysicalResponse(testCase)
 global COPS_TRIAL_START_TEST
-for mode={'mouse','eye'}
+for mode={'mouse','eye','none'}
 ex=fixture(); ex.setup.inputMode=mode{1}; ex.setup.refreshRate=120;
 ex.exp.CoPs.ctl.nsteps=30;
 ex.setup.dependencies.adcOn=true; ex.setup.adc.Channels=0; ex.setup.adc.Rate=2000;
@@ -313,6 +318,7 @@ end
 
 function testInstructionPracticeStartsWithoutGaze(testCase)
 ex=fixture(); ex.setup.inputMode='none';
+ex.setup.instructionPractice=true;
 ex.exp.CoPs.instrOn=true;
 ex.exp.CoPs.ctl.nsteps=4;
 ex.finish=getCoPsTotalRepsx(ex);
@@ -322,6 +328,25 @@ ex.stim.seq=buildCoPsStimulusSequencex(ex,false);
 ex=runTrial(testCase,ex,false);
 verifyStartedWithoutPoints(testCase,ex);
 verifyTrue(testCase,ex.Trials(1).isInstructionTutorial);
+end
+
+function testRepeatedPracticeUsesDynamicSettingsAndSeparateOrdinal(testCase)
+ex=fixture(); ex.setup.inputMode='none';
+ex.setup.instructionPractice=true; ex.setup.instructionPracticeCount=3;
+ex.j=3; ex.finish=3; ex.exp.total_nreps=3;
+ex.exp.CoPs.ctl.nsteps=4;
+ex.exp.CoPs.instr.targetVisibility=0.35;
+ex=prepareCoPsTrialParamSchedules(ex);
+ex.stim.seq=buildCoPsStimulusSequencex(ex,false);
+ex=runTrial(testCase,ex,false);
+T=ex.Trials(3);
+verifyTrue(testCase,T.trialCompleted);
+verifyTrue(testCase,T.isInstructionTutorial);
+verifyEqual(testCase,[T.trialNumber T.instructionTrialNumber T.instructionRepeatNumber],[3 2 1]);
+verifyEqual(testCase,T.target_visibility,0.35);
+verifyEqual(testCase,T.background_noise_lvl,1);
+verifyFalse(testCase,T.pointsCountTowardTotal);
+verifyEqual(testCase,ex.totalPoints,0);
 end
 
 function testExplicitFixationModeStillRequiresGaze(testCase)

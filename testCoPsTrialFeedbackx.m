@@ -40,7 +40,7 @@ writeMock(mockDir, 'refreshCoPsPreviewWindowx', [
     "changed = ismember(COPS_FEEDBACK_TEST.refreshes, COPS_FEEDBACK_TEST.resizeAt);"
     "end"]);
 writeMock(mockDir, 'readCoPsKeyboardx', [
-    "function [keys, spaceDown, timestamp, question] = readCoPsKeyboardx(setup)"
+    "function [keys, spaceDown, timestamp, question, enter] = readCoPsKeyboardx(setup)"
     "global COPS_FEEDBACK_TEST"
     "COPS_FEEDBACK_TEST.polls = COPS_FEEDBACK_TEST.polls + 1;"
     "i = COPS_FEEDBACK_TEST.polls;"
@@ -50,6 +50,7 @@ writeMock(mockDir, 'readCoPsKeyboardx', [
     "keys(6) = ismember(i, COPS_FEEDBACK_TEST.calibrationAt);"
     "spaceDown = COPS_FEEDBACK_TEST.spaces(i);"
     "timestamp = 200+i/100; question = ismember(i,COPS_FEEDBACK_TEST.questionAt);"
+    "enter = ismember(i,COPS_FEEDBACK_TEST.enterAt);"
     "COPS_FEEDBACK_TEST.keyboardSetups{end+1} = setup;"
     "end"]);
 writeMock(mockDir, 'KbName', [
@@ -90,7 +91,7 @@ global COPS_FEEDBACK_TEST
 COPS_FEEDBACK_TEST = struct('textSize', 24, 'backgrounds', [], 'flips', 0, ...
     'messages', {{}}, 'refreshes', 0, 'resizeAt', [], 'polls', 0, ...
     'spaces', [false true false], 'quitAt', [], 'keyboardSetups', {{}}, ...
-    'focus', true, 'focusQueries', 0, 'questionAt', [], 'calibrationAt', [], 'questions', 0, ...
+    'focus', true, 'focusQueries', 0, 'questionAt', [], 'calibrationAt', [], 'enterAt', [], 'questions', 0, ...
     'checkpointFile','','checkpoints',{{}},'failFlip',false);
 end
 
@@ -289,6 +290,73 @@ ex = showFeedback(testCase,ex);
 verifyEqual(testCase,COPS_FEEDBACK_TEST.messages,{sprintf(['Practice trial: 2 points\n\n' ...
     'Practice points do not count toward your winnings.\n\nPress SPACE to continue'])});
 verifyEqual(testCase,ex.Trials(1).trialAdvanceWaitOn,101);
+end
+
+function testSecondPracticeFinishesWithPracticeFeedbackInsteadOfOutro(testCase)
+global COPS_FEEDBACK_TEST
+ex=fixture(); ex.j=2; ex.finish=2;
+ex.Trials(1).isInstructionTutorial=true;
+ex.Trials(2).isInstructionTutorial=true;
+ex=showFeedback(testCase,ex);
+verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Practice trial:');
+verifyFalse(testCase,isfield(ex,'Outro'));
+verifyFalse(testCase,isfield(ex,'Payout'));
+verifyTrue(testCase,ex.Trials(2).betweenTrialPauseScheduled);
+verifyFalse(testCase,ex.Trials(2).endScreenAcknowledged);
+end
+
+function testDynamicPracticeEnterRequestsRepeatAfterRelease(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.spaces=false(1,3);
+COPS_FEEDBACK_TEST.enterAt=2;
+ex=showFeedback(testCase,dynamicPracticeFixture(2,3));
+verifyTrue(testCase,ex.Trials(2).practiceRepeatRequested);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,3);
+verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Press ENTER for more practice (3 remaining).');
+end
+
+function testHeldEnterRequiresReleaseAndFreshPress(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.spaces=false(1,6);
+COPS_FEEDBACK_TEST.enterAt=[1 2 4 5];
+ex=showFeedback(testCase,dynamicPracticeFixture(3,2));
+verifyTrue(testCase,ex.Trials(3).practiceRepeatRequested);
+verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,6);
+end
+
+function testDynamicPracticeSpaceContinuesWithoutRepeat(testCase)
+ex=showFeedback(testCase,dynamicPracticeFixture(2,3));
+verifyFalse(testCase,ex.Trials(2).practiceRepeatRequested);
+end
+
+function testRepeatLimitHidesEnterAndWaitsForSpace(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.spaces=[false false false true false];
+COPS_FEEDBACK_TEST.enterAt=2;
+ex=showFeedback(testCase,dynamicPracticeFixture(5,0));
+verifyFalse(testCase,ex.Trials(5).practiceRepeatRequested);
+verifyFalse(testCase,contains(COPS_FEEDBACK_TEST.messages{1},'ENTER'));
+verifyEqual(testCase,COPS_FEEDBACK_TEST.polls,5);
+end
+
+function testQuitTakesPriorityOverRepeat(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.spaces=false(1,3);
+COPS_FEEDBACK_TEST.enterAt=2; COPS_FEEDBACK_TEST.quitAt=3;
+ex=showFeedback(testCase,dynamicPracticeFixture(2,3));
+verifyEqual(testCase,ex.quit,4);
+verifyFalse(testCase,ex.Trials(2).practiceRepeatRequested);
+end
+
+function testF6StillWorksOnRepeatFeedback(testCase)
+global COPS_FEEDBACK_TEST
+COPS_FEEDBACK_TEST.spaces=false(1,3);
+COPS_FEEDBACK_TEST.calibrationAt=2;
+ex=dynamicPracticeFixture(3,2); ex.setup.inputMode='eyelink';
+ex=showFeedback(testCase,ex);
+verifyTrue(testCase,ex.Trials(3).pauseCalibrationRequested);
+verifyFalse(testCase,ex.Trials(3).practiceRepeatRequested);
+verifyEqual(testCase,ex.Recalibration.pending.nextTrial,4);
 end
 
 function testFinalTotalDoesNotIncludePracticeCrossings(testCase)
@@ -564,6 +632,14 @@ cd(testCase.TestData.mockDir);
 restoreFolder = onCleanup(@() cd(originalFolder)); %#ok<NASGU>
 clear Screen DrawFormattedText refreshCoPsPreviewWindowx readCoPsKeyboardx KbName WaitSecs GetMouse notifyCoPsQuestionx
 ex = showCoPsTrialFeedbackx(ex, 127);
+end
+
+function ex = dynamicPracticeFixture(number,remaining)
+ex=fixture();
+ex.Trials=repmat(ex.Trials(1),1,number);
+for k=1:number, ex.Trials(k).isInstructionTutorial=true; end
+ex.j=number; ex.finish=number;
+ex.setup.practiceRepeatsRemaining=remaining;
 end
 
 function ex = fixture()

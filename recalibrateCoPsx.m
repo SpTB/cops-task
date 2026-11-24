@@ -1,5 +1,5 @@
 function ex = recalibrateCoPsx(ex)
-% Repeat calibration/validation without replacing task trials or the task EDF.
+% Repeat calibration without custom validation, preserving task trials/EDF.
 request = ex.Recalibration.pending;
 entry = struct('requestedAt',request.requestedAt,'nextTrial',request.nextTrial, ...
     'source',request.source,'on',GetSecs,'off',NaN,'completed',false, ...
@@ -11,8 +11,8 @@ try
     mode = ex.setup.inputMode;
     switch mode
         case 'eyelink'
-            % Keep the session EDF open. Tracker setup runs offline; validation
-            % and subsequent trials append to the same recording.
+            % Keep the session EDF open. Tracker setup runs offline;
+            % subsequent trials append to the same recording.
             Eyelink('Message',sprintf('COPS_RECALIBRATION_BEGIN NEXT_TRIAL %d',request.nextTrial));
             Eyelink('StopRecording');
             Eyelink('SetOfflineMode');
@@ -28,9 +28,10 @@ try
             end
             [result,message] = Eyelink('CalMessage');
             calibration = ex;
+            calibration.Trials = struct([]); % standalone calibration snapshot
             calibration.setup.el.edfFileName = ex.Header.edfFileName;
             calibration.eyeCal = makeCoPsNativeEyeCalx(calibration.setup,status,result,message,GetSecs);
-            % These validation snapshots reference the session EDF; never close
+            % These calibration snapshots reference the session EDF; never close
             % or receive that file through saveCoPsNativeEyeCalx(closeEdf=true).
             calibration.eyeCal.native.edfFile = fullfile(ex.Header.onlineEdfDirName,ex.Header.edfFileName);
             calibration.eyeCal.native.edfSharedWithSession = true;
@@ -39,23 +40,19 @@ try
                 error('CoPs:RecalibrationRecording','EyeLink recording did not restart.');
             end
             WaitSecs(0.1);
-            calibration = validateCoPsNativeEyelinkx(calibration);
+            % F6 uses tracker setup only; skip the setDefaultsValid grid.
+            % The fresh native calibration also drops the previous CoPs correction.
             ex.eyeCal = calibration.eyeCal;
-            if calibration.quit == 4 || ~ex.eyeCal.validation.completed
-                ex.quit = 4;
-            else
-                entry.completed = true;
-            end
+            entry.completed = true;
             % The EyeLink MEX formatter rejects MATLAB logical arguments.
             Eyelink('Message',sprintf('COPS_RECALIBRATION_END COMPLETED %d',entry.completed));
         case 'eye'
             % The legacy routine replaces counters, Trials and file metadata.
-            % Run on a copy and return only its calibration, keeping its own
-            % validation trials in the EyeCal MAT, outside task scoring.
+            % Run on a copy and return only its calibration.
             calibration = ex;
             calibration.setup.inTaskRecalibration = true;
             calibration.calib.file = '';
-            calibration.calib.validate = true;
+            calibration.calib.validate = false;
             calibration.eyeCal = [];
             calibration = calibrateEye2vx(calibration);
             ex.eyeCal = calibration.eyeCal;
@@ -77,7 +74,7 @@ catch err
     entry.completed = false;
     entry.errorIdentifier = err.identifier;
     entry.errorMessage = err.message;
-    warning('CoPs:RecalibrationFailed','Calibration/validation failed; ending session: %s',err.message);
+    warning('CoPs:RecalibrationFailed','Calibration failed; ending session: %s',err.message);
 end
 entry.off = GetSecs;
 entry.eyeCalAfter = ex.eyeCal;
@@ -87,6 +84,6 @@ else
     ex.Recalibration.history(end+1) = entry;
 end
 if entry.completed
-    fprintf('Calibration + validation complete. Continuing with trial %d.\n',request.nextTrial);
+    fprintf('Calibration complete. Continuing with trial %d.\n',request.nextTrial);
 end
 end

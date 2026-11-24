@@ -39,8 +39,9 @@ ex = runEx('mouse_mini', stimulusDir=bank, testTrials=3);
 ex = recEx(stimulusDir=bank, length=5, background=1);
 ```
 
-`stimulusDir` is available in all `runEx` modes, including `runEx('t')`, and
-in `recEx`. Pass the **session directory containing image subdirectories**,
+`stimulusDir` is available in all `runEx` modes, including `runEx('h')` and
+the no-eye solo mode `runEx('t')`, and in `recEx`. Pass the
+**session directory containing image subdirectories**,
 rather than a `noise1`, `full`, or `scramble` directory. It overrides the
 configured bank, including the bundled bank normally used by mouse modes.
 The existing `graph.imgs` image-name filter still applies. An empty

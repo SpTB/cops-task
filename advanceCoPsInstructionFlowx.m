@@ -4,9 +4,15 @@ shown = false;
 if ~isfield(ex.exp.CoPs,'instrOn') || ~ex.exp.CoPs.instrOn || ex.quit ~= 0
     return
 end
-info = getCoPsTrialBlockInfox(ex);
-completed = find(info.instructionIdx == ex.j-1,1);
-if isempty(completed), return; end
+if ~isfield(ex,'Instructions') || ~isfield(ex.Instructions,'Trials')
+    return
+end
+completed = numel(ex.Instructions.Trials);
+if completed == 0, return; end
+if isfield(ex.Instructions.Trials,'practiceRepeatRequested') && ...
+        isequal(ex.Instructions.Trials(end).practiceRepeatRequested,true)
+    return
+end
 if completed == 1
     stage = 'dynamic';
 else

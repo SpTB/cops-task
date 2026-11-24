@@ -171,8 +171,8 @@ for pursuitPriority = [true false]
     ex.exp.CoPs.instrOn = true;
     ex = prepareCoPsJointBlocksx(ex);
     info = getCoPsTrialBlockInfox(ex);
-    verifyEqual(testCase, getCoPsTotalRepsx(ex), ex.exp.nreps + 9);
-    verifyEqual(testCase, info.mainIdx(1), 8 + 2 * double(pursuitPriority));
+    verifyEqual(testCase, getCoPsTotalRepsx(ex), ex.exp.nreps + 7);
+    verifyEqual(testCase, info.mainIdx(1), 6 + 2 * double(pursuitPriority));
 
     for j = [info.instructionIdx info.tutorialIdx info.preIdx info.pursuitIdx]
         ex.j = j;
@@ -247,7 +247,7 @@ verifyEqual(testCase, getCoPsTotalRepsx(ex), 4);
 verifyEqual(testCase, config.nTrials, 4);
 end
 
-function testHumanSchedulesIncludePracticeBeforeRewardBlocks(testCase)
+function testHumanSchedulesStartRewardBlocksAtTaskTrialOne(testCase)
 evalc('ex = setDefaultsCoPs(struct());');
 ex.setup = localSetup();
 ex.exp.CoPs.pre.nreps = 0;
@@ -260,23 +260,19 @@ ex = prepareCoPsPauseSchedulex(ex);
 ex = prepareCoPsTrialParamSchedules(ex);
 info = getCoPsTrialBlockInfox(ex);
 verifyEqual(testCase,ex.exp.nreps,6);
-verifyEqual(testCase,ex.finish,8);
-verifyEqual(testCase,info.instructionIdx,[1 2]);
-verifyEqual(testCase,info.mainIdx,3:8);
-verifyEqual(testCase,numel(ex.exp.CoPs.pauseSchedule.afterTrial),8);
-verifyEqual(testCase,numel(ex.exp.CoPs.trialParamSchedules.target_visibility),8);
+verifyEqual(testCase,ex.finish,6);
+verifyEmpty(testCase,info.instructionIdx);
+verifyEqual(testCase,info.mainIdx,1:6);
+verifyEqual(testCase,numel(ex.exp.CoPs.pauseSchedule.afterTrial),6);
+verifyEqual(testCase,numel(ex.exp.CoPs.trialParamSchedules.target_visibility),6);
 centers = ex.exp.CoPs.ctl.jointBlockCenters;
-for j = 1:8
+for j = 1:6
     ex.j = j;
     [rew,block,within] = applyCoPsJointBlockx(ex,ex.exp.CoPs.rew,info);
-    if j <= 2
-        verifyTrue(testCase,isnan(block));
-    else
-        expected = ceil((j-2)/2);
-        verifyEqual(testCase,block,expected);
-        verifyEqual(testCase,within,mod(j-3,2)+1);
-        verifyEqual(testCase,rew.gauss_center_coords,centers(expected,:));
-    end
+    expected = ceil(j/2);
+    verifyEqual(testCase,block,expected);
+    verifyEqual(testCase,within,mod(j-1,2)+1);
+    verifyEqual(testCase,rew.gauss_center_coords,centers(expected,:));
 end
 end
 
