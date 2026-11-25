@@ -456,6 +456,14 @@ end
 ex.times.remappingSD = sd;
 ex.times.PTBvsDatapixxClockRatio = ratio;
 % PsychDataPixx('ClearTimestampLog');
+ex.Header.sessionEndQuitCode = ex.quit;
+if isfield(ex,'lastError')
+    ex.Header.sessionEndReason = 'error';
+elseif ex.quit == 4
+    ex.Header.sessionEndReason = 'F4';
+else
+    ex.Header.sessionEndReason = 'completed';
+end
 ex.quit = 0;
 
 % make sure to switch off fixed Seed if it was turned on
@@ -473,13 +481,9 @@ cur_dir = cd(ex.Header.onlineExperimentalDirName);
 ex.Header.onlineFileName = fname;
 disp('saving...')
 
-% 2021.03.08 ik: check the size of ex, if it exceeds 2GB, use '-v7.3' flag
-whosEx = whos('ex');
-if whosEx.bytes < 1e+9
-    save(fname, 'ex');
-else
-    save(fname,'ex','-v7.3');
-end
+% Both normal completion and F4 reach this common save. Preserve a raw copy
+% before the offline audit; the enriched ex replaces it only after saving.
+ex = saveCoPsSessionx(ex,fname);
 cd(cur_dir)
 
 %update log

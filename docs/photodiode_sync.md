@@ -139,6 +139,108 @@ uniquely identify every missed refresh or verify every stimulus pixel.
 Run `runtests('testCoPsSyncx')` for the hardware-free protocol/decoder tests;
 validate the complete display, wiring, and recording path on the rig.
 
+## Independent optical estimate of held refreshes
+
+`estimateCoPsOpticalHoldsx` estimates extra refreshes from the pulsed diode
+record and the saved code order. Unlike `decodeCoPsSyncx`'s
+`estimatedMissedRefreshes`, it accepts **no individual flip timestamps**.
+Supply the active marker/gap/payload bits, ADC timestamps and volts, nominal
+refresh interval, and two increasing code indices that start white runs.
+Choose anchors surrounded by a distinctive pattern, with recorded context
+on both sides. The count applies only between those anchors.
+
+The function fits the refresh frequency and phase from the measured light
+pulses, then aligns the code while allowing both repeated display frames
+and white flashes missed by ADC sampling. It assumes that the submitted code
+order is preserved, as in the current task runner. `holdCount` is the median
+count across sampled alignment paths; `viterbiHoldCount` counts the holds on
+the single most likely complete path. These need not be equal.
+
+Check `posteriorRange95`, `countResolvedUnderModel`, and sensitivity to
+`holdProbability` and `missedLightProbability`. The range conditions on this
+model and its probabilities; it does not cover model errors. A good alignment
+score alone does not guarantee a unique count. At 500 Hz, use this as an
+independent physical cross-check of VBL interval counts and flag ambiguous
+windows. Do not count every unobserved white flash as a dropped frame.
+Leading/trailing constant levels may prevent whole-trial optical counting;
+compare optical and VBL results over the same anchor span.
+
+Run `runtests('testCoPsOpticalHoldsx')` for known-count simulated recordings,
+including held frames, unrelated preparation flashes, 500 Hz downsampling,
+and wrong-code controls. This function does not access hardware or change
+acquisition settings.
+
+## Automatic audit when a session ends
+
+`runEx` now runs the VBL/optical comparison automatically at the common final
+save, after normal completion or F4. This adds no work to the trial loop.
+`saveCoPsSessionx` saves the raw session first, computes the audit, writes an
+enriched temporary MAT file, and replaces the raw file only after that write
+succeeds. Individual optical failures leave timestamp results and a reason;
+they do not prevent other trials from being audited. Unexpected audit or
+audit-save failures leave the saved raw session available.
+
+The returned `ex` and final session MAT contain:
+
+```matlab
+ex.frameAudit.summary                   % session counts and coverage
+ex.Header.sessionEndReason              % 'completed', 'F4', or 'error'
+a = ex.Trials(1).frameAudit;
+find(a.missed)
+find(a.missVBL)
+find(a.missPhot)
+find(a.flagged)
+a.windows                              % comparisons over longer code sections
+```
+
+Every per-frame array has one row per `flip_info` row. **Row i describes the
+interval after that frame, ending at flip i+1.** For example, a 25 ms interval
+at 120 Hz records two extra holds of frame i. The last row and the final
+active-to-blank interval are unassessed. Counts in the session summary refer
+to GO intervals; `vblExtraRefreshes` counts extra refreshes, whereas
+`missedFrames`, `missVBLFrames`, and `missPhotFrames` count affected intervals.
+
+| Field | Meaning |
+| --- | --- |
+| `vblMissCount` | Extra refreshes calculated from actual VBL intervals. NaN when unavailable. |
+| `photMedianCount` | Baseline optical model's median extra-refresh count. |
+| `photLowerCount`, `photUpperCount` | Union of conditional 95% ranges from the three saved optical model settings. |
+| `missed` | VBL count and optical lower bound are both positive at this interval. |
+| `missVBL` | VBL count is positive and the optical upper bound is zero. |
+| `missPhot` | VBL count is zero and the optical lower bound is positive. |
+| `photCompared` | This interval has accepted independent optical evidence. |
+| `photUncertain` | Exact optical count is unresolved or unavailable. |
+| `flagged` | An uncertain possible hold, disagreement, or VBL miss without usable optical evidence requires review. This flag can accompany a `missed` label if the counts remain uncertain. |
+| `classification` | Readable label: `missed`, `missVBL`, `missPhot`, `flagged`, `ok`, `unassessed`, or `outsideGO`. |
+| `windowSupportedMissed` | A VBL-positive interval in a longer window whose count agrees exactly across methods/models; the optical evidence does not necessarily identify that particular interval. |
+
+The optical fit uses only code order, raw ADC times/volts and nominal refresh
+interval, never individual flip timestamps. Code windows are approximately
+64 submitted frames long, with distinctive patterns around their boundaries.
+Each `a.windows` row covers interval indices `startFrame:endFrame-1`, saves
+VBL/optical counts and bounds, and records `exactCountAgreement`. Frame-level
+labels require frame-level optical evidence; matching aggregate counts alone
+do not assign an exact repeated frame within a run of identical bits.
+
+The audit checks three hold/missed-light probability pairs:
+`[.03 .15; .005 .30; .15 .05]`, with 100 sampled alignments each. Uncertainty
+includes variation across those fits, not every possible model error. A
+missing/unusable diode recording is **not** a `missVBL` disagreement: VBL
+misses are flagged and the trial's `reason` explains why comparison failed.
+Trials ending before 128 payload frames retain VBL results but skip optical
+classification. The normal 500 Hz recording and saved stimulus/task data
+are unchanged.
+
+To audit an already loaded session without writing a file:
+
+```matlab
+ex = auditCoPsFrameTimingx(ex);
+```
+
+Use `runtests('testCoPsFrameAuditx')` for agreement, disagreements, repeated-bit
+ambiguity, absent recordings, and normal/F4 final-save checks. Recovered
+sessions can be audited using the same offline function.
+
 ## Short high-rate optical check
 
 With the experiment stopped and the display and photodiode connected:
