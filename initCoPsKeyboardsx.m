@@ -51,12 +51,9 @@ validateattributes(experimenter.locationID, {'numeric'}, {'scalar','real','finit
 if participantID == experimenterID
     error('initCoPsKeyboardsx:SameKeyboard', 'The selected indices resolve to the same physical XInput device.');
 end
-[status, ~] = system('command -v xinput');
-if status ~= 0
-    error('initCoPsKeyboardsx:MissingXinput', 'Install xinput on the Linux/X11 rig before using separate keyboards.');
-end
-checkAttached(participantID, attachment);
-checkAttached(experimenterID, experimenter.locationID);
+xinputCommand = resolveXinputCommandLocal();
+checkAttached(participantID, attachment, xinputCommand);
+checkAttached(experimenterID, experimenter.locationID, xinputCommand);
 % Open/cache both physical devices BEFORE floating the participant device.
 % PTB indices refer to a cached device snapshot. Do not clear PsychHID or
 % re-enumerate devices while the participant keyboard is detached.
@@ -66,13 +63,13 @@ if participantDown
         'Release all participant keyboard keys before starting separate-keyboard mode.');
 end
 KbCheck(experimenterIndex);
-cleanup = onCleanup(@() restoreKeyboard(participantID, attachment));
-[status, message] = system(sprintf('xinput float %d', participantID));
+cleanup = onCleanup(@() restoreKeyboard(participantID, attachment, xinputCommand));
+[status, message] = system(sprintf('%s float %d', xinputCommand, participantID));
 if status ~= 0
     error('initCoPsKeyboardsx:IsolationFailed', 'Cannot isolate participant keyboard: %s', strtrim(message));
 end
-[status, description] = system(sprintf('LC_ALL=C xinput list --short %d', participantID));
-if status ~= 0 || isempty(regexp(description, '\[\s*floating slave\s*\]', 'once'))
+[status, description] = system(sprintf('LC_ALL=C %s list --short %d', xinputCommand, participantID));
+if status ~= 0 || isempty(regexp(description, '\[\s*floating\s+slave\s*\]', 'once'))
     error('initCoPsKeyboardsx:IsolationFailed', 'XInput did not confirm a floating participant keyboard.');
 end
 keyboards.separate = true;
@@ -87,9 +84,9 @@ keyboards.osKeysIsolated = true;
 keyboards.isolation = 'linux-xinput-floating';
 end
 
-function checkAttached(deviceID, expectedAttachment)
-[status, description] = system(sprintf('LC_ALL=C xinput list --short %d', deviceID));
-token = regexp(description, '\[\s*slave keyboard\s*\(\s*(\d+)\s*\)\s*\]', 'tokens', 'once');
+function checkAttached(deviceID, expectedAttachment, xinputCommand)
+[status, description] = system(sprintf('LC_ALL=C %s list --short %d', xinputCommand, deviceID));
+token = regexp(description, '\[\s*slave\s+keyboard\s*\(\s*(\d+)\s*\)\s*\]', 'tokens', 'once');
 idPattern = ['id\s*=\s*' sprintf('%d', deviceID) '(\s|$)'];
 if status ~= 0 || isempty(token) || isempty(regexp(description, idPattern, 'once')) || ...
         str2double(token{1}) ~= expectedAttachment
@@ -98,8 +95,8 @@ if status ~= 0 || isempty(token) || isempty(regexp(description, idPattern, 'once
 end
 end
 
-function restoreKeyboard(deviceID, attachment)
-command = sprintf('xinput reattach %d %d', deviceID, attachment);
+function restoreKeyboard(deviceID, attachment, xinputCommand)
+command = sprintf('%s reattach %d %d', xinputCommand, deviceID, attachment);
 try
     [status, message] = system(command);
 catch err
@@ -115,4 +112,19 @@ if status ~= 0
         fprintf(2, 'Keyboard restoration failed. Run from the experimenter keyboard: %s\n', command);
     end
 end
+end
+
+
+function command = resolveXinputCommandLocal()
+command = 'xinput';
+[status, ~] = system('command -v xinput');
+if status == 0, return; end
+% A user-local install also works when MATLAB inherited a PATH without it.
+executable = fullfile(getenv('HOME'), '.local', 'bin', 'xinput');
+if exist(executable, 'file') ~= 2
+    error('initCoPsKeyboardsx:MissingXinput', ...
+        'Install xinput system-wide or in ~/.local/bin before using separate keyboards.');
+end
+quote = char(39);
+command = [quote strrep(executable, quote, [quote '"' quote '"' quote]) quote];
 end

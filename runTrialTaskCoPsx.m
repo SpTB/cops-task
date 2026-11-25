@@ -1491,7 +1491,8 @@ while state ~= ex.states.BREAKFIX &&...
     % INPUT HANDLING SECTION ---------------------------------------------
     % --------------------------------------------------------------------
     [keyCode, ~, secs] = readCoPsKeyboardx(ex.setup);
-    if ~isTaskWindowFocusedLocal(ex.setup)
+    % Validate focus only when an operator shortcut needs handling.
+    if any(keyCode) && ~isTaskWindowFocusedLocal(ex.setup)
         keyCode = zeros(size(keyCode));
     end
     

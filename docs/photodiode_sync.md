@@ -74,8 +74,8 @@ times are retained and the test reports any remaining misses explicitly.
 
 The patch uses black/white (0/255), at the same bottom-right location as the
 flash test. `framesPerBit` defaults to 1. `photodiodeChannel` can also override
-the task ADC channel directly in `runEx`; `photCheck` selects ADC0 explicitly
-and leaves the experiment's channel-6 default intact.
+the task ADC channel directly in `runEx`; both `photCheck` and normal human
+runs select ADC0 by default, matching the confirmed rig wiring.
 
 The raw trace may contain strong refresh pulses even during constant white. Inspect pulse amplitudes when checking timing; a raw threshold crossing
 at every refresh is not evidence of a new binary bit. The comparison plot does
@@ -163,9 +163,16 @@ pd = checkCoPsPhotodiodex(15); % live voltage plot, physical ADC0, 2000 Hz
 
 Cover/uncover the sensor or change screen brightness and watch the trace.
 Close the plot to stop early. The ADC is stopped and closed on return, errors,
-or Ctrl+C. Use `channel=6` to test the experiment's existing default input.
-If the experiment photodiode is wired to ADC0, set `sync.physicalChannel = 0`
-in `setDefaultsCoPs.m` as well; the standalone tester does not change task settings.
+or Ctrl+C. ADC0 is the confirmed photodiode input and the experiment default.
+Use `channel=6` only to check a different physical input. To change the
+experiment's input, set `sync.physicalChannel` in `setDefaultsCoPs.m`, or select
+it for one run with `runEx('h',photodiodeChannel=6)`.
+Native EyeLink runs record only the selected photodiode input (ADC0 by
+default); no legacy camera-sync channel is added. The channel setting also
+applies when ADC recording is enabled automatically, without
+`photodiodeRecord=true`.
+Use `photodiodeRecord=true,photodiodeSampleRate=2000` to explicitly select a
+2000 Hz ADC rate while retaining the normal behavioral polling rate.
 
 For a known flash schedule recorded simultaneously on ADC0:
 
@@ -174,7 +181,7 @@ pd = checkCoPsPhotodiodeFlashx();
 % Five 200 ms white pulses requested at 1, 2, 3, 4, and 5 seconds.
 
 pd = checkCoPsPhotodiodeFlashx(onsets=[1 2 4 6],pulseDurationSecs=0.25);
-% Use channel=6 if the sensor is wired to the experiment's default ADC input.
+% Use channel=6 only if the sensor has been moved to physical ADC6.
 ```
 
 This opens the experiment's fullscreen display with the task's gray background
@@ -229,7 +236,7 @@ Each `ex.Trials(i)` records:
 | `Analog.v`, `Analog.t`, `Analog.n` | ADC voltages, DataPixx sample timestamps, sample count |
 | `adcChannels` | Physical zero-based channel associated with each ADC row |
 
-The default photodiode input is physical DataPixx channel 6. Change
+The default photodiode input is physical DataPixx channel 0. Change
 `sync.physicalChannel` in `setDefaultsCoPs.m` to match the rig. The decoder uses
 the channel metadata, rather than assuming a particular row of `Analog.v`.
 Native EyeLink data remain in `Eye` on the tracker clock. Legacy analog-eye

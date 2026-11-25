@@ -27,6 +27,7 @@ writeMock(folder, 'system', [
     "    else, COPS_KEYBOARD_SETUP_TEST.floating = true; end"
     "elseif strcmp(command, 'xinput reattach 12 3'), COPS_KEYBOARD_SETUP_TEST.floating = false;"
     "else, error('KeyboardTest:UnexpectedCommand', 'Unexpected OS command: %s', command); end"
+    "if isfield(COPS_KEYBOARD_SETUP_TEST,'paddedSpacing') && COPS_KEYBOARD_SETUP_TEST.paddedSpacing, result=strrep(result,'slave keyboard','slave  keyboard'); end"
     "end"]);
 addpath(fileparts(mfilename('fullpath')), '-begin');
 addpath(folder, '-begin');
@@ -122,6 +123,16 @@ global COPS_KEYBOARD_SETUP_TEST
 COPS_KEYBOARD_SETUP_TEST.participantHeld = true;
 verifyError(testCase, @() initialize(testCase, 4, 5), 'initCoPsKeyboardsx:KeysHeld');
 verifyFalse(testCase, any(strcmp(COPS_KEYBOARD_SETUP_TEST.commands, 'xinput float 12')));
+end
+
+function testAlignedXinputDeviceListingIsAccepted(testCase)
+global COPS_KEYBOARD_SETUP_TEST
+COPS_KEYBOARD_SETUP_TEST.paddedSpacing=true;
+[keyboard,cleanup]=initialize(testCase,4,5);
+verifyTrue(testCase,keyboard.separate);
+verifyTrue(testCase,COPS_KEYBOARD_SETUP_TEST.floating);
+clear cleanup
+verifyFalse(testCase,COPS_KEYBOARD_SETUP_TEST.floating);
 end
 
 function [keyboard, cleanup] = initialize(testCase, varargin)

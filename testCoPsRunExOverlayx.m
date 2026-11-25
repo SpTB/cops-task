@@ -19,6 +19,7 @@ writeMock(mockDir, 'getDefaultSettingsx', [
     "function ex = getDefaultSettingsx(ex, varargin)"
     "global COPS_RUNEX_SUBJECT_TEST"
     "ex.setup.adc = struct('Rate',500,'Channels',6,'DiffChannels',0,'BufferBaseAddress',0);"
+    "if isfield(COPS_RUNEX_SUBJECT_TEST,'keyboardDefaults'), ex.setup.keyboardDefaults = COPS_RUNEX_SUBJECT_TEST.keyboardDefaults; end"
     "if ~isempty(COPS_RUNEX_SUBJECT_TEST.existingSubjectID)"
     "    ex.Header.subjectID = COPS_RUNEX_SUBJECT_TEST.existingSubjectID;"
     "    ex.setup.filePrefix = COPS_RUNEX_SUBJECT_TEST.existingSubjectID;"
@@ -48,6 +49,8 @@ writeMock(mockDir,'resetAdcBuffer',[
     "end"]);
 writeMock(mockDir,'Eyelink',[
     "function varargout = Eyelink(varargin)"
+    "global COPS_RUNEX_ADC_TEST"
+    "if COPS_RUNEX_ADC_TEST.enabled && isequal(varargin,{'Shutdown'}), return; end"
     "error('CoPsOverlayTest:UnexpectedHardware','EyeLink must remain disabled.');"
     "end"]);
 addpath(fileparts(mfilename('fullpath')), '-begin');
@@ -245,6 +248,82 @@ verifyFalse(testCase,ex.setup.showEndScreen);
 verifyFalse(testCase,ex.exp.CoPs.instrOn);
 verifyFalse(testCase,ex.exp.CoPs.ctl.jointBlocks);
 verifyEqual(testCase,ex.exp.nreps,1);
+end
+
+function testHumanPhotodiodeChannelReachesAutomaticallyEnabledAdc(testCase)
+global COPS_RUNEX_ADC_TEST
+COPS_RUNEX_ADC_TEST.enabled = true;
+ex = captureBeforeDisplay(testCase,'h',photodiodeChannel=0);
+verifyEqual(testCase,ex.setup.inputMode,'eyelink');
+verifyTrue(testCase,ex.setup.dependencies.adcOn);
+verifyFalse(testCase,ex.setup.dependencies.photodiodeRecord);
+verifyEqual(testCase,ex.exp.CoPs.sync.physicalChannel,0);
+verifyEqual(testCase,ex.setup.adc.Channels,0);
+verifyEqual(testCase,ex.setup.adc.DiffChannels,0);
+verifyEqual(testCase,COPS_RUNEX_ADC_TEST.resetSetup.adc.Channels,0);
+verifyEqual(testCase,ex.setup.adc.Rate,500);
+end
+
+function testHumanPhotodiodeExplicitRecordingUsesSelectedChannelAndRate(testCase)
+global COPS_RUNEX_ADC_TEST
+COPS_RUNEX_ADC_TEST.enabled = true;
+ex = captureBeforeDisplay(testCase,'h',photodiodeRecord=true, ...
+    photodiodeChannel=0,photodiodeSampleRate=2000);
+verifyEqual(testCase,ex.setup.adc.Channels,0);
+verifyEqual(testCase,COPS_RUNEX_ADC_TEST.resetSetup.adc.Channels,0);
+verifyEqual(testCase,ex.setup.adc.Rate,2000);
+verifyEqual(testCase,ex.setup.inputSampleRate,500);
+end
+
+function testHumanDefaultPhotodiodeChannelIsRecorded(testCase)
+global COPS_RUNEX_ADC_TEST
+COPS_RUNEX_ADC_TEST.enabled = true;
+ex = captureBeforeDisplay(testCase,'h');
+verifyEqual(testCase,ex.exp.CoPs.sync.physicalChannel,0);
+verifyTrue(testCase,ex.setup.dependencies.adcOn);
+verifyEqual(testCase,ex.setup.adc.Channels,0);
+verifyEqual(testCase,COPS_RUNEX_ADC_TEST.resetSetup.adc.Channels,0);
+verifyEqual(testCase,ex.exp.CoPs.analysis.photodiodePulsePhysicalChannel,0);
+end
+
+function testHumanPhotodiodeChannelOverrideDoesNotAddLegacyCameraChannel(testCase)
+global COPS_RUNEX_ADC_TEST
+COPS_RUNEX_ADC_TEST.enabled = true;
+for channel = [6 7]
+    ex = captureBeforeDisplay(testCase,'h',photodiodeChannel=channel);
+    verifyEqual(testCase,ex.setup.adc.Channels,channel);
+    verifyEqual(testCase,ex.setup.adc.DiffChannels,0);
+    verifyEqual(testCase,COPS_RUNEX_ADC_TEST.resetSetup.adc.Channels,channel);
+end
+end
+
+function testAnalogEyeChannelsAreRetainedWithSelectedPhotodiode(testCase)
+global COPS_RUNEX_ADC_TEST
+COPS_RUNEX_ADC_TEST.enabled = true;
+ex = captureBeforeDisplay(testCase,'h',eyeSource='analog',photodiodeChannel=0);
+verifyEqual(testCase,ex.setup.inputMode,'eye');
+verifyEqual(testCase,ex.setup.adc.Channels,[6 0]);
+verifyEqual(testCase,ex.setup.adc.DiffChannels,[0 0]);
+verifyEqual(testCase,COPS_RUNEX_ADC_TEST.resetSetup.adc.Channels,[6 0]);
+end
+
+function testKeyboardSharedOverrideReachesRunEx(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+COPS_RUNEX_SUBJECT_TEST.keyboardDefaults=struct('mode','separate', ...
+    'participantName','Unavailable participant','experimenterName','Unavailable operator');
+ex=captureBeforeDisplay(testCase,'t',0,0,keyboardMode="shared");
+verifyFalse(testCase,ex.setup.keyboards.separate);
+verifyFalse(testCase,ex.setup.keyboards.osKeysIsolated);
+end
+
+function testKeyboardPortablePreviewIgnoresNamedRigDefault(testCase)
+global COPS_RUNEX_SUBJECT_TEST
+COPS_RUNEX_SUBJECT_TEST.keyboardDefaults=struct('mode','separate', ...
+    'participantName','Unavailable participant','experimenterName','Unavailable operator');
+for profile={'test1','mouse_mini'}
+    ex=captureBeforeDisplay(testCase,profile{1});
+    verifyFalse(testCase,ex.setup.keyboards.separate);
+end
 end
 
 function testKeyboardRolesAreValidatedBeforeDisplay(testCase)

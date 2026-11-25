@@ -9,6 +9,7 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('h', 1, 1, overlayScreen=0, overlayWindowSizePx=[960 540])
 %   runEx('h', eyeSource='analog') legacy analog eye calibration
 %   runEx('h', nativeValidation=false) save tracker calibration, skip custom validation
+%   runEx('h', calibrationBeepVolume=0.05) % quieter EyeLink tones (0 to 1; default 0.1)
 %   runEx('t') full task for solo testing; no eye tracking/calibration/validation
 %   runEx('t', 1, 0) solo test with DataPixx strobes disabled
 %   runEx('test1')  % fullscreen mouse test
@@ -31,7 +32,9 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('test1', syncMode='binary', photodiodeRecord=true, photodiodeSampleRate=2000)
 % See docs/photodiode_sync.md before using photodiode acquisition on the rig.
 %   runEx('h', participantKeyboard=participantID, experimenterKeyboard=operatorID)
-% Separate keyboards require Linux/X11; omit both IDs for shared-keyboard testing.
+% On the op4 rig, normal runs default to Dell participant / Apple experimenter.
+%   runEx('t', 0, keyboardMode="shared") % explicitly use shared-keyboard controls
+% Separate keyboards require Linux/X11. Explicit device IDs override rig defaults.
 %   runEx('test1', fullscreen=false)  % use a window with test1 settings
 % overlayOn can be the second positional argument or a name-value option
 % for every mode. The name-value option takes precedence when both are given.
@@ -51,13 +54,14 @@ end
 function ex = runCoPsWithOptions(eyeStr, overlayEnabled, pixOn, rewOn, eyeOn, skipQuest, options)
 arguments
     eyeStr {mustBeText} % 'h' human, 't' no-eye solo test, 'test1', or 'mouse_mini'
-    overlayEnabled {mustBeNumericOrLogical} = 1;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
+    overlayEnabled {mustBeNumericOrLogical} = 0;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
     pixOn  {mustBeNumericOrLogical} = 1
     rewOn {mustBeNumericOrLogical} = false
     eyeOn  {mustBeNumericOrLogical} = true
     skipQuest {mustBeNumericOrLogical} = true
     options.eyeSource {mustBeMember(options.eyeSource,{'eyelink','analog'})} = 'eyelink'
     options.nativeValidation (1,1) logical = true % custom validation after tracker setup
+    options.calibrationBeepVolume (1,1) double {mustBeFinite, mustBeNonnegative, mustBeLessThanOrEqual(options.calibrationBeepVolume,1)} = 0.1
     options.testTrials (1,1) double {mustBeInteger, mustBePositive} = 3
     options.viewingDistanceCm (1,1) double {mustBePositive} = 55 %100
     options.monitorWidthCm (1,1) double {mustBePositive} = 54 %50
@@ -77,6 +81,7 @@ arguments
     options.photodiodeSampleRate (1,1) double {mustBeInteger, mustBePositive, mustBeFinite, mustBeLessThanOrEqual(options.photodiodeSampleRate,200000)} = 500
     options.filePrefix (1,1) string = ""
     options.stimulusDir (1,1) string {mustBeStimulusDirectoryOrEmpty} = ""
+    options.keyboardMode (1,1) string {mustBeMember(options.keyboardMode, ["auto","shared","separate"])} = "shared" %"auto"
     options.participantKeyboard (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite} = []
     options.experimenterKeyboard (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite} = []
     options.overlayOn (1,1) logical = logical(overlayEnabled)
@@ -209,17 +214,24 @@ ex.exp.CoPs.rew.soundOn = options.soundOn;
 ex.setup.showExperimenterOverlay = options.overlayOn;
 ex.setup.overlayScreen = options.overlayScreen;
 ex.setup.overlayWindowSizePx = options.overlayWindowSizePx;
+[participantKeyboard, experimenterKeyboard] = resolveCoPsKeyboardSelectionx( ...
+    ex.setup, dependencies.profile, options.keyboardMode, ...
+    options.participantKeyboard, options.experimenterKeyboard);
 [ex.setup.keyboards, keyboardCleanup] = initCoPsKeyboardsx( ...
-    options.participantKeyboard, options.experimenterKeyboard); %#ok<NASGU>
+    participantKeyboard, experimenterKeyboard); %#ok<NASGU>
 if ex.setup.keyboards.separate
+    fprintf('CoPs participant keyboard: %s (PTB %d).\n', ...
+        ex.setup.keyboards.participantName, ex.setup.keyboards.participantIndex);
+    fprintf('CoPs experimenter keyboard: %s (PTB %d).\n', ...
+        ex.setup.keyboards.experimenterName, ex.setup.keyboards.experimenterIndex);
     fprintf('CoPs keyboards: participant SPACE/Q at pauses; experimenter F6 recalibrates at pauses, F4 quits.\n');
 else
     fprintf('CoPs keyboards: shared test mode (participant keyboard is not isolated).\n');
 end
 if strcmp(dependencies.inputMode, 'eyelink')
-    % ADC is retained only for independent photodiode/camera sync signals
-    ex.setup.adc.Channels = [6 7];
-    ex.setup.adc.DiffChannels = [0 0];
+    % Native gaze arrives through EyeLink; ADC records only the photodiode.
+    ex.setup.adc.Channels = ex.exp.CoPs.sync.physicalChannel;
+    ex.setup.adc.DiffChannels = zeros(size(ex.setup.adc.Channels));
 end
 % Keep behavioral polling independent of the optional photodiode ADC rate.
 ex.setup.inputSampleRate = ex.setup.adc.Rate;
@@ -231,13 +243,14 @@ if options.photodiodeRecord
         ex.setup.adc.Channels = ex.exp.CoPs.sync.physicalChannel;
         ex.setup.adc.DiffChannels = 0;
     end
+    ex.setup.adc.Rate = options.photodiodeSampleRate;
+end
+if dependencies.adcOn
+    % Honor the selected diode input for automatically enabled ADC runs too.
     if ~ismember(ex.exp.CoPs.sync.physicalChannel, ex.setup.adc.Channels)
         ex.setup.adc.Channels(end+1) = ex.exp.CoPs.sync.physicalChannel;
         ex.setup.adc.DiffChannels(end+1) = 0;
     end
-    ex.setup.adc.Rate = options.photodiodeSampleRate;
-end
-if dependencies.adcOn
     analogCleanup = onCleanup(@stopCoPsAnalogx); %#ok<NASGU>
     resetAdcBuffer(ex);
 end
@@ -269,15 +282,24 @@ if options.showCursor
 end
 pause(1)
 
-if eyeOn && strcmp(dependencies.inputMode, 'eyelink')
+% Use the task gray for calibration, validation, and every null-background
+% texture instead of deriving the null gray from each source image's mean.
+ex.exp.CoPs.graph.nullBackgroundGray = ex.idx.bg_lum;
+if eyeOn
     ex.calib = setDefaultsCalib();
-    ex.calib.file = ''; % native calibration is provided by the tracker
     ex.valid = setDefaultsValid();
+    ex.calib.background_color = ex.idx.bg_lum;
+    ex.valid.background_color = ex.idx.bg_lum;
+end
+
+if eyeOn && strcmp(dependencies.inputMode, 'eyelink')
+    ex.calib.file = ''; % native calibration is provided by the tracker
     % valid.update optionally fits a separate native pixel correction.
     ex.valid.onlineUpdate = false;
     ex.valid.recenterFirst = false;
     ex = resolveCalibrationValidationDisplaySizes(ex);
     ex.setup.el.edfFileName = ['c' datestr(now,'HHMMSS') '.edf'];
+    ex.setup.el.calibrationBeepVolume = options.calibrationBeepVolume;
     ex = initCoPsEyelinkx(ex);
     ex = saveCoPsNativeEyeCalx(ex);
     if options.nativeValidation && ex.calib.validate
@@ -295,8 +317,6 @@ elseif eyeOn
     ex = initEyelink(ex);
     ex.eyeCal = [];
     % ex.idx.bg = 0; % black test
-    ex.calib = setDefaultsCalib(); % default eye calibration settings
-    ex.valid = setDefaultsValid(); % default eye validation settings
     ex = resolveCalibrationValidationDisplaySizes(ex);
 
     switch lower(eyeStr)
@@ -724,24 +744,8 @@ if eyeOn && Eyelink('IsConnected') == 1 && strcmpi(ex.setup.eyeTracker,'Eyelink'
     % close the windows. Drawing here can mask an earlier trial error.
 end
 
-% remove temporary trial folder
-cur_dir = cd(trDir);
-delete('*.mat');
-a = dir;
-cd(cur_dir);
-subDirs = 0;
-for n = 1:length(a)
-    if a(n).isdir && a(n).bytes>0
-        subDirs = 1;
-        break
-    end
-end
-
-if ~subDirs
-    rmdir(trDir);
-else
-    warndlg('Trial directory contains subdirectories: there is likely a bug, check!')
-end
+% Remove temporary task checkpoints; retain separately saved practice files.
+cleanupCoPsTrialDirectoryx(trDir);
 
 ShowCursor
 if ex.j > ex.finish && ~ex.SessionEnd.endedEarly && ~isempty(ex.Trials) && ...

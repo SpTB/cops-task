@@ -4,8 +4,8 @@ ex.exp.CoPs.instrOn = 1; % three instruction screens + two practice trials
 ex.exp.CoPs.fbOn = true; % optional participant feedback screen after the bonus summary
 % Reward-peak blocks, shared with main's rewSwitches task.
 ctl.jointBlocks = true; % false keeps one center and uses exp.nreps
-ctl.numBlocks = 1;
-ctl.blockMeanTrials = 150;
+ctl.numBlocks = 2;
+ctl.blockMeanTrials = 80;
 ctl.blockTransRange = 6; % integer block length: mean +/- range
 ctl.rewPeakDistFromPrev = 5; % minimum consecutive-peak distance in degrees
 
@@ -17,7 +17,6 @@ pay.transform = 'linear'; % 'linear' or 'logit' (normalized inverse-logit / sigm
 pay.logitSlope = 10; % steepness of the S-curve; used only for 'logit'
 instr.targetVisibility = 1; % visibility of the second, dynamic-background practice trial
 
-% do a intro minisession for Kaki: 5 pur; 10 normal (lo thresh) 5 Null (lo thresh) 
 ctl.advance_trial_with_space = true; % requires space between trials, f4 to quit
 ctl.between_trial_pause_mean = 12; % average trials between pause screens (e.g. 5)
 ctl.between_trial_pause_range = 3; % integer +/- range (5 +/- 1 gives 4, 5, or 6)
@@ -28,7 +27,7 @@ sync.seed = 1; % nonzero 15-bit LFSR state; independent of stimulus RNG
 sync.sequence = []; % optional pregenerated 0/1 vector; [] generates 32767 bits once per run
 sync.preambleSec = 0.1; % retain the GO onset marker before the binary code
 sync.gapSec = 0.05; % black separation between marker and code
-sync.physicalChannel = 6; % zero-based DataPixx input channel
+sync.physicalChannel = 0; % zero-based DataPixx input; confirmed photodiode wiring
 sync.captureTailSecs = 0.1; % keep recording after final black flip for panel/sensor delay
 %drawRewPeak(6,10)
 
@@ -89,11 +88,6 @@ graph.sequenceMode_vis = false; % true: target_visibility values are presented i
 
 ctl.target_num = 2; % scalar or vector; e.g. [1 2 2 2] gives 25% single-target trials
 ctl.target_numNULL = [1,2];
-%kaki:    desert4, river3, ice2,river2(?)
-% lychee: desert4, river3, sea1, river1,
-% OUT: water1, desert1, desert3, ice1, ice3,river2
-% KAKI OUT: sea1, river1
-%new set: sand1? fog?(maybe too easy..) shore1?
 graph.imgs = [];%{'desert4', 'sea1', 'river1', 'river3'}%, 'river1', 'river3','sea1'};%{'desert4', 'sea1', 'river1', 'river3'};%{'desert3','desert4','ice1','ice2','ice3','river1','river2','river3','sea1'};%['river1']; % empty = use all stimulus folders; otherwise restrict to named folders
 graph.sequenceMode_im = 0; % true: graph.imgs are presented in listed order, cycling as needed
 graph.balanceStimulusSchedule = true; % balance trials hierarchically by background, visibility, image, then rotation
@@ -236,9 +230,9 @@ if isfield(ex, 'exp') && isfield(ex.exp, 'CoPs') && ...
 else
     analysis = struct();
 end
-analysis.eyeTimeGoPulsePhysicalChannel = 6;
-analysis.goPulsePhysicalChannel = 6;
-analysis.photodiodePulsePhysicalChannel = 6;
+analysis.eyeTimeGoPulsePhysicalChannel = sync.physicalChannel;
+analysis.goPulsePhysicalChannel = sync.physicalChannel;
+analysis.photodiodePulsePhysicalChannel = sync.physicalChannel;
 analysis.photodiodePulseThresholdV = 0.3;
 analysis.photodiodePulseWindowSec = 0.5;
 

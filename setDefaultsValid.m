@@ -2,7 +2,7 @@ function valid = setDefaultsValid()
 
 valid = struct();
 valid.nRepeat = 2;
-valid.passes = 1%[1,2]; % native validation: 2 = offsetsDeg2 only; [1 2] = both grids
+valid.passes = 2%[1,2]; % native validation: 2 = offsetsDeg2 only; [1 2] = both grids
 valid.targetWin = [3.5 3.5]; % 3.166152 visual degrees; old [160 160] px at 38.5 cm
 valid.targetWinUnits = 'Deg';
 valid.targetWin2 = [2.0 2.0]; % 2.177898 visual degrees; old [110 110] px at 38.5 cm

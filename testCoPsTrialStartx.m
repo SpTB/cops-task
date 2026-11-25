@@ -61,11 +61,16 @@ writeMock(folder,'KbCheck',[
     "global COPS_TRIAL_START_TEST"
     "COPS_TRIAL_START_TEST.now=COPS_TRIAL_START_TEST.now+COPS_TRIAL_START_TEST.keyboardCost;"
     "t=COPS_TRIAL_START_TEST.now; keys=false(1,256);"
-    "keys(4)=t>=COPS_TRIAL_START_TEST.abortAt; down=any(keys);"
+    "COPS_TRIAL_START_TEST.keyboardPolls=COPS_TRIAL_START_TEST.keyboardPolls+1;"
+    "keys(4)=t>=COPS_TRIAL_START_TEST.abortAt; keys(9)=COPS_TRIAL_START_TEST.spaceHeld; down=any(keys);"
     "end"]);
 writeMock(folder,'GetMouse',[
     "function varargout=GetMouse(varargin)"
     "global COPS_TRIAL_START_TEST"
+    "if nargout==4 && COPS_TRIAL_START_TEST.focusProbeAllowed"
+    " COPS_TRIAL_START_TEST.focusQueries=COPS_TRIAL_START_TEST.focusQueries+1;"
+    " varargout={960,540,[],COPS_TRIAL_START_TEST.focused}; return"
+    "end"
     "assert(COPS_TRIAL_START_TEST.adcAllowed,'TrialStartTest:Mouse','Eye/no-input trial must not read mouse gaze.');"
     "varargout={960,540,[],true};"
     "end"]);
@@ -144,7 +149,8 @@ COPS_TRIAL_START_TEST=struct('now',50,'textures',1000,'fills',{{}},'dots',{{}}, 
     'closed',[],'failTextureAt',Inf,'failQueueReset',false, ...
     'gaze',[NaN NaN NaN NaN NaN NaN],'abortAt',Inf, ...
     'clockStep',.005,'scheduledFlips',false,'ifi',1/120,'drawCost',0,'keyboardCost',0, ...
-    'adcAllowed',false,'adcStart',NaN,'adcRate',2000,'waitUntil',NaN);
+    'adcAllowed',false,'adcStart',NaN,'adcRate',2000,'waitUntil',NaN, ...
+    'keyboardPolls',0,'spaceHeld',false,'focusProbeAllowed',false,'focusQueries',0,'focused',true);
 end
 
 function testNormalTrialReleasesAllStimulusTextures(testCase)
@@ -358,6 +364,60 @@ ex=runTrial(testCase,ex,false);
 verifyTrue(testCase,isnan(ex.Trials(1).times.stimOn));
 verifyFalse(testCase,ex.Trials(1).trialCompleted);
 verifyEqual(testCase,ex.totalPoints,0);
+end
+
+function testIdleAndParticipantSpaceDoNotQueryWindowFocus(testCase)
+global COPS_TRIAL_START_TEST
+for separate=[false true]
+    for spaceHeld=[false true]
+        COPS_TRIAL_START_TEST.now=50;
+        COPS_TRIAL_START_TEST.focusQueries=0;
+        COPS_TRIAL_START_TEST.keyboardPolls=0;
+        COPS_TRIAL_START_TEST.focusProbeAllowed=true;
+        COPS_TRIAL_START_TEST.spaceHeld=spaceHeld;
+        ex=fixture();ex.setup.inputMode='none';ex.setup.guiWindow=true;
+        ex.setup.panelFitterOn=false;
+        ex.setup.keyboards=struct('separate',separate,'participantIndex',1,'experimenterIndex',2);
+        ex=runTrial(testCase,ex,false);
+        verifyTrue(testCase,ex.Trials(1).trialCompleted);
+        verifyEqual(testCase,COPS_TRIAL_START_TEST.focusQueries,0);
+        verifyGreaterThan(testCase,COPS_TRIAL_START_TEST.keyboardPolls,1);
+    end
+end
+end
+
+function testSharedOperatorQuitStillChecksFocus(testCase)
+global COPS_TRIAL_START_TEST
+COPS_TRIAL_START_TEST.focusProbeAllowed=true;
+COPS_TRIAL_START_TEST.abortAt=0;
+ex=fixture();ex.setup.inputMode='none';ex.setup.guiWindow=true;ex.setup.panelFitterOn=false;
+ex=runTrial(testCase,ex,false);
+verifyEqual(testCase,ex.quit,4);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.focusQueries,1);
+end
+
+function testUnfocusedSharedOperatorKeyIsStillFiltered(testCase)
+global COPS_TRIAL_START_TEST
+COPS_TRIAL_START_TEST.focusProbeAllowed=true;
+COPS_TRIAL_START_TEST.focused=false;
+COPS_TRIAL_START_TEST.abortAt=0;
+ex=fixture();ex.setup.inputMode='none';ex.setup.guiWindow=true;ex.setup.panelFitterOn=false;
+ex=runTrial(testCase,ex,false);
+verifyEqual(testCase,ex.quit,0);
+verifyTrue(testCase,ex.Trials(1).trialCompleted);
+verifyGreaterThan(testCase,COPS_TRIAL_START_TEST.focusQueries,0);
+end
+
+function testSeparateOperatorQuitDoesNotRequireWindowFocus(testCase)
+global COPS_TRIAL_START_TEST
+COPS_TRIAL_START_TEST.focusProbeAllowed=true;
+COPS_TRIAL_START_TEST.focused=false;
+COPS_TRIAL_START_TEST.abortAt=0;
+ex=fixture();ex.setup.inputMode='none';ex.setup.guiWindow=true;ex.setup.panelFitterOn=false;
+ex.setup.keyboards=struct('separate',true,'participantIndex',1,'experimenterIndex',2);
+ex=runTrial(testCase,ex,false);
+verifyEqual(testCase,ex.quit,4);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.focusQueries,0);
 end
 
 function ex=fixture()

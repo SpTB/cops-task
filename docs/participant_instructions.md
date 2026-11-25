@@ -32,6 +32,53 @@ The Command Window prints the resolved session MAT path as `CoPs output:`.
 After `ex = runEx(...)`, it can also be obtained with
 `fullfile(ex.Header.onlineExperimentalDirName, ex.Header.onlineFileName)`.
 
+## Keyboard selection
+
+On `nei-op4-Precision-3280-Compact`, ordinary `runEx()`, `runEx('h')`, and
+`runEx('t')` runs default to two physical keyboards:
+
+* **Participant:** Dell KB216 Wired Keyboard — SPACE advances instruction,
+  break, and outro pages; Q requests help at pauses; ENTER requests extra
+  practice when offered. The final comment screen accepts normal typing,
+  Backspace, ENTER to submit, and ESC to skip.
+* **Experimenter:** Mitsumi Electric Apple Extended USB Keyboard — F4 quits
+  or skips final comments; F6 recalibrates at eligible pauses; trial shortcuts
+  retain their existing functions. Experimenter SPACE does not advance pages.
+
+The rig configuration is `ex.setup.keyboardDefaults` in `getDefaultSettingsx.m`.
+Full device names are resolved at startup rather than storing PTB indices,
+which may change when devices reconnect. Missing or duplicate name matches
+stop startup with an explicit error rather than silently changing roles.
+Startup prints the selected names and current indices, which are also saved
+in `ex.setup.keyboards`.
+
+```matlab
+ex = runEx('h', 0); % rig defaults: two physical keyboards, overlay off
+ex = runEx('t', 0, keyboardMode="shared"); % explicitly accept both roles from any keyboard
+ex = runEx('h', participantKeyboard=participantID, experimenterKeyboard=operatorID);
+```
+
+Explicit indices override the named defaults. `keyboardMode="shared"` requires
+omitting both indices. `keyboardMode="separate"` explicitly selects two-device
+routing and uses the configured names when no indices are supplied. Portable
+`test1` and `mouse_mini` previews default to shared controls in `auto` mode.
+Hosts without configured keyboard defaults also retain shared controls.
+
+Both modes keep polling keyboard state normally. During trials, focus
+validation is requested only while an operator shortcut is down; idle frames
+and participant SPACE do not query desktop focus. Pause controls and final
+comment entry keep their existing polling/event-queue behavior.
+
+Separate mode polls only the two chosen devices and bypasses the MATLAB
+window-focus check. It temporarily floats the participant device from the X11
+master keyboard so participant shortcuts cannot affect MATLAB or the desktop;
+the experimenter device stays attached. This uses `xinput`, found on PATH or
+in `~/.local/bin` (the op4 rig uses a user-local installation). Its resolved
+command is retained for cleanup, even when MATLAB does not include that
+directory on PATH. The participant keyboard is restored on normal exit and
+handled errors. Final comment text is read from the
+participant device through its dedicated event queue.
+
 ## Instructions and practice
 
 Enable the three instruction pages and two practice trials with:
@@ -52,8 +99,9 @@ reward blocks, instructions, practice (including voluntary repeats), feedback,
 and task trials with eye tracking forced off. It skips all calibration and
 validation, including for `eyeSource='analog'`. Trials advance by time without
 gaze, `inputSource` is `'none'`, and `Eye.v`, `Eye.t`, and `mousePositions`
-remain empty. Gaze-dependent points stay zero. The default shared keyboard
-allows one person to operate the whole flow; F6 calibration is unavailable.
+remain empty. Gaze-dependent points stay zero. On the op4 rig, normal `h` and `t` runs default to the two physical keyboards
+described below. Use `keyboardMode="shared"` for shared-keyboard solo testing.
+F6 calibration is unavailable in `t` mode.
 The saved `ex.setup.runProfile` records the selected mode.
 
 `'t'` keeps the normal DataPixx/strobe and reward switches. Use
@@ -163,6 +211,8 @@ loop counters in `ex.Instructions.loopcnt`. Individual practice checkpoints are
 `practice3.mat` through `practice5.mat` under the session's
 trial directory, each containing a `Trials` variable. The directory is recorded
 in `ex.Header.onlineInstructionDirName`. Task checkpoints start at `tr1.mat`.
+After the final session MAT is saved, temporary task checkpoints are removed;
+the `instruction_practice` folder and its files are retained.
 The session MAT contains both collections, including their gaze, calibration,
 timing, points and reward records. Raw trial-number strobes use the ordinal
 within each phase, restarting at 1 for the task; use the saved timestamps to

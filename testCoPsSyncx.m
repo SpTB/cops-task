@@ -6,6 +6,12 @@ end
 function testBinaryDefaultAndBitRates(testCase)
 evalc('ex = setDefaultsCoPs(struct());');
 verifyEqual(testCase, ex.exp.CoPs.sync.mode, 'binary');
+verifyEqual(testCase, ex.exp.CoPs.sync.physicalChannel, 0);
+verifyEqual(testCase, ex.exp.CoPs.analysis.photodiodePulsePhysicalChannel, 0);
+verifyEqual(testCase, ex.exp.CoPs.analysis.eyeTimeGoPulsePhysicalChannel, 0);
+verifyEqual(testCase, ex.exp.CoPs.analysis.goPulsePhysicalChannel, 0);
+sync = prepareCoPsSyncx(struct(), 1/120);
+verifyEqual(testCase, sync.physicalChannel, 0);
 for rate = [60 120 144]
     for holdFrames = [1 2 4]
         sync = prepareCoPsSyncx(struct('mode','binary','framesPerBit',holdFrames), 1/rate);
@@ -111,12 +117,15 @@ function testRecordedChannelAndClockReference(testCase)
 trial = trialFixture();
 [s,v] = simulateTrace(trial,0.018,0);
 trial.syncClock = struct('ptbSec',100,'datapixxSec',5000,'uncertaintySec',0.0001);
-trial.adcChannels = [7 6];
 trial.Analog = struct('v',[zeros(size(v')); v'], 't',s'+4900,'n',numel(s));
-out = decodeCoPsSyncx(trial,maxDriftPpm=0);
-verifyTrue(testCase,out.alignmentReliable);
-verifyEqual(testCase,out.lagSec,0.018,'AbsTol',0.003);
-verifyEqual(testCase,out.clockReferenceUncertaintySec,0.0001);
+for channel = [0 6] % New rig default and previously saved channel metadata.
+    trial.sync.physicalChannel = channel;
+    trial.adcChannels = [7 channel];
+    out = decodeCoPsSyncx(trial,maxDriftPpm=0);
+    verifyTrue(testCase,out.alignmentReliable);
+    verifyEqual(testCase,out.lagSec,0.018,'AbsTol',0.003);
+    verifyEqual(testCase,out.clockReferenceUncertaintySec,0.0001);
+end
 end
 
 function testInvertedSignal(testCase)

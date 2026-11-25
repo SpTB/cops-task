@@ -99,6 +99,10 @@ elseif strcmp(ex.setup.computerName, 'nei-op4-Precision-3280-Compact') % op4 hum
 
     ex.setup.mouseXOffset = 0;
     ex.setup.dirRoot = '/home/nei-op4/Desktop/CoPs';
+    % Match full device names at startup; PTB indices can change on reconnect.
+    ex.setup.keyboardDefaults = struct('mode', 'separate', ...
+        'participantName', 'Dell KB216 Wired Keyboard', ...
+        'experimenterName', 'Mitsumi Electric Apple Extended USB Keyboard');
     
     % might have to be changed since we are recording monocular signal
     ex.setup.adc.NumBufferFrames = 1e7;
