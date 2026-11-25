@@ -85,6 +85,7 @@ arguments
     options.participantKeyboard (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite} = []
     options.experimenterKeyboard (1,:) double {mustBeInteger, mustBeNonnegative, mustBeFinite} = []
     options.overlayOn (1,1) logical = logical(overlayEnabled)
+    options.overlayBackend (1,1) string {mustBeMember(options.overlayBackend,["auto","process","inline"])} = "auto"
     options.overlayScreen (1,:) double {mustBeInteger, mustBeNonnegative} = []
     options.overlayWindowSizePx (1,2) double {mustBeInteger, mustBePositive} = [960 540]
     options.windowSizePx (1,2) double {mustBeInteger, mustBePositive} = defaultWindowSizePx(eyeStr)
@@ -213,6 +214,7 @@ ex.setup.showEndScreen = options.showEndScreen;
 ex.exp.CoPs.rew.soundOn = options.soundOn;
 ex.setup.showExperimenterOverlay = options.overlayOn;
 ex.setup.overlayScreen = options.overlayScreen;
+ex.setup.overlayBackend = options.overlayBackend;
 ex.setup.overlayWindowSizePx = options.overlayWindowSizePx;
 [participantKeyboard, experimenterKeyboard] = resolveCoPsKeyboardSelectionx( ...
     ex.setup, dependencies.profile, options.keyboardMode, ...

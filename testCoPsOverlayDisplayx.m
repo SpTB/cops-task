@@ -29,6 +29,10 @@ writeMock(mockDir, 'Screen', [
     "    COPS_DISPLAY_TEST.openSkip = COPS_DISPLAY_TEST.SkipSyncTests;"
     "    varargout = {102, [0 0 960 540]};"
     "case 'openoffscreenwindow', varargout = {201};"
+    "case 'textsize', varargout = {24};"
+    "case 'flip'"
+    "    if isfield(COPS_DISPLAY_TEST,'flipCost'), COPS_DISPLAY_TEST.now = COPS_DISPLAY_TEST.now + COPS_DISPLAY_TEST.flipCost; end"
+    "    varargout = cell(1,nargout);"
     "case 'preference'"
     "    key = varargin{2};"
     "    if ismember(key, {'ConserveVRAM','SkipSyncTests'})"
@@ -76,6 +80,12 @@ writeMock(mockDir, 'Datapixx', [
 writeMock(mockDir, 'GL_SRC_ALPHA', ["function r = GL_SRC_ALPHA"; "r = 770;"; "end"]);
 writeMock(mockDir, 'GL_ONE_MINUS_SRC_ALPHA', ["function r = GL_ONE_MINUS_SRC_ALPHA"; "r = 771;"; "end"]);
 writeMock(mockDir, 'GetSecs', ["function r = GetSecs"; "global COPS_DISPLAY_TEST"; "r = COPS_DISPLAY_TEST.now;"; "end"]);
+writeMock(mockDir, 'coPsOverlayProcessx', [
+    "function result = coPsOverlayProcessx(action,varargin)"
+    "global COPS_DISPLAY_TEST"
+    "COPS_DISPLAY_TEST.viewerCalls{end+1} = [{action} varargin];"
+    "if strcmp(action,'open'), result=struct('pid',1234,'port',2345,'token','test');else,result=true;end"
+    "end"]);
 writeMock(mockDir, 'GetMouse', [
     "function [x, y] = GetMouse(window)"
     "global COPS_DISPLAY_TEST"
@@ -106,8 +116,9 @@ COPS_DISPLAY_TEST = struct('screens', [0 1], ...
     'rects', {{[0 0 1920 1200], [0 0 2560 1440]}}, ...
     'screenCalls', {{}}, 'imagingCalls', {{}}, 'datapixxCalls', {{}}, ...
     'panelFitterSize', [], 'remapCalls', {{}}, 'remappedMousePosition', [], ...
-    'ConserveVRAM', 64, 'SkipSyncTests', 0, 'now', 1);
+    'ConserveVRAM', 64, 'SkipSyncTests', 0, 'now', 1,'viewerCalls',{{}});
 clear presentCoPsOverlayx
+clear drawCoPsTrialOverlayx
 end
 
 function testDesktopWindowAndAspectRatio(testCase)
@@ -383,6 +394,138 @@ calls = COPS_DISPLAY_TEST.screenCalls;
 offscreen = calls(cellfun(@(c) strcmp(c{1}, 'OpenOffscreenWindow'), calls));
 verifyEqual(testCase, offscreen{1}{2}, ex.setup.overlayWindow);
 verifyEqual(testCase, offscreen{1}{4}, [0 0 2560 1440]);
+verifyEqual(testCase, ex.setup.overlayCanvasSizePx, [960 540]);
+verifyEqual(testCase, ex.setup.overlayScale, [0.375 0.375]);
+verifyTrue(testCase, any(cellfun(@(c) isequal(c, {'TextSize',102,9}), calls)));
+end
+
+function testTrialPreviewScalesGeometryAndDrawsDirectlyToDesktop(testCase)
+global COPS_DISPLAY_TEST
+[setup, frame] = trialOverlayFixture();
+verifyTrue(testCase, drawCoPsTrialOverlayx(setup, frame));
+calls = COPS_DISPLAY_TEST.screenCalls;
+verifyTrue(testCase, any(cellfun(@(c) isequal(c, {'FrameRect',102,255,[450 250 510 290],1}), calls)));
+verifyTrue(testCase, any(cellfun(@(c) isequal(c, {'FrameOval',102,255,[430 220 530 320],1}), calls)));
+verifyTrue(testCase, any(cellfun(@(c) isequal(c, {'DrawLine',102,[0 255 0],477.5,270,482.5,270,1}), calls)));
+dots = calls(cellfun(@(c) strcmp(c{1},'DrawDots'),calls));
+verifyEqual(testCase, dots{1}, {'DrawDots',102,[480 960;270 540],8,[255 0;0 255;0 0]});
+verifyTrue(testCase, any(cellfun(@(c) isequal(c, {'DrawText',102,'REWARD',50,50,255}), calls)));
+verifyEqual(testCase, calls{end}, {'Flip',102,0,0,2});
+verifyTrue(testCase, all(cellfun(@(c) c{2}==102,calls)));
+verifyFalse(testCase, any(cellfun(@(c) strcmp(c{1},'DrawTexture'),calls)));
+end
+
+function testProcessPreviewOpensNoSecondPTBWindow(testCase)
+global COPS_DISPLAY_TEST
+original=pwd;cd(testCase.TestData.mockDir);
+cleanup=onCleanup(@() cd(original)); %#ok<NASGU>
+clear coPsOverlayProcessx
+ex=fixture();ex.setup.overlayBackend='process';ex.setup.window=101;
+ex.setup.screenRect=[0 0 1920 1080];
+ex=configureCoPsOverlayDisplayx(ex);ex=openCoPsOverlayDisplayx(ex);
+verifyEqual(testCase,ex.setup.overlayViewer.pid,1234);
+verifyEmpty(testCase,ex.setup.overlayWindow);
+calls=COPS_DISPLAY_TEST.screenCalls;
+verifyFalse(testCase,any(cellfun(@(c) strcmp(c{1},'OpenWindow'),calls)));
+canvases=calls(cellfun(@(c) strcmp(c{1},'OpenOffscreenWindow'),calls));
+verifyEqual(testCase,canvases{1}{2},101); % Compatibility canvas shares stimulus context.
+end
+
+function testProcessTrialOnlyPublishesStateAndIssuesNoGraphics(testCase)
+global COPS_DISPLAY_TEST
+original=pwd;cd(testCase.TestData.mockDir);
+cleanup=onCleanup(@() cd(original)); %#ok<NASGU>
+clear coPsOverlayProcessx
+[setup,frame]=trialOverlayFixture();setup.overlayBackend='process';
+verifyTrue(testCase,drawCoPsTrialOverlayx(setup,frame));
+verifyEmpty(testCase,COPS_DISPLAY_TEST.screenCalls);
+verifyEqual(testCase,COPS_DISPLAY_TEST.viewerCalls{1},{'send',setup,frame});
+ex.setup=setup;presentCoPsOverlayx(ex);
+verifyEmpty(testCase,COPS_DISPLAY_TEST.screenCalls);
+end
+
+function testNativeValidationPublishesTargetAndGazeWithoutOverlayGraphics(testCase)
+global COPS_DISPLAY_TEST
+original=pwd;cd(testCase.TestData.mockDir);
+cleanup=onCleanup(@() cd(original)); %#ok<NASGU>
+clear coPsOverlayProcessx
+[ex.setup,~]=trialOverlayFixture();ex.setup.overlayBackend='process';ex.setup.eyePSz=16;
+ex.calib.Psz=20;ex.idx.white=255;
+ex.valid=struct('background_color',128,'showMouseTrace',false);
+eyes=[960 540;NaN NaN];drawCoPsValidationOverlayx(ex,[1000 600],eyes);
+verifyEmpty(testCase,COPS_DISPLAY_TEST.screenCalls);
+call=COPS_DISPLAY_TEST.viewerCalls{1};verifyEqual(testCase,call{1},'send');
+verifyEqual(testCase,call{3}.validationTarget,[1000 600]);
+verifyEqual(testCase,call{3}.validationTargetSize,20);
+verifyEqual(testCase,call{3}.gazePositions,eyes);
+end
+
+function testTrialRateLimitSkipsEveryGraphicsCall(testCase)
+global COPS_DISPLAY_TEST
+[setup, frame] = trialOverlayFixture();
+drawCoPsTrialOverlayx(setup, frame);
+count = numel(COPS_DISPLAY_TEST.screenCalls);
+for t = [1.008 1.016 1.025]
+    COPS_DISPLAY_TEST.now = t;
+    verifyFalse(testCase, drawCoPsTrialOverlayx(setup, frame));
+end
+verifyNumElements(testCase, COPS_DISPLAY_TEST.screenCalls, count);
+COPS_DISPLAY_TEST.now = 1.034;
+verifyTrue(testCase, drawCoPsTrialOverlayx(setup, frame));
+verifyNumElements(testCase, COPS_DISPLAY_TEST.screenCalls, 2*count);
+end
+
+function testSlowTrialPreviewDoesNotCauseImmediateCatchUp(testCase)
+global COPS_DISPLAY_TEST
+[setup, frame] = trialOverlayFixture();
+COPS_DISPLAY_TEST.flipCost = .114;
+drawCoPsTrialOverlayx(setup, frame);
+count = numel(COPS_DISPLAY_TEST.screenCalls);
+verifyFalse(testCase, drawCoPsTrialOverlayx(setup, frame));
+verifyNumElements(testCase, COPS_DISPLAY_TEST.screenCalls, count);
+COPS_DISPLAY_TEST.now = COPS_DISPLAY_TEST.now+.034;
+verifyTrue(testCase, drawCoPsTrialOverlayx(setup, frame));
+end
+
+function testReopenedDesktopRefreshesEvenWhenWindowHandleIsReused(testCase)
+[setup, frame] = trialOverlayFixture();
+drawCoPsTrialOverlayx(setup, frame);
+setup.overlayOpenedAt = 2;
+verifyTrue(testCase, drawCoPsTrialOverlayx(setup, frame));
+end
+
+function testInlinePreviewKeepsStimulusPixelsAndDoesNotClearOrFlip(testCase)
+global COPS_DISPLAY_TEST
+[setup, frame] = trialOverlayFixture();
+setup.overlayIsSeparate = false;setup.overlay = [];
+drawCoPsTrialOverlayx(setup, frame);
+calls = COPS_DISPLAY_TEST.screenCalls;
+verifyTrue(testCase, all(cellfun(@(c) c{2}==101,calls)));
+verifyFalse(testCase, any(cellfun(@(c) ismember(c{1},{'FillRect','Flip'}),calls)));
+dots = calls(cellfun(@(c) strcmp(c{1},'DrawDots'),calls));
+verifyEqual(testCase, dots{1}{3}, [960 1920;540 1080]);
+verifyEqual(testCase, dots{1}{4}, 16);
+end
+
+function testInactivePreviewClearsOldMarkers(testCase)
+global COPS_DISPLAY_TEST
+[setup, frame] = trialOverlayFixture();
+frame.active = false;frame.showReward = false;
+drawCoPsTrialOverlayx(setup, frame);
+verifyEqual(testCase, COPS_DISPLAY_TEST.screenCalls, {{'FillRect',102,128},{'Flip',102,0,0,2}});
+end
+
+function [setup, frame] = trialOverlayFixture()
+setup = struct('window',101,'overlay',201,'overlayWindow',102, ...
+    'overlayIsSeparate',true,'overlayOpenedAt',1,'overlayScale',[.5 .5], ...
+    'overlayDisplayRateHz',30,'screenRect',[0 0 1920 1080]);
+frame = struct('backgroundColor',128,'foregroundColor',255, ...
+    'fixationRect',[900 500 1020 580],'fixationPenWidth',2, ...
+    'circleRadiusPx',100,'circlePenWidth',2,'circleColor',255, ...
+    'centerPx',[960 540],'centerHalfSizePx',5,'centerPenWidth',2,'centerColor',[0 255 0], ...
+    'gazeDotSize',16,'gazeColors',[255 0 0;0 0 255;0 255 0], ...
+    'active',true,'showFixation',true,'targetPositions',[960 540;1920 1080], ...
+    'showCenter',true,'gazePositions',[960 540;NaN NaN;1920 1080],'showReward',true);
 end
 
 function testPresentationIsScaledThrottledAndDoesNotWaitForVBL(testCase)
@@ -407,6 +550,7 @@ end
 
 function ex = fixture()
 ex.setup = struct('screenNum', 1, 'screenToHead', [1 0 2], ...
+    'overlayBackend','inline', ...
     'showExperimenterOverlay', true, ...
     'stereo', struct('Display', true, 'Mode', 8, 'Multisampling', 8));
 ex.idx.bg = 128;

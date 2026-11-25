@@ -673,6 +673,11 @@ if ~isPursuitTrial
 end
 ex.Trials(ex.j).stimTiming = stimTiming;
 
+% Use priority 1 for the timed trial, after texture preparation and before clearing
+% acquisition buffers. Restore the caller's priority on completion or error.
+previousPriority = Priority(1);
+priorityCleanup = onCleanup(@() Priority(previousPriority));
+
 % Stimulus generation can take substantial time. Clear the ADC buffer here
 % so trial eye data begin close to the actual trial start, not at the
 % earlier generic pretrial reset in runEx/runExptx.
@@ -879,6 +884,17 @@ end
 
 ttime = GetSecs-trstart;
 state = ex.states.START;
+
+% Geometry remains in stimulus pixels; the desktop renderer scales it only
+% when an overlay update is due. Calibration uses its existing full-size canvas.
+overlayFrame = struct('backgroundColor',ex.idx.bg,'foregroundColor',ex.idx.white, ...
+    'fixationRect',tolRect,'fixationPenWidth',tolRectPenW, ...
+    'circleRadiusPx',overlayCircleRadiusPx,'circlePenWidth',overlayCirclePenW, ...
+    'circleColor',overlayCircleColor,'centerPx',gauss_center_screen_px, ...
+    'centerHalfSizePx',overlayGaussCenterMarkerHalfSz,'centerPenWidth',overlayGaussCenterMarkerPenW, ...
+    'centerColor',overlayGaussCenterMarkerColor,'gazeDotSize',olPSz,'gazeColors',olColBinoc, ...
+    'active',false,'showFixation',false,'targetPositions',zeros(0,2), ...
+    'showCenter',false,'gazePositions',zeros(0,2),'showReward',false);
 
 % ------------------------------------------------------------------------
 % MAIN TRIAL LOOP
@@ -1240,6 +1256,7 @@ while state ~= ex.states.BREAKFIX &&...
         %     end
         % end
 
+        overlayFrame.active = false;
         % Clear screen
         Screen('FillRect', ex.setup.window, window_background_color);
         Screen('FillRect', ex.setup.window, texture_background_color, texture_background_rect);
@@ -1315,83 +1332,21 @@ while state ~= ex.states.BREAKFIX &&...
                 Screen('DrawDots', ex.setup.window, ex.fix.PCtr, ex.fix.PSz, ex.idx.white);
             end
             
-            % NEW: draw eye position
-            %Screen('DrawDots', ex.setup.window, olPos, olPSz, olCol, [], 2);   % dot type 2 = anti-aliased circle% draw eye dots, mouse position
+            % Collect preview geometry without issuing desktop graphics calls.
             if showExperimenterOverlay
-                % clear overlay
-               % Screen('FillRect', ex.setup.overlay, ex.idx.bg);
-               
-                if isempty(ex.setup.overlay)
-                    % Fallback if no overlay window is configured.
-                    if state<5.5
-                        Screen('FrameRect', ex.setup.window, tolRectColor, tolRect, tolRectPenW);
-                    end
-                else
-                    % clear and redraw experimenter-only overlay
-                    Screen('FillRect', ex.setup.overlay, ex.idx.bg);
-                    if state<5.5
-                        Screen('FrameRect', ex.setup.overlay, tolRectColor, tolRect, tolRectPenW);
-                    end
-                end
-                
-                % overlay: circle targets
+                overlayFrame.active = true;
+                overlayFrame.showFixation = state < 5.5;
+                overlayFrame.targetPositions = zeros(0,2);
                 if ~isPursuitTrial && useOverlayTargetCircles
-                    t1 = targPositions(step_to_show).targ1.pos_abs;
-                    circ1 = CenterRectOnPointd([0 0 2*overlayCircleRadiusPx 2*overlayCircleRadiusPx], t1(1), t1(2));
-                    if isempty(ex.setup.overlay)
-                        Screen('FrameOval', ex.setup.window, overlayCircleColor, circ1, overlayCirclePenW);
-                    else
-                        Screen('FrameOval', ex.setup.overlay, overlayCircleColor, circ1, overlayCirclePenW);
-                    end
+                    overlayFrame.targetPositions = targPositions(step_to_show).targ1.pos_abs;
                     if ctl.target_num == 2
-                        t2 = targPositions(step_to_show).targ2.pos_abs;
-                        circ2 = CenterRectOnPointd([0 0 2*overlayCircleRadiusPx 2*overlayCircleRadiusPx], t2(1), t2(2));
-                        if isempty(ex.setup.overlay)
-                            Screen('FrameOval', ex.setup.window, overlayCircleColor, circ2, overlayCirclePenW);
-                        else
-                            Screen('FrameOval', ex.setup.overlay, overlayCircleColor, circ2, overlayCirclePenW);
-                        end
+                        overlayFrame.targetPositions(2,:) = targPositions(step_to_show).targ2.pos_abs;
                     end
                 end
-
-                % overlay: Gaussian reward center marker, experimenter-only
-                if ~isPursuitTrial && useOverlayGaussCenterMarker && state == ex.states.GO && ~isempty(ex.setup.overlay)
-                    Screen('DrawLine', ex.setup.overlay, overlayGaussCenterMarkerColor, ...
-                        gauss_center_screen_px(1) - overlayGaussCenterMarkerHalfSz, gauss_center_screen_px(2), ...
-                        gauss_center_screen_px(1) + overlayGaussCenterMarkerHalfSz, gauss_center_screen_px(2), ...
-                        overlayGaussCenterMarkerPenW);
-                    Screen('DrawLine', ex.setup.overlay, overlayGaussCenterMarkerColor, ...
-                        gauss_center_screen_px(1), gauss_center_screen_px(2) - overlayGaussCenterMarkerHalfSz, ...
-                        gauss_center_screen_px(1), gauss_center_screen_px(2) + overlayGaussCenterMarkerHalfSz, ...
-                        overlayGaussCenterMarkerPenW);
-                end
-
-
-    % pick the most recent column (use end or 1 depending on which column you want)
-             %   eyePos = olPos(1:2, end);            % 2x1 vector [eyeX; eyeY]
-             %   olPos(3:4,:) = 0; % eliminate mouse position...
-                
-             % Keep reward logic based on mean(valid eyes), but only show per-eye positions
-                % on the experimenter overlay when both eyes are available.
-                % if isempty(ex.eyeCal.LXPos)
-                %     overlayPos = olPos(1:2,:); % monocular: single eye + mouse
-                %     overlayColors = olColBinoc(1:2,:);
-                % else
-                %     overlayPos = olPos(1:2,:); % binocular: right + left eyes only
-                %     overlayColors = olColBinoc(1:2,:);
-                % end
-                %keyboard
-             
-                if isempty(ex.setup.overlay)
-                    drawCoPsInputOverlayx(ex.setup.window,olPos,olPSz,olColBinoc);
-                    %Screen('Drawdots',ex.setup.window,overlayPos',olPSz',overlayColors');
-                else
-                   drawCoPsInputOverlayx(ex.setup.overlay,olPos,olPSz,olColBinoc);
-                   %Screen('Drawdots',ex.setup.overlay,overlayPos',olPSz',overlayColors');
-                end
-
+                overlayFrame.showCenter = ~isPursuitTrial && useOverlayGaussCenterMarker && state == ex.states.GO;
+                overlayFrame.gazePositions = olPos;
             end
-            
+
             % Draw synch pulse
             %Screen('DrawDots', ex.setup.window, spPos, spSz, spCol);
             
@@ -1432,17 +1387,13 @@ while state ~= ex.states.BREAKFIX &&...
         
 
         
-        % Draw reward indicator if reward was given XX (can this be only on experimenter screen?)
-        if showExperimenterOverlay && ~isnan(time_reward(1)) && ttime > time_reward(reward_cnt) && ttime < time_reward(reward_cnt) + 0.5
-            %Screen('DrawText', ex.setup.window, 'REWARD', 100, 100, ex.idx.white);
-            if isempty(ex.setup.overlay)
-                Screen('DrawText', ex.setup.window, 'REWARD', 100, 100, ex.idx.white);
-            else
-                Screen('DrawText', ex.setup.overlay, 'REWARD', 100, 100, ex.idx.white);
-            end
-
+        overlayFrame.showReward = showExperimenterOverlay && ~isnan(time_reward(1)) && ...
+            ttime > time_reward(reward_cnt) && ttime < time_reward(reward_cnt) + 0.5;
+        if showExperimenterOverlay && ~overlayIsSeparate
+            % Legacy inline previews must be drawn before the stimulus flip.
+            drawCoPsTrialOverlayx(ex.setup, overlayFrame);
         end
-        
+
         if rewardMarkerEnabled && state == ex.states.GO && stimulus_active && reward_cnt > 0 && ...
                 isfinite(time_reward(reward_cnt)) && ...
                 GetSecs()-trstart-time_reward(reward_cnt) < rewardMarkerDuration
@@ -1479,7 +1430,11 @@ while state ~= ex.states.BREAKFIX &&...
         frameSyncIndex(fi) = frameSyncIndexToSave;
         frameSyncPhase(fi) = frameSyncPhaseToSave;
         lastSyncVbl = flip_info(fi,1);
-        presentCoPsOverlayx(ex);
+        if showExperimenterOverlay && overlayIsSeparate
+            drawCoPsTrialOverlayx(ex.setup, overlayFrame);
+        else
+            presentCoPsOverlayx(ex);
+        end
         fi = fi + 1;
         if fi > 500 
             %keyboard
@@ -1605,7 +1560,11 @@ end
 Screen('FillRect', ex.setup.window, window_background_color);
 Screen('FillRect', ex.setup.window, texture_background_color, texture_background_rect);
 if overlayIsSeparate
-    Screen('FillRect', ex.setup.overlay, ex.idx.bg);
+    if isfield(ex.setup,'overlayBackend') && strcmp(ex.setup.overlayBackend,'process')
+        coPsOverlayProcessx('send',ex.setup,struct('backgroundColor',ex.idx.bg,'active',false),true);
+    else
+        Screen('FillRect', ex.setup.overlay, ex.idx.bg);
+    end
 end
 refreshCoPsPreviewWindowx(ex.setup);
 if binarySync, Screen('FillRect', ex.setup.window, sync.lowColor, spRects); end
@@ -1651,6 +1610,9 @@ else
 end
 if eyeOn ex.Trials(ex.j).TrialStarteyelink = trstart_Eyelink; end
 if eyeOn ex.Trials(ex.j).TrialEndEyelink = Eyelink('Trackertime'); end
+
+% Data capture is complete; analysis, export, and feedback use the caller's priority.
+clear priorityCleanup
 
 ex.Trials(ex.j).times.startTrial = time_startTrial + trstart;
 ex.Trials(ex.j).times.stimOn = time_stimOn + trstart;

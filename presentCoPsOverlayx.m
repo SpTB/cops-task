@@ -2,6 +2,9 @@ function presentCoPsOverlayx(ex)
 % Scale the experimenter canvas into its desktop window without waiting for VBL.
 % A 30 Hz cap avoids updating this informational display on every stimulus flip.
 persistent lastWindow lastUpdate
+if isfield(ex.setup,'overlayBackend') && strcmp(ex.setup.overlayBackend,'process')
+    return % The independent viewer presents its own updates.
+end
 if ~isfield(ex.setup, 'overlayIsSeparate') || ~ex.setup.overlayIsSeparate
     return
 end

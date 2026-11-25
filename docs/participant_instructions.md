@@ -32,6 +32,28 @@ The Command Window prints the resolved session MAT path as `CoPs output:`.
 After `ex = runEx(...)`, it can also be obtained with
 `fullfile(ex.Header.onlineExperimentalDirName, ex.Header.onlineFileName)`.
 
+## Experimenter overlay
+
+On Linux X11, the experimenter preview runs in an independent Python/X11 process
+with a desktop window (960 by 540 pixels by default). Gaze points, target circles,
+fixation bounds, and reward markers are scaled from participant-display coordinates.
+`overlayWindowSizePx` controls the requested window size; it is fitted to the
+available desktop while preserving the stimulus aspect ratio.
+
+The task publishes at most 30 small state messages per second over a nonblocking
+loopback UDP socket. It performs no overlay graphics calls during the stimulus
+loop, and does not wait for the viewer. The viewer discards old updates and renders
+the latest state at up to 30 Hz. Closing the viewer does not stop the experiment;
+normal exit and handled errors close the viewer automatically. The viewer never
+captures keyboard input. Native EyeLink validation uses the same state messages.
+
+`overlayBackend="auto"` selects this process viewer on Linux X11. It requires
+`python3`, `libX11`, and MATLAB's JVM, with no extra Python packages. Startup errors
+stop before trials and report the viewer log path. Other platforms and legacy
+analog calibration retain the in-process renderer. `overlayBackend="inline"`
+explicitly selects that renderer for comparisons. Stimulus timing, gaze acquisition,
+and reward calculations retain their existing rates.
+
 ## Keyboard selection
 
 On `nei-op4-Precision-3280-Compact`, ordinary `runEx()`, `runEx('h')`, and

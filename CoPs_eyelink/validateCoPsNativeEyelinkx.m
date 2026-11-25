@@ -156,18 +156,7 @@ else
     Screen('DrawTexture', ex.setup.window, texture, [], rect, ...
         mod(elapsed * ex.valid.rotSpeedDegPerSec, 360));
 end
-if isfield(ex.setup,'overlayIsSeparate') && ex.setup.overlayIsSeparate
-    Screen('FillRect', ex.setup.overlay, ex.valid.background_color);
-    Screen('DrawDots', ex.setup.overlay, target', ex.calib.Psz, ex.idx.white, [], 2);
-    eyes = eyes(all(isfinite(eyes),2),:);
-    if ~isempty(eyes)
-        Screen('DrawDots', ex.setup.overlay, eyes', ex.setup.eyePSz, [255 0 0], [], 2);
-    end
-    if ex.valid.showMouseTrace
-        [mx,my] = GetMouse(ex.setup.window);
-        Screen('DrawDots', ex.setup.overlay, [mx;my], 3, [0 255 0], [], 2);
-    end
-end
+drawCoPsValidationOverlayx(ex,target,eyes);
 end
 
 function stopRewardLocal()

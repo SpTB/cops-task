@@ -2,6 +2,12 @@ function closeCoPsDisplayx()
 % Safely release Psychtoolbox display state after a task run or error.
 
 try
+    coPsOverlayProcessx('close');
+catch
+    % Viewer cleanup must not mask a task error.
+end
+
+try
     Screen('CloseAll');
 catch
     % Cleanup must never mask the original task error.

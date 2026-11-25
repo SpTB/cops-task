@@ -373,6 +373,13 @@ for profile = {'test1', 'mouse_mini'}
 end
 end
 
+function testOverlayBackendIsForwardedBeforeDisplayInitialization(testCase)
+for backend = ["auto","process","inline"]
+    ex=captureBeforeDisplay(testCase,'t',true,false,false,false,overlayBackend=backend);
+    verifyEqual(testCase,ex.setup.overlayBackend,backend);
+end
+end
+
 function testNamedOverlayToggleTakesPrecedence(testCase)
 for profile = {'test1', 'mouse_mini'}
     ex = captureBeforeDisplay(testCase, profile{1}, false, overlayOn=true);

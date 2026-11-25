@@ -16,6 +16,14 @@ writeMock(folder,'GetSecs',[
     "assert(COPS_TRIAL_START_TEST.now<80,'TrialStartTest:Timeout','Trial did not progress.');"
     "t=COPS_TRIAL_START_TEST.now;"
     "end"]);
+writeMock(folder,'Priority',[
+    "function previous=Priority(level)"
+    "global COPS_TRIAL_START_TEST"
+    "previous=COPS_TRIAL_START_TEST.priority;"
+    "COPS_TRIAL_START_TEST.priority=level;"
+    "COPS_TRIAL_START_TEST.priorityCalls(end+1)=level;"
+    "COPS_TRIAL_START_TEST.priorityTextureCounts(end+1)=COPS_TRIAL_START_TEST.textures;"
+    "end"]);
 writeMock(folder,'Screen',[
     "function varargout=Screen(command,varargin)"
     "global COPS_TRIAL_START_TEST"
@@ -29,6 +37,8 @@ writeMock(folder,'Screen',[
     "    COPS_TRIAL_START_TEST.closed=[COPS_TRIAL_START_TEST.closed varargin{1}]; varargout={};"
     "case 'preloadtextures', varargout={true,true};"
     "case 'flip'"
+    "    assert(~COPS_TRIAL_START_TEST.failFlip,'TrialStartTest:FlipFailure','Injected flip failure');"
+    "    COPS_TRIAL_START_TEST.flipPriorities(end+1)=COPS_TRIAL_START_TEST.priority;"
     "    t=GetSecs;"
     "    if COPS_TRIAL_START_TEST.scheduledFlips"
     "        when=0; if numel(varargin)>1, when=varargin{2}; end"
@@ -113,6 +123,8 @@ writeMock(folder,'WaitSecs',[
     "end"]);
 writeMock(folder,'showCoPsTrialFeedbackx',[
     "function ex=showCoPsTrialFeedbackx(ex,varargin)"
+    "global COPS_TRIAL_START_TEST"
+    "COPS_TRIAL_START_TEST.feedbackPriority=COPS_TRIAL_START_TEST.priority;"
     "% The trial has finished; pause-screen keyboard handling is tested separately."
     "end"]);
 writeMock(folder,'Eyelink',[
@@ -131,12 +143,12 @@ writeMock(folder,'Eyelink',[
     "end"
     "end"]);
 addpath(folder,'-begin');
-clear readCoPsKeyboardx GetSecs Screen KbCheck KbName GetMouse Eyelink showCoPsTrialFeedbackx Datapixx WaitSecs resetAdcBuffer readCoPsAnalogx checkEyex
+clear Priority readCoPsKeyboardx GetSecs Screen KbCheck KbName GetMouse Eyelink showCoPsTrialFeedbackx Datapixx WaitSecs resetAdcBuffer readCoPsAnalogx checkEyex
 end
 
 function teardownOnce(testCase)
 path(testCase.TestData.originalPath);
-clear readCoPsKeyboardx GetSecs Screen KbCheck KbName GetMouse Eyelink showCoPsTrialFeedbackx Datapixx WaitSecs resetAdcBuffer readCoPsAnalogx checkEyex
+clear Priority readCoPsKeyboardx GetSecs Screen KbCheck KbName GetMouse Eyelink showCoPsTrialFeedbackx Datapixx WaitSecs resetAdcBuffer readCoPsAnalogx checkEyex
 folder=testCase.TestData.folder;
 assert(strcmp(fileparts(folder),fileparts(tempname)));
 rmdir(folder,'s');
@@ -146,11 +158,35 @@ end
 function setup(~)
 global COPS_TRIAL_START_TEST
 COPS_TRIAL_START_TEST=struct('now',50,'textures',1000,'fills',{{}},'dots',{{}}, ...
+    'priority',0,'priorityCalls',[],'priorityTextureCounts',[], ...
+    'flipPriorities',[],'feedbackPriority',NaN,'failFlip',false, ...
     'closed',[],'failTextureAt',Inf,'failQueueReset',false, ...
     'gaze',[NaN NaN NaN NaN NaN NaN],'abortAt',Inf, ...
     'clockStep',.005,'scheduledFlips',false,'ifi',1/120,'drawCost',0,'keyboardCost',0, ...
     'adcAllowed',false,'adcStart',NaN,'adcRate',2000,'waitUntil',NaN, ...
     'keyboardPolls',0,'spaceHeld',false,'focusProbeAllowed',false,'focusQueries',0,'focused',true);
+end
+
+function testTrialPriorityStartsAfterPreparationAndRestoresBeforeFeedback(testCase)
+global COPS_TRIAL_START_TEST
+COPS_TRIAL_START_TEST.priority=2;
+ex=fixture();ex.setup.inputMode='none';
+ex=runTrial(testCase,ex,false);
+verifyTrue(testCase,ex.Trials(1).trialCompleted);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.priorityCalls,[1 2]);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.priorityTextureCounts(1),COPS_TRIAL_START_TEST.textures);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.flipPriorities,ones(size(COPS_TRIAL_START_TEST.flipPriorities)));
+verifyEqual(testCase,COPS_TRIAL_START_TEST.priority,2);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.feedbackPriority,2);
+end
+
+function testPriorityIsRestoredAfterDisplayError(testCase)
+global COPS_TRIAL_START_TEST
+COPS_TRIAL_START_TEST.priority=2;COPS_TRIAL_START_TEST.failFlip=true;
+ex=fixture();ex.setup.inputMode='none';
+verifyError(testCase,@() runTrial(testCase,ex,false),'TrialStartTest:FlipFailure');
+verifyEqual(testCase,COPS_TRIAL_START_TEST.priorityCalls,[1 2]);
+verifyEqual(testCase,COPS_TRIAL_START_TEST.priority,2);
 end
 
 function testNormalTrialReleasesAllStimulusTextures(testCase)
@@ -290,6 +326,7 @@ end
 function testNativeGazeOverlayCompletesFirstTrial(testCase)
 global COPS_TRIAL_START_TEST
 for gaze={[960 540 30 NaN NaN NaN],[960 540 30 970 550 30],NaN(1,6)}
+    clear drawCoPsTrialOverlayx
     COPS_TRIAL_START_TEST.now=50;
     COPS_TRIAL_START_TEST.dots={};
     COPS_TRIAL_START_TEST.gaze=gaze{1};
@@ -297,10 +334,11 @@ for gaze={[960 540 30 NaN NaN NaN],[960 540 30 970 550 30],NaN(1,6)}
     ex.setup.showExperimenterOverlay=true;
     ex.setup.overlay=201; ex.setup.overlayIsSeparate=true;
     ex.setup.overlayWindow=202; ex.setup.overlayDisplayRateHz=30;
+    ex.setup.overlayOpenedAt=50; ex.setup.overlayScale=[.5 .5];
     ex=runTrial(testCase,ex,true);
     verifyTrue(testCase,ex.Trials(1).trialCompleted);
     draws=COPS_TRIAL_START_TEST.dots;
-    overlayDraws=draws(cellfun(@(c) isequal(c{1},201),draws));
+    overlayDraws=draws(cellfun(@(c) isequal(c{1},202),draws));
     if all(isnan(gaze{1}))
         verifyEmpty(testCase,overlayDraws);
     else
