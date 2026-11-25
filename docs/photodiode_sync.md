@@ -1,11 +1,12 @@
 # Photodiode synchronization on `main`
 
-`main` supports three display protocols. The default preserves the existing
-GO-onset marker; binary coding is optional.
+`main` supports three display protocols. The raw settings structure defaults
+to the legacy GO marker; `runEx` on this rig currently selects `binary` by
+default. An explicit `syncMode` argument overrides that choice.
 
 | Mode | Patch behavior |
 | --- | --- |
-| `goPulse` (default) | White for approximately 100 ms at GO onset. |
+| `goPulse` | White for approximately 100 ms at GO onset. |
 | `binary` | White GO marker, black gap, then a saved sequence of black/white bits. |
 | `off` | No GO marker or binary code. |
 
@@ -82,6 +83,7 @@ For a binary trial containing its acquired trace and clock metadata:
 ```matlab
 out = decodeCoPsSyncx(ex.Trials(1), plot=true);
 out.alignmentReliable
+out.waveform
 out.matchFraction
 out.lagSec
 out.clockDriftPpm
@@ -105,13 +107,55 @@ out = decodeCoPsSyncx(ex.Trials(1), diodeTimesPtb, diodeVolts, sameClock=true);
 
 Use `sameClock=true` only for timestamps already expressed in PTB's clock.
 Options include `thresholdV`, `invert`, `maxLagSec`, `maxDriftPpm`, and
-`minStableSamples`. Fitted lag includes display/sensor latency and remaining
-clock-reference error. A reliable alignment can still contain mismatches.
+`minStableSamples`. `waveform="auto"` first tries the original continuous
+light-level decoder. If that alignment is unreliable, it averages measured
+voltage over a centred one-refresh window and decodes the resulting light
+envelope. This handles DLP projectors whose white frames contain short light
+bursts separated by darkness. The envelope threshold is learned from the GO
+marker and black gap when those intervals provide usable contrast; payload
+bits are not used to choose that threshold. Both paths retain the code
+ambiguity, clock-drift, coverage and mismatch checks.
+
+Use `waveform="continuous"` or `waveform="pulsed"` to force one path.
+`out.waveform` reports the selected path and `out.envelopeWindowSec` reports
+the averaging window (zero for continuous decoding). An explicit `thresholdV`
+and `minStableSamples` apply to the selected raw/envelope waveform.
+
+For continuous decoding, fitted lag includes display/sensor latency and
+remaining clock-reference error. **For pulsed decoding, `lagSec` aligns the
+averaged light envelope; it is not a direct measurement of the first optical
+pulse.** See `out.lagInterpretation`. Use high-rate raw recordings to inspect
+individual pulse onset times.
+
+A reliable alignment can still contain mismatches. At 500 Hz, narrow DLP
+flashes can fall entirely between samples; smoothing cannot reconstruct an
+unobserved flash. `mismatchedFrameIndices` lists disagreements at logged frame
+hold midpoints and does not by itself distinguish undersampling from actual
+display errors. `alignmentReliable` describes identification of the code's
+alignment, not confirmation of every individual displayed frame.
 Repeated identical bits have no optical edge, so a single diode cannot
 uniquely identify every missed refresh or verify every stimulus pixel.
 
 Run `runtests('testCoPsSyncx')` for the hardware-free protocol/decoder tests;
 validate the complete display, wiring, and recording path on the rig.
+
+## Short high-rate optical check
+
+With the experiment stopped and the display and photodiode connected:
+
+```matlab
+results = runCoPsSyncHardwareCheckx();
+out = decodeCoPsSyncx(results.trials{1}, plot=true);
+```
+
+This captures two five-second binary-patch sequences at 10 kHz on physical
+ADC channel 6, using one and two display frames per bit. It uses the normal
+60-pixel corner patch, RB3D display mode, saved frame timestamps and production
+binary sequence generator. ESC/F4 cancels. It does not connect to EyeLink,
+run behavioural trials or deliver rewards. Raw recordings and ADC status are
+saved in `test_data/output/sync_hardware/`. The temporary higher sampling rate
+does not change the experiment's normal ADC settings. This marker-only check
+does not measure the rendering load of a full experiment trial.
 
 The separate hardware benchmark draws its own optical marker in generated
 trial copies and disables the normal patch protocol there. It continues to

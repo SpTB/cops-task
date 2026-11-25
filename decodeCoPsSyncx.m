@@ -13,6 +13,7 @@ arguments
     options.maxLagSec (1,1) double {mustBePositive,mustBeFinite} = 0.25
     options.maxDriftPpm (1,1) double {mustBeNonnegative,mustBeFinite} = 2000
     options.minStableSamples (1,1) double {mustBeInteger,mustBePositive} = 2
+    options.waveform (1,1) string {mustBeMember(options.waveform,["auto","continuous","pulsed"])} = "auto"
     options.plot (1,1) logical = false
 end
 if ~isfield(trial, 'sync') || ~strcmp(trial.sync.mode, 'binary')
@@ -74,6 +75,10 @@ end
 inside = s >= t(1)-options.maxLagSec & s <= t(end)+options.maxLagSec;
 s = s(inside); v = v(inside);
 if numel(s) < 20, error('decodeCoPsSyncx:NoOverlap', 'ADC trace does not overlap the logged frame times.'); end
+if options.waveform ~= "continuous"
+    out = decodeAutomaticLocal(trial,s,v,options,clockUncertainty);
+    return
+end
 levels = sort(v);
 low = levels(max(1, round(0.1*numel(levels))));
 high = levels(max(1, round(0.9*numel(levels))));
@@ -160,17 +165,124 @@ out = struct('lagSec', lag, 'clockDriftPpm', (scale-1)*1e6, ...
     'longFlipIntervalFrameIndices', frameNumbers(long+1), ...
     'estimatedMissedRefreshes', sum(max(0,round(intervals(activeIntervals)/ifi)-1)), ...
     'maxActiveFlipIntervalSec', max([NaN; intervals(activeIntervals)], [], 'omitnan'));
+out.waveform = 'continuous';
+out.envelopeWindowSec = 0;
+out.lagInterpretation = 'fitted light-level edge delay, including clock-reference error';
+out.continuousMatchFraction = matchFraction;
+out.envelopeMatchFraction = NaN;
+out.signalInverted = options.invert;
 if options.plot
-    figure;
-    mapped = ref+lag+scale*(t-ref);
-    plot(s-ref, v); hold on;
-    stairs(mapped-ref, low+(high-low)*b, 'LineWidth', 1);
-    yline(threshold, ':');
-    xlabel('Time from first logged flip (s)'); ylabel('Photodiode voltage');
-    legend('Recorded', 'Predicted from frame log', 'Threshold');
-    title(sprintf('Match %.1f%%; lag %.2f ms; drift %.0f ppm; reliable=%d', ...
-        100*matchFraction, 1000*lag, out.clockDriftPpm, out.alignmentReliable));
+    plotDecodedLocal(trial,s,v,[],out);
 end
+end
+
+function out = decodeAutomaticLocal(trial,s,v,options,clockUncertainty)
+% Try the legacy light-level decoder first. DLP projectors can pulse even
+% while displaying white; decode the mean light envelope if levels fail.
+inner = options; inner.sameClock = true; inner.plot = false; inner.waveform = "continuous";
+continuous = []; continuousError = [];
+if options.waveform == "auto"
+    try
+        args = namedargs2cell(inner);
+        continuous = decodeCoPsSyncx(trial,s,v,args{:});
+    catch err
+        if ~ismember(err.identifier, {'decodeCoPsSyncx:InsufficientEdges','decodeCoPsSyncx:NoContrast'})
+            rethrow(err)
+        end
+        continuousError = err;
+    end
+    if ~isempty(continuous) && continuous.alignmentReliable
+        out = continuous; out.clockReferenceUncertaintySec = clockUncertainty;
+        if options.plot, plotDecodedLocal(trial,s,v,[],out); end
+        return
+    end
+end
+try
+    [envelope,threshold] = pulseEnvelopeLocal(trial,s,v,options.invert);
+    if isnan(options.thresholdV), inner.thresholdV = threshold; end
+    args = namedargs2cell(inner);
+    pulsed = decodeCoPsSyncx(trial,s,envelope,args{:});
+    pulsed.waveform = 'pulsed';
+    pulsed.envelopeWindowSec = trial.sync.refreshIntervalSec;
+    pulsed.envelopeMatchFraction = pulsed.matchFraction;
+    pulsed.continuousMatchFraction = NaN;
+    pulsed.lagInterpretation = ['alignment of a centred one-refresh light envelope; ' ...
+        'not a direct measurement of the first optical pulse'];
+catch err
+    if ~ismember(err.identifier, {'decodeCoPsSyncx:InsufficientEdges','decodeCoPsSyncx:NoContrast'})
+        rethrow(err)
+    end
+    if ~isempty(continuous)
+        out = continuous; out.clockReferenceUncertaintySec = clockUncertainty;
+        if options.plot, plotDecodedLocal(trial,s,v,[],out); end
+        return
+    end
+    if ~isempty(continuousError), rethrow(continuousError); end
+    rethrow(err)
+end
+out = pulsed;
+if ~isempty(continuous)
+    pulsed.continuousMatchFraction = continuous.matchFraction;
+    if continuous.matchFraction > pulsed.matchFraction && ~pulsed.alignmentReliable
+        out = continuous; envelope = [];
+    else
+        out = pulsed;
+    end
+end
+out.clockReferenceUncertaintySec = clockUncertainty;
+if options.plot, plotDecodedLocal(trial,s,v,envelope,out); end
+end
+
+function [envelope,threshold] = pulseEnvelopeLocal(trial,s,v,inverted)
+% Integrate measured voltage in time, rather than counting high ADC samples.
+% A centred window avoids introducing a fixed extra half-refresh delay.
+w = trial.sync.refreshIntervalSec;
+integral = [0; cumsum(diff(s).*(v(1:end-1)+v(2:end))/2)];
+left = max(s(1),s-w/2); right = min(s(end),s+w/2);
+envelope = (interp1(s,integral,right)-interp1(s,integral,left))./(right-left);
+sorted = sort(envelope);
+low = sorted(max(1,round(.1*numel(sorted))));
+high = sorted(max(1,round(.75*numel(sorted))));
+threshold = (low+high)/2;
+% Learn white/black envelope levels from the independent GO marker and gap,
+% rather than using the payload's expected bits to choose the threshold.
+t = trial.flip_info(:,1); phase = trial.frameSyncPhase(:);
+first = find(phase==1,1); gap = find(phase==2,1); payload = find(phase==3,1);
+if ~isempty(first) && ~isempty(gap) && ~isempty(payload)
+    white = envelope(s>=t(first)+w & s<=t(gap)-w);
+    black = envelope(s>=t(gap)+w & s<=t(payload)-w);
+    if numel(white)>=3 && numel(black)>=3
+        hi = median(white); lo = median(black);
+        direction = 1; if inverted, direction = -1; end
+        span = sorted(max(1,round(.99*numel(sorted))))-sorted(max(1,round(.01*numel(sorted))));
+        if direction*(hi-lo) > .1*span
+            threshold = (hi+lo)/2;
+        end
+    end
+end
+end
+
+function plotDecodedLocal(trial,s,v,envelope,out)
+t = trial.flip_info(:,1); b = double(trial.frameSyncBit(:));
+good = isfinite(t) & isfinite(b); t=t(good); b=b(good);
+ref=t(1);
+if isfield(trial,'syncOffTime') && trial.syncOffTime>t(end)
+    t(end+1)=trial.syncOffTime; b(end+1)=0;
+end
+signal=v; if ~isempty(envelope), signal=envelope; end
+levels=sort(signal); lo=levels(max(1,round(.1*numel(levels))));
+hi=levels(max(1,round(.9*numel(levels))));
+mapped=ref+out.lagSec+(1+out.clockDriftPpm*1e-6)*(t-ref);
+if out.signalInverted, b=1-b; end
+figure; plot(s-ref,v); hold on;
+labels={'Recorded voltage'};
+if ~isempty(envelope)
+    plot(s-ref,envelope,'LineWidth',1); labels{end+1}='One-refresh light envelope';
+end
+stairs(mapped-ref,lo+(hi-lo)*b,'LineWidth',1); labels{end+1}='Aligned frame code';
+yline(out.thresholdV,':'); labels{end+1}='Threshold';
+xlabel('Time from first logged flip (s)'); ylabel('Photodiode voltage'); legend(labels);
+title(sprintf('%s; match %.1f%%; alignment reliable=%d',out.waveform,100*out.matchFraction,out.alignmentReliable));
 end
 
 function logic = schmittLocal(v, threshold, halfWidth, stable)

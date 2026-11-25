@@ -162,6 +162,79 @@ for settings = [120 1 500; 144 1 2000; 60 2 500]'
 end
 end
 
+function testPulsedProjectorAtHighSamplingRate(testCase)
+trial = trialFixture([],120,1);
+[s,v] = simulatePulsedTrace(trial,.018,700,10000);
+out = decodeCoPsSyncx(trial,s,v,sameClock=true);
+verifyTrue(testCase,out.alignmentReliable);
+verifyEqual(testCase,out.waveform,'pulsed');
+verifyGreaterThan(testCase,out.matchFraction,.97);
+verifyEqual(testCase,out.clockDriftPpm,700,'AbsTol',200);
+verifyEqual(testCase,out.envelopeWindowSec,1/120,'AbsTol',1e-12);
+verifyNotEmpty(testCase,out.lagInterpretation);
+end
+
+function testPulsedProjectorAtEyeSamplingRate(testCase)
+trial = trialFixture([],120,1);
+% These pulses still defeat raw two-sample debouncing, but each white frame
+% contains a sampled flash. The narrower case below deliberately does not.
+[s,v] = simulatePulsedTrace(trial,.018,0,500,trial.frameSyncBit,.0016);
+out = decodeCoPsSyncx(trial,s,v,sameClock=true,maxDriftPpm=0);
+verifyTrue(testCase,out.alignmentReliable);
+verifyEqual(testCase,out.waveform,'pulsed');
+verifyGreaterThan(testCase,out.matchFraction,.85);
+% Alignment can be reliable even though undersampling loses individual bits.
+verifyNotEmpty(testCase,out.mismatchedFrameIndices);
+end
+
+function testSeverelyUndersampledPulsesAreNotCalledReliable(testCase)
+trial = trialFixture([],120,1);
+[s,v] = simulatePulsedTrace(trial,.018,0,500);
+out = decodeCoPsSyncx(trial,s,v,sameClock=true,maxDriftPpm=0);
+verifyEqual(testCase,out.waveform,'pulsed');
+verifyFalse(testCase,out.alignmentReliable);
+verifyLessThan(testCase,out.matchFraction,.85);
+verifyNotEmpty(testCase,out.mismatchedFrameIndices);
+end
+
+function testPulsedPhysicalErrorsRemainVisible(testCase)
+trial = trialFixture([],120,1);
+physical = trial.frameSyncBit; physical(250:254)=1-physical(250:254);
+[s,v] = simulatePulsedTrace(trial,.018,0,10000,physical);
+out = decodeCoPsSyncx(trial,s,v,sameClock=true,maxDriftPpm=0,waveform="pulsed");
+verifyTrue(testCase,out.alignmentReliable);
+verifyTrue(testCase,any(ismember(out.mismatchedFrameIndices,250:254)));
+verifyLessThan(testCase,out.matchFraction,1);
+end
+
+function testInvertedPulsedSignalAndHeldBits(testCase)
+trial = trialFixture([],120,2);
+[s,v] = simulatePulsedTrace(trial,.018,0,10000);
+out = decodeCoPsSyncx(trial,s,.4-v,sameClock=true,invert=true,maxDriftPpm=0);
+verifyTrue(testCase,out.alignmentReliable);
+verifyEqual(testCase,out.waveform,'pulsed');
+verifyGreaterThan(testCase,out.matchFraction,.97);
+end
+
+function testPulsedWrongCodeIsNotCalledReliable(testCase)
+trial = trialFixture([],120,1);
+physical=trial.frameSyncBit;
+use=find(trial.frameSyncPhase==3);
+physical(use)=circshift(physical(use),97);
+[s,v] = simulatePulsedTrace(trial,.018,0,10000,physical);
+out = decodeCoPsSyncx(trial,s,v,sameClock=true,maxDriftPpm=0,waveform="pulsed");
+verifyFalse(testCase,out.alignmentReliable);
+end
+
+function testContinuousSignalsKeepLegacyDecoder(testCase)
+trial = trialFixture();
+[s,v] = simulateTrace(trial,.018,0);
+out = decodeCoPsSyncx(trial,s,v,sameClock=true,maxDriftPpm=0);
+verifyEqual(testCase,out.waveform,'continuous');
+verifyEqual(testCase,out.envelopeWindowSec,0);
+verifyTrue(testCase,isnan(out.envelopeMatchFraction));
+end
+
 function trial = trialFixture(bits,refreshRate,framesPerBit)
 if nargin < 2, refreshRate = 60; end
 if nargin < 3, framesPerBit = 1; end
@@ -192,4 +265,20 @@ s = (ref-0.05:1/sampleRate:trial.syncOffTime+0.1)';
 query = ref+(s-ref-lag)/(1+drift*1e-6);
 v = interp1(t,b,query,'previous',0);
 v = 0.1+0.9*v+0.02*sin((1:numel(v))'*1.791);
+end
+
+function [s,v] = simulatePulsedTrace(trial,lag,drift,sampleRate,physicalBits,pulseWidthSec)
+if nargin<5, physicalBits=trial.frameSyncBit; end
+if nargin<6, pulseWidthSec=.0012; end
+t=[trial.flip_info(:,1);trial.syncOffTime]; b=[physicalBits;0];
+ref=t(1); ifi=trial.sync.refreshIntervalSec;
+s=(ref-.05:1/sampleRate:trial.syncOffTime+.1)';
+query=ref+(s-ref-lag)/(1+drift*1e-6);
+level=interp1(t,b,query,'previous',0);
+phase=mod(query-ref,ifi);
+% Two short flashes per refresh. At 500 Hz, neither guarantees two adjacent
+% high samples, even during a long white run; some white frames go unseen.
+pulse=(phase>=.0008 & phase<.0008+pulseWidthSec) | ...
+    (phase>=.0044 & phase<.0044+pulseWidthSec);
+v=.01+.3*level.*pulse+.002*sin((1:numel(s))'*1.791);
 end

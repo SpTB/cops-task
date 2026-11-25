@@ -19,7 +19,7 @@ sync = struct('mode','goPulse','framesPerBit',1,'seed',1,'sequence',[], ...
 %main params
 graph.texture_root = '/home/vpixx/stim';%;
 %'/run/user/1000/gvfs/smb-share:server=lsr-isilon.nei.nih.gov,share=lsr-nienborg/data/CoPs'
-graph.texture_folder = 'nov6_stim1';% -> /home/vpixx/stim/ly_jun5_stim
+graph.texture_folder = 'nov6_stim2';% -> /home/vpixx/stim/ly_jun5_stim
 
 pre.nreps = 0; % numeric = total pre trials; 'all' = one trial per selected texture
 pur.nreps = 0;
