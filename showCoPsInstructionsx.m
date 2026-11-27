@@ -2,13 +2,18 @@ function ex = showCoPsInstructionsx(ex,stage)
 % Show and log one instruction page outside the recorded trial interval.
 if nargin < 2, stage = 'welcome'; end
 if ~ex.exp.CoPs.instrOn, return; end
-stage = validatestring(stage,{'welcome','dynamic','ready'});
+stage = validatestring(stage,{'welcome','targets','dynamic','training','ready'});
 ex.exp.CoPs.pay = resolveCoPsPayx(ex.exp.CoPs.pay);
 ctl = struct();
 if isfield(ex.exp.CoPs,'ctl'), ctl = ex.exp.CoPs.ctl; end
 info = getCoPsTrialBlockInfox(ex);
 nPaidTrials = info.totalN-info.instructionN;
-[body,prompt,cap] = formatCoPsInstructionTextx(ex.exp.CoPs.pay,stage,ctl,nPaidTrials);
+instr = struct();
+if isfield(ex.exp.CoPs,'instr'), instr = ex.exp.CoPs.instr; end
+train = struct();
+if isfield(ex.exp.CoPs,'train'), train = ex.exp.CoPs.train; end
+plan = getCoPsInstructionPlanx(instr,train);
+[body,prompt,cap] = formatCoPsInstructionTextx(ex.exp.CoPs.pay,stage,ctl,nPaidTrials,plan.version,train);
 window = ex.setup.window;
 oldSize = Screen('TextSize',window);
 oldStyle = Screen('TextStyle',window);
@@ -22,8 +27,10 @@ refreshCoPsPreviewWindowx(ex.setup);
 drawPage();
 page.on = Screen('Flip',window);
 allowCalibration = isfield(ex.setup,'inputMode') && ismember(ex.setup.inputMode,{'eyelink','eye'});
+onQuestion = @() notifyCoPsQuestionx(ex);
+if isfield(ex.setup,'instructionsOnly') && ex.setup.instructionsOnly, onQuestion = []; end
 [quitRequested,page.questionRequests,recalibrate] = waitCoPsSpacex( ...
-    ex.setup,@redrawPage,@() notifyCoPsQuestionx(ex),allowCalibration);
+    ex.setup,@redrawPage,onQuestion,allowCalibration);
 if recalibrate
     ex = requestCoPsRecalibrationx(ex,ex.j,['instructions:' stage]);
 end
@@ -34,6 +41,7 @@ page.off = Screen('Flip',window);
 page.acknowledged = ~quitRequested;
 if ~isfield(ex,'Instructions') || strcmp(stage,'welcome')
     ex.Instructions = page; % preserve the original welcome-page fields
+    ex.Instructions.version = plan.version;
     ex.Instructions.pages = page;
 else
     ex.Instructions.pages(end+1) = page;

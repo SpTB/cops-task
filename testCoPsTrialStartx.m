@@ -393,6 +393,80 @@ verifyFalse(testCase,T.pointsCountTowardTotal);
 verifyEqual(testCase,ex.totalPoints,0);
 end
 
+function testLongTutorialsAndTrainingUseRequestedStimuliAndFlatLandscape(testCase)
+for number=[1 2 3 4 13]
+    setup(testCase);
+    ex=fixture(); ex.setup.inputMode='none';
+    ex.exp.CoPs.instr.version='long';
+    ex.setup.instructionPractice=true;
+    ex.setup.instructionPracticeCount=max(3,number);
+    ex.setup.instructionTrainingStart=4;
+    ex.j=number; ex.finish=max(3,number); ex.exp.total_nreps=ex.finish;
+    ex.exp.CoPs.ctl.nsteps=4;
+    ex=prepareCoPsTrialParamSchedules(ex);
+    ex.stim.seq=buildCoPsStimulusSequencex(ex,false);
+    ex=runTrial(testCase,ex,false);
+    T=ex.Trials(number);
+    verifyTrue(testCase,T.trialCompleted);
+    verifyEqual(testCase,T.target_num,1+double(number>1));
+    verifyEqual(testCase,T.coherence,1);
+    verifyEqual(testCase,T.gauss_scalar,1);
+    if number<3, noise=-1; else, noise=1; end
+    verifyEqual(testCase,T.background_noise_lvl,noise);
+    verifyFalse(testCase,T.pointsCountTowardTotal);
+    verifyEqual(testCase,T.gaussCenterCacheStatus,'practice_no_landscape');
+    verifyEqual(testCase,T.isInstructionTraining,number>=4);
+    if number>=4
+        verifyEqual(testCase,T.instructionTrainingNumber,number-3);
+        verifyEqual(testCase,T.instructionRepeatNumber,0);
+        verifyEqual(testCase,T.trialType,'instructionTraining');
+        verifyEqual(testCase,T.runPhase,'instructionTraining');
+    end
+end
+end
+
+function testTrainingArraysReachRealStimulusSelection(testCase)
+ex=fixture();
+source=ex.stim.seq{1};
+bank=fullfile(testCase.TestData.folder,'training_bank');
+for name={'full','mix50','scramble'}, mkdir(fullfile(bank,'noise1',name{1})); end
+targets=dir(fullfile(source,'noise1','full','full*.mat'));
+backgrounds=dir(fullfile(source,'noise1','scramble','scramble*.mat'));
+copyfile(fullfile(targets(1).folder,targets(1).name),fullfile(bank,'noise1','full','full_0001.mat'));
+copyfile(fullfile(targets(1).folder,targets(1).name),fullfile(bank,'noise1','mix50','mix50_0001.mat'));
+copyfile(fullfile(backgrounds(1).folder,backgrounds(1).name),fullfile(bank,'noise1','scramble','scramble_0001.mat'));
+template=fixture(); template.setup.inputMode='none';
+template.exp.CoPs.instr.version='long';
+template.exp.CoPs.train=struct('nreps',3,'visibility',[0.5 1 0.5],'background_noise_lvl',[-1 0 1]);
+template.setup.instructionPractice=true; template.setup.instructionPracticeCount=6;
+template.setup.instructionTrainingStart=4;
+template.finish=6; template.exp.total_nreps=6;
+template=prepareCoPsTrialParamSchedules(template);
+template.stim.seq=repmat({bank},1,6);
+selectedVisibility=[]; selectedBackground=[];
+for k=1:3
+    setup(testCase);
+    ex=template; ex.j=3+k;
+    ex=runTrial(testCase,ex,false);
+    T=ex.Trials(3+k);
+    expectedVisibility=template.exp.CoPs.trialParamSchedules.coherence(3+k);
+    expectedBackground=template.exp.CoPs.trialParamSchedules.background_noise_lvl(3+k);
+    verifyTrue(testCase,T.trialCompleted);
+    verifyEqual(testCase,T.coherence,expectedVisibility);
+    verifyEqual(testCase,T.background_noise_lvl,expectedBackground);
+    verifyEqual(testCase,T.fixed_background,double(expectedBackground==0));
+    verifyEqual(testCase,T.no_background,double(expectedBackground==-1));
+    if expectedVisibility==1, targetFolder='full'; else, targetFolder='mix50'; end
+    verifyEqual(testCase,T.stimTiming.targetDir,fullfile(bank,'noise1',targetFolder));
+    verifyEqual(testCase,T.gauss_scalar,1);
+    verifyFalse(testCase,T.pointsCountTowardTotal);
+    selectedVisibility(end+1)=T.coherence; %#ok<AGROW>
+    selectedBackground(end+1)=T.background_noise_lvl; %#ok<AGROW>
+end
+verifyEqual(testCase,sort(selectedVisibility),[0.5 0.5 1]);
+verifyEqual(testCase,sort(selectedBackground),[-1 0 1]);
+end
+
 function testExplicitFixationModeStillRequiresGaze(testCase)
 global COPS_TRIAL_START_TEST
 COPS_TRIAL_START_TEST.abortAt=53;
@@ -460,6 +534,7 @@ end
 
 function ex=fixture()
 evalc('ex=setDefaultsCoPs(struct());');
+ex.exp.CoPs.instr.version='short';
 evalc('ex=getDefaultSettingsx(ex,true,initializeAdc=false);');
 ex.setup.window=101; ex.setup.screenRect=[0 0 1920 1080];
 ex.setup.refreshRate=60; ex.setup.inputSampleRate=500;

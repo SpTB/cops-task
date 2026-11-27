@@ -159,8 +159,99 @@ ex=fixture(); ex.exp.CoPs.instrOn=false;
 verifyEqual(testCase,actual,ex);
 end
 
+function testLongRunsExactlyTenTrainingTrialsAfterDynamicPractice(testCase)
+global COPS_PRACTICE_TEST
+ex=fixture(); ex.exp.CoPs.instr.version='long'; before=ex;
+[ex,file]=runPractice(testCase,ex);
+verifyNumElements(testCase,ex.Instructions.Trials,13);
+verifyEqual(testCase,ex.Instructions.trainingStartTrial,4);
+verifyEqual(testCase,ex.exp,before.exp);
+verifyEqual(testCase,ex.stim,before.stim);
+verifyEqual(testCase,ex.Trials,before.Trials);
+verifyEqual(testCase,[ex.j ex.finish ex.goodtrial ex.totalPoints],[1 3 0 0]);
+for k=1:13
+    input=COPS_PRACTICE_TEST.inputs{k};
+    s=input.exp.CoPs.trialParamSchedules;
+    if k==1, targets=1; else, targets=2; end
+    if k<3, noise=-1; else, noise=1; end
+    verifyEqual(testCase,[s.target_num(k) s.background_noise_lvl(k) s.coherence(k)],[targets noise 1]);
+    if k<3 || k>=4, verifyEqual(testCase,input.setup.practiceRepeatsRemaining,0); end
+    if k>=4, verifyEqual(testCase,input.setup.instructionTrainingStart,4); end
+    verifyTrue(testCase,isfile(fullfile(ex.Header.onlineInstructionDirName,sprintf('practice%d.mat',k))));
+end
+saved=load(file,'ex'); verifyEqual(testCase,saved.ex,ex);
+end
+
+function testLongRepeatsStillLeaveExactlyTenTrainingTrials(testCase)
+global COPS_PRACTICE_TEST
+COPS_PRACTICE_TEST.repeatAt=1:20;
+ex=fixture(); ex.exp.CoPs.instr.version='long';
+[ex,~]=runPractice(testCase,ex);
+verifyNumElements(testCase,ex.Instructions.Trials,16);
+verifyEqual(testCase,ex.Instructions.trainingStartTrial,7);
+verifyEqual(testCase,[ex.Instructions.Trials.practiceRepeatRequested], ...
+    [false false true true true false false(1,10)]);
+verifyEqual(testCase,ex.j,1);
+end
+
+function testLongCanContinueAfterOneRepeat(testCase)
+global COPS_PRACTICE_TEST
+COPS_PRACTICE_TEST.repeatAt=3;
+ex=fixture(); ex.exp.CoPs.instr.version='long';
+[ex,~]=runPractice(testCase,ex);
+verifyNumElements(testCase,ex.Instructions.Trials,14);
+verifyEqual(testCase,ex.Instructions.trainingStartTrial,5);
+end
+
+function testLongTrainingAbortPreservesCheckpoint(testCase)
+global COPS_PRACTICE_TEST
+COPS_PRACTICE_TEST.abortAt=5;
+ex=fixture(); ex.exp.CoPs.instr.version='long';
+[ex,file]=runPractice(testCase,ex);
+verifyEqual(testCase,ex.quit,4);
+verifyNumElements(testCase,ex.Instructions.Trials,5);
+verifyEqual(testCase,ex.Instructions.trainingStartTrial,4);
+verifyEmpty(testCase,ex.Trials);
+verifyEqual(testCase,[ex.j ex.totalPoints],[1 0]);
+saved=load(file,'ex'); verifyEqual(testCase,saved.ex,ex);
+end
+
+function testCustomTrainingArraysStayBalancedAcrossActualTrials(testCase)
+global COPS_PRACTICE_TEST
+COPS_PRACTICE_TEST.repeatAt=3;
+ex=fixture(); ex.exp.CoPs.instr.version='long';
+ex.exp.CoPs.train=struct('nreps',8,'visibility',[0.5 1 1 1], ...
+    'background_noise_lvl',[-1 0 5 5]);
+before=ex;
+[ex,file]=runPractice(testCase,ex);
+verifyNumElements(testCase,ex.Instructions.Trials,12);
+verifyEqual(testCase,ex.Instructions.trainingStartTrial,5);
+actualVisibility=[]; actualBackground=[];
+for k=5:12
+    input=COPS_PRACTICE_TEST.inputs{k};
+    s=input.exp.CoPs.trialParamSchedules;
+    verifyEqual(testCase,s,ex.Instructions.trainingParamSchedules);
+    actualVisibility(end+1)=s.coherence(k); %#ok<AGROW>
+    actualBackground(end+1)=s.background_noise_lvl(k); %#ok<AGROW>
+    verifyEqual(testCase,input.setup.practiceRepeatsRemaining,0);
+end
+verifyEqual(testCase,sort(actualVisibility),[0.5 0.5 ones(1,6)]);
+verifyEqual(testCase,sort(actualBackground),[-1 -1 0 0 5 5 5 5]);
+verifyEqual(testCase,ex.exp,before.exp);
+verifyEqual(testCase,ex.Trials,before.Trials);
+saved=load(file,'ex'); verifyEqual(testCase,saved.ex,ex);
+end
+
+function testZeroTrainingCountRunsOnlyLongTutorials(testCase)
+ex=fixture(); ex.exp.CoPs.instr.version='long'; ex.exp.CoPs.train.nreps=0;
+[ex,~]=runPractice(testCase,ex);
+verifyNumElements(testCase,ex.Instructions.Trials,3);
+verifyEmpty(testCase,ex.Instructions.trainingStartTrial);
+end
+
 function ex=fixture()
 evalc('ex=setDefaultsCoPs(struct());');
+ex.exp.CoPs.instr.version='short';
 ex.exp.CoPs.instrOn=true;
 ex.exp.CoPs.pre.nreps=0; ex.exp.CoPs.tut.nreps=0; ex.exp.CoPs.pur.nreps=0;
 ex.exp.nreps=3; ex.exp.total_nreps=3;

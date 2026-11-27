@@ -634,6 +634,29 @@ clear Screen DrawFormattedText refreshCoPsPreviewWindowx readCoPsKeyboardx KbNam
 ex = showCoPsTrialFeedbackx(ex, 127);
 end
 
+function testTrainingFeedbackShowsProgressAndDisablesRepeats(testCase)
+global COPS_FEEDBACK_TEST
+ex=dynamicPracticeFixture(4,3);
+ex.Trials(4).isInstructionTraining=true;
+ex.Trials(4).instructionTrainingNumber=1;
+ex=showFeedback(testCase,ex);
+verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Training trial 1 of 10: 2 points');
+verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Training points do not count');
+verifyFalse(testCase,contains(COPS_FEEDBACK_TEST.messages{1},'ENTER'));
+verifyFalse(testCase,ex.Trials(4).practiceRepeatRequested);
+verifyFalse(testCase,isfield(ex,'Outro'));
+end
+
+function testTrainingFeedbackUsesConfiguredTrialCount(testCase)
+global COPS_FEEDBACK_TEST
+ex=dynamicPracticeFixture(4,0);
+ex.exp.CoPs.train.nreps=7;
+ex.Trials(4).isInstructionTraining=true;
+ex.Trials(4).instructionTrainingNumber=1;
+showFeedback(testCase,ex);
+verifySubstring(testCase,COPS_FEEDBACK_TEST.messages{1},'Training trial 1 of 7: 2 points');
+end
+
 function ex = dynamicPracticeFixture(number,remaining)
 ex=fixture();
 ex.Trials=repmat(ex.Trials(1),1,number);

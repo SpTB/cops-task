@@ -26,7 +26,9 @@ function ex = runEx(eyeStr, varargin)
 %   runEx('mouse_mini', filePrefix="P001")  % supply the subject ID without a dialog
 %   runEx('mouse_mini', soundOn=false)  % disable reward-threshold beeps
 %   runEx('mouse_mini', participantFeedback=false) % skip the final comment box
-%   runEx('mouse_mini', instrOn=true)  % three instruction pages + two practice trials
+%   runEx('mouse_mini', instrOn=true)  % long instructions, tutorials, and 10 training trials
+%   runEx('h', instrVersion="short") % original instructions and two tutorials
+%   runEx('h', instrVersion="long")  % default: one-target intro and extended training
 %   runEx('mouse_mini', jointBlocks=true) % preview the configured reward-peak blocks
 %   runEx('mouse_mini', syncMode='binary')  % preview a frame-coded photodiode patch
 %   runEx('test1', syncMode='binary', photodiodeRecord=true, photodiodeSampleRate=2000)
@@ -54,7 +56,7 @@ end
 function ex = runCoPsWithOptions(eyeStr, overlayEnabled, pixOn, rewOn, eyeOn, skipQuest, options)
 arguments
     eyeStr {mustBeText} % 'h' human, 't' no-eye solo test, 'test1', or 'mouse_mini'
-    overlayEnabled {mustBeNumericOrLogical} = 0;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
+    overlayEnabled {mustBeNumericOrLogical} = 1;% ~strcmpi(strtrim(eyeStr), 'mouse_mini')
     pixOn  {mustBeNumericOrLogical} = 1
     rewOn {mustBeNumericOrLogical} = false
     eyeOn  {mustBeNumericOrLogical} = true
@@ -71,6 +73,7 @@ arguments
     options.showEndScreen (1,1) logical = true % false for unattended diagnostics
     options.participantFeedback (1,:) logical = [] % [] uses ex.exp.CoPs.fbOn
     options.instrOn (1,:) logical = [] % [] uses setDefaultsCoPs; explicit true/false overrides
+    options.instrVersion (1,1) string {mustBeMember(options.instrVersion,["","short","long"])} = ""
     options.jointBlocks (1,:) logical = [] % [] uses profile defaults; true overrides testTrials
     options.syncMode (1,1) string {mustBeMember(options.syncMode, ["","goPulse","binary","off"])} = ""
     options.syncFramesPerBit (1,:) double {mustBeInteger, mustBePositive, mustBeFinite} = []
@@ -123,6 +126,9 @@ end
 if ~isempty(options.instrOn)
     validateattributes(options.instrOn, {'logical'}, {'scalar'});
     ex.exp.CoPs.instrOn = options.instrOn;
+end
+if strlength(options.instrVersion) > 0
+    ex.exp.CoPs.instr.version = char(options.instrVersion);
 end
 ex.exp.CoPs.pay = resolveCoPsPayx(ex.exp.CoPs.pay);
 formatCoPsInstructionTextx(ex.exp.CoPs.pay);

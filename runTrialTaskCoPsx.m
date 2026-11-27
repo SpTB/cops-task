@@ -115,14 +115,33 @@ isPursuitTrial = any(ex.j == blockInfo.pursuitIdx);
 isPreTrial = any(ex.j == blockInfo.preIdx);
 isInstructionTrial = any(ex.j == blockInfo.instructionIdx);
 ex.Trials(ex.j).isInstructionTutorial = isInstructionTrial;
-practiceNumber = min(2,find(blockInfo.instructionIdx == ex.j,1));
+instr = struct();
+if isfield(ex.exp.CoPs,'instr'), instr = ex.exp.CoPs.instr; end
+train = struct();
+if isfield(ex.exp.CoPs,'train'), train = ex.exp.CoPs.train; end
+train = resolveCoPsTrainx(train);
+instructionPlan = getCoPsInstructionPlanx(instr,train);
+practiceNumber = min(instructionPlan.tutorialTrials,find(blockInfo.instructionIdx == ex.j,1));
+isInstructionTraining = isInstructionTrial && isfield(ex.setup,'instructionTrainingStart') && ...
+    ex.j >= ex.setup.instructionTrainingStart;
+ex.Trials(ex.j).isInstructionTraining = isInstructionTraining;
+ex.Trials(ex.j).instructionTrainingNumber = NaN;
+if isInstructionTraining
+    graph.background_noise_lvl = train.background_noise_lvl;
+    ctl.coherence = train.visibility;
+    ex.Trials(ex.j).instructionTrainingNumber = ex.j-ex.setup.instructionTrainingStart+1;
+end
 ex.Trials(ex.j).instructionTrialNumber = NaN;
 if isInstructionTrial, ex.Trials(ex.j).instructionTrialNumber = practiceNumber; end
 ex.Trials(ex.j).instructionRepeatNumber = NaN;
-if isInstructionTrial, ex.Trials(ex.j).instructionRepeatNumber = max(0,ex.j-2); end
+if isInstructionTrial
+    ex.Trials(ex.j).instructionRepeatNumber = max(0,ex.j-instructionPlan.tutorialTrials);
+    if isInstructionTraining, ex.Trials(ex.j).instructionRepeatNumber = 0; end
+end
 ex.Trials(ex.j).trialNumber = ex.j;
 ex.Trials(ex.j).trialType = 'task';
 if isInstructionTrial, ex.Trials(ex.j).trialType = 'instructionPractice'; end
+if isInstructionTraining, ex.Trials(ex.j).trialType = 'instructionTraining'; end
 
 if isTutorialTrial && isfield(tut, 'threshold')
     reward_threshold = tut.threshold;
@@ -338,13 +357,17 @@ end
 if isInstructionTrial
     instr = struct('targetVisibility',1);
     if isfield(ex.exp.CoPs,'instr'), instr = ex.exp.CoPs.instr; end
-    [ctl,graph,rew] = configureCoPsPracticeTrialx(ctl,graph,rew,ex.idx.bg_lum,practiceNumber,instr);
+    selectedTrain = [];
+    if isInstructionTraining
+        selectedTrain = struct('visibility',ctl.coherence,'background_noise_lvl',graph.background_noise_lvl);
+    end
+    [ctl,graph,rew] = configureCoPsPracticeTrialx(ctl,graph,rew,ex.idx.bg_lum,practiceNumber,instr,selectedTrain);
     ex.Trials(ex.j).background_noise_lvl = graph.background_noise_lvl;
-    ex.Trials(ex.j).fixed_background = 0;
+    ex.Trials(ex.j).fixed_background = double(graph.background_noise_lvl == 0);
     ex.Trials(ex.j).no_background = double(graph.background_noise_lvl == -1);
     ex.Trials(ex.j).target_visibility = graph.target_visibility;
-    ex.Trials(ex.j).target_num = 2;
-    ex.Trials(ex.j).coherence = 1;
+    ex.Trials(ex.j).target_num = ctl.target_num;
+    ex.Trials(ex.j).coherence = ctl.coherence;
 end
 
 % Record trial-level eye recenter metadata for offline reference.
@@ -473,7 +496,9 @@ ex.Trials(ex.j).gaussSigmaDeg = gaussSigmaInfo.sigmaDeg;
 ex.Trials(ex.j).gaussSigmaUnits = char(gaussSigmaInfo.units);
 ex.Trials(ex.j).isPursuitTrial = isPursuitTrial;
 ex.Trials(ex.j).isPreTrial = isPreTrial;
-if isInstructionTrial
+if isInstructionTraining
+    run_phase_label = 'instructionTraining';
+elseif isInstructionTrial
     run_phase_label = 'instructionPractice';
 elseif useFixationTrial
     run_phase_label = 'fixation';
@@ -575,7 +600,9 @@ elseif isPursuitTrial
     ex.Trials(ex.j).pursuitLenSec = pursuitMeta.lenSec;
     ex.Trials(ex.j).pursuitPathLengthDeg = pursuitMeta.pathLengthDeg;
 else
-    if isInstructionTrial
+    if isInstructionTraining
+        ex.Trials(ex.j).runPhase = 'instructionTraining';
+    elseif isInstructionTrial
         ex.Trials(ex.j).runPhase = 'instructionPractice';
     elseif isPreTrial
         ex.Trials(ex.j).runPhase = 'pre';

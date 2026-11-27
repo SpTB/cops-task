@@ -10,6 +10,18 @@ Usage desciptors:
 	- "deprecated, no longer works": self-explanatory
 
 
+Participant instructions
+
+instrOn: <true/false> Enable instruction pages and unpaid practice/training
+instr.version: <'short' or 'long'> Default 'long'; runEx(..., instrVersion="short") selects the original three-page/two-tutorial flow
+Long adds one-target gray practice, a separate two-target explanation and gray practice, dynamic practice, and train.nreps training trials before the ready page
+instr.targetVisibility: <0 to 1> Dynamic tutorial, repeat, and training target visibility (default 1)
+train.nreps: <nonnegative integer> Number of long-version training trials (default 10); 0 skips training
+train.visibility: <number or vector in [0,1]> Training target texture mixing levels (default 1); passed to the legacy ctl.coherence stimulus parameter
+train.background_noise_lvl: <integer or vector >= -1> Training backgrounds (default 1): -1 none, 0 static, positive dynamic noise level
+Arrays use balanced per-trial schedules like main-task parameters; repeated entries set proportions. The schedule is drawn once for the whole training block and retained across trials.
+Instruction tutorials use coherence 1. Training uses two targets, its configured visibility/background, and flat reward weighting; points are excluded from task totals and payout.
+
 ctl - Experimental control
 
 IN USE:

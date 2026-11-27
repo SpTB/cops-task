@@ -9,8 +9,14 @@ purPriority = localNestedLogical(ex, {'exp', 'CoPs', 'pur', 'priority'}, true);
 % Instruction practice has its own plan and numbering, outside task trials.
 instructionN = 0;
 if localNestedLogical(ex, {'setup', 'instructionPractice'}, false)
-    instructionN = localNestedNumeric(ex, {'setup','instructionPracticeCount'}, 2);
-    validateattributes(instructionN,{'numeric'},{'scalar','integer','>=',2,'<=',5});
+    instr = struct();
+    if isfield(ex.exp.CoPs,'instr'), instr = ex.exp.CoPs.instr; end
+    train = struct();
+    if isfield(ex.exp.CoPs,'train'), train = ex.exp.CoPs.train; end
+    plan = getCoPsInstructionPlanx(instr,train);
+    instructionN = localNestedNumeric(ex, {'setup','instructionPracticeCount'}, plan.tutorialTrials);
+    validateattributes(instructionN,{'numeric'},{'scalar','integer','>=',plan.tutorialTrials, ...
+        '<=',plan.maxTutorialTrials+plan.trainingTrials});
     mainN = 0; tutN = 0; purN = 0; preN = 0;
 end
 

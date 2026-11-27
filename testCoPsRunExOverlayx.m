@@ -93,6 +93,15 @@ for profile = {'test1', 'mouse_mini'}
 end
 end
 
+function testInstructionVersionDefaultsToLongAndCanSelectShort(testCase)
+ex=captureBeforeDisplay(testCase,'mouse_mini');
+verifyEqual(testCase,ex.exp.CoPs.instr.version,'long');
+for version=["short","long"]
+    ex=captureBeforeDisplay(testCase,'mouse_mini',instrVersion=version);
+    verifyEqual(testCase,ex.exp.CoPs.instr.version,char(version));
+end
+end
+
 function testParticipantFeedbackCanBeDisabled(testCase)
 ex = captureBeforeDisplay(testCase,'mouse_mini',participantFeedback=false);
 verifyFalse(testCase,ex.exp.CoPs.fbOn);
@@ -194,10 +203,11 @@ end
 end
 
 function testInstructionFlagReachesBothMouseProfiles(testCase)
+evalc('defaults=setDefaultsCoPs(struct());');
 for profile = {'test1','mouse_mini'}
     ex = captureBeforeDisplay(testCase,profile{1},instrOn=true);
     verifyTrue(testCase,ex.exp.CoPs.instrOn);
-    verifyEqual(testCase,ex.exp.CoPs.pay.max_bonus_dollar,25);
+    verifyEqual(testCase,ex.exp.CoPs.pay.max_bonus_dollar,defaults.exp.CoPs.pay.max_bonus_dollar);
     verifyEqual(testCase,getCoPsTotalRepsx(ex),3);
     ex = captureBeforeDisplay(testCase,profile{1},instrOn=false);
     verifyFalse(testCase,ex.exp.CoPs.instrOn);
@@ -333,9 +343,9 @@ originalFolder = pwd;
 cd(testCase.TestData.mockDir);
 restoreFolder = onCleanup(@() cd(originalFolder)); %#ok<NASGU>
 clear initDisplayx closeCoPsDisplayx getDefaultSettingsx inputdlg
-verifyError(testCase, @() runEx('mouse_mini', participantKeyboard=7), ...
+verifyError(testCase, @() runEx('mouse_mini', keyboardMode="separate", participantKeyboard=7), ...
     'initCoPsKeyboardsx:MissingKeyboard');
-verifyError(testCase, @() runEx('mouse_mini', participantKeyboard=7, experimenterKeyboard=7), ...
+verifyError(testCase, @() runEx('mouse_mini', keyboardMode="separate", participantKeyboard=7, experimenterKeyboard=7), ...
     'initCoPsKeyboardsx:SameKeyboard');
 verifyEmpty(testCase, COPS_RUNEX_OVERLAY_TEST);
 end

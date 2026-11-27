@@ -4,11 +4,13 @@ if isCoPsMovieRecordingx(ex), return; end
 ctl = ex.exp.CoPs.ctl;
 rew = ex.exp.CoPs.rew;
 isPractice = isPracticeLocal(ex.Trials(ex.j));
+isTraining = isfield(ex.Trials,'isInstructionTraining') && ...
+    isequal(ex.Trials(ex.j).isInstructionTraining,true);
 repeatsRemaining = 0;
 if isPractice && isfield(ex.setup,'practiceRepeatsRemaining')
     repeatsRemaining = ex.setup.practiceRepeatsRemaining;
 end
-allowRepeat = isPractice && ex.j >= 2 && repeatsRemaining > 0;
+allowRepeat = isPractice && ~isTraining && ex.j >= 2 && repeatsRemaining > 0;
 ex.Trials(ex.j).practiceRepeatRequested = false;
 isFinalTrial = ex.j == ex.finish && ~isPractice;
 pausesEnabled = ~isfield(ctl, 'advance_trial_with_space') || ctl.advance_trial_with_space;
@@ -53,6 +55,14 @@ end
 if isPractice
     feedbackText = sprintf(['Practice trial: ' numberFormat ' points\n\n' ...
         'Practice points do not count toward your winnings.\n\nPress SPACE to continue'],trialPoints);
+    if isTraining
+        train = struct();
+        if isfield(ex.exp.CoPs,'train'), train = ex.exp.CoPs.train; end
+        train = resolveCoPsTrainx(train);
+        feedbackText = sprintf(['Training trial %d of %d: ' numberFormat ' points\n\n' ...
+            'Training points do not count toward your winnings.\n\nPress SPACE to continue'], ...
+            ex.Trials(ex.j).instructionTrainingNumber,train.nreps,trialPoints);
+    end
     if allowRepeat
         feedbackText = sprintf('%s\nor\nPress ENTER for more practice (%d remaining).', ...
             feedbackText,repeatsRemaining);

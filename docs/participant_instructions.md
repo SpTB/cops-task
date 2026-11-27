@@ -103,13 +103,30 @@ participant device through its dedicated event queue.
 
 ## Instructions and practice
 
-Enable the three instruction pages and two practice trials with:
+Instructions default to the long version. Select either version with:
 
 ```matlab
 ex = runEx('mouse_mini', instrOn=true); % preview with mouse input
 ex = runEx('h', instrOn=true);          % human run with configured eye tracker
 ex = runEx('t', instrOn=true);          % full task for solo testing without eyes
+ex = runEx('h', instrVersion="short"); % original three pages and two tutorials
+ex = runEx('h', instrVersion="long");  % five pages, three tutorials, ten training trials
 ```
+
+To preview only the instruction text on the local desktop:
+
+```matlab
+runInstr()        % long version by default
+runInstr('long')
+runInstr('short')
+```
+
+`runInstr(instrVersion)` opens a local window. SPACE advances and F4 exits.
+It skips all tutorial, training, and main trials, tracker/DAQ initialization,
+subject dialogs, question alerts, and data saving. The long preview includes
+the training introduction text. The bonus amount illustrates one reference
+hour using the configured pay settings. An optional `ex = runInstr(...)`
+returns the displayed text and acknowledgements.
 
 Only the explicit `mouse_mini` and `test1` simulation profiles use the mouse
 as gaze. Ordinary `runEx()` / `runEx('h')` runs use the configured eye signal;
@@ -144,40 +161,80 @@ The maximum bonus stated in the text is configured in `setDefaultsCoPs.m`:
 ```matlab
 pay.max_bonus_dollar = 25; % maximum per trials_per_hour paid trials
 pay.trials_per_hour = 180;
+instr.version = 'long'; % 'short' retains the original flow
 instr.targetVisibility = 1;
+train.nreps = 10;
+train.visibility = 1;
+train.background_noise_lvl = 1;
 ```
 
 The hourly bonus amount is saved as `ex.exp.CoPs.pay.max_bonus_dollar`.
 The welcome text quotes that amount scaled by planned paid trials divided by
 `pay.trials_per_hour`: $12.50 for 90 paid trials or $50 for 360 with the
-defaults. Both instruction practices are excluded. The final payout uses the
-same scaling based on eligible trials actually recorded. All money settings are in `pay`;
+example settings above. All instruction tutorials and training are excluded.
+The final payout uses the same scaling based on eligible trials actually
+recorded. All money settings are in `pay`;
 see [Participant bonus](participant_bonus.md) for thresholds and curves.
-The second setting is saved as `ex.exp.CoPs.instr.targetVisibility`,
-must be between 0 and 1, and controls the second practice trial's visibility.
+`instr.version` is saved as `ex.exp.CoPs.instr.version`; the `instrVersion`
+argument overrides it. Configurations without a version retain the short flow.
+`ex.exp.CoPs.instr.targetVisibility` must be between 0 and 1 and controls
+dynamic-background tutorials, repeats, and training visibility.
 It is independent of the main-task visibility schedule.
 
-After calibration the flow is:
+Training is configured in `ex.exp.CoPs.train`, created in `setDefaultsCoPs.m`.
+`train.nreps` sets the number of trials (default 10; 0 skips the block).
+`train.visibility` accepts a scalar or array from 0 to 1 and maps to the
+stimulus engine's existing `ctl.coherence` parameter and `full`/`mixXX` folders.
+`train.background_noise_lvl` accepts a scalar or array: -1 for no background,
+0 for static, and positive integers for dynamic noise levels (default 1).
+Arrays are balanced over the complete training block, with repeated entries
+setting proportions, just as for main-task parameters. For example:
+
+```matlab
+train.nreps = 12;
+train.visibility = [0.5 1 1];        % four trials at 0.5, eight at 1
+train.background_noise_lvl = [-1 1]; % six without background, six dynamic
+```
+
+Tutorials retain their original settings. The training introduction and
+progress counter use `train.nreps`; the background description follows the
+configured levels. The variable naming does not add terminology to the
+participant instructions.
+
+After calibration the long flow is:
 
 1. Welcome page explaining tracking, points, beeps, and the maximum bonus.
-2. Practice trial 1: two full-visibility targets on a constant gray background.
-3. Practice feedback, explicitly excluding the points from winnings.
+2. Practice trial 1: one full-visibility target on gray, without a background.
+3. A new page explaining that most trials have two targets and the participant
+   can track either and switch at any point, as often as they like. Practice
+   trial 2 then presents two full-visibility targets on gray.
 4. Instructions explaining changing backgrounds and clearer/more blurred targets.
-5. Practice trial 2: two targets on a dynamic background, using
+5. Practice trial 3: two targets on a dynamic background, using
    `instr.targetVisibility` (default 1).
 6. Separate practice feedback. ENTER requests another dynamic-background
    practice trial; SPACE continues. Up to three extra trials are allowed.
-7. Ready page explaining automatic trials, configured self-paced breaks, and
+7. Training introduction, followed by `train.nreps` training trials with two targets
+   and a flat reward landscape. Defaults are 10 trials, coherence 1, and a dynamic
+   background. Each trial has a SPACE feedback screen showing progress through
+   the configured trial count. Training points
+   do not count toward winnings, and ENTER does not extend this block.
+8. Ready page explaining automatic trials, configured self-paced breaks, and
    asking the participant to keep their head still before pressing SPACE to
    start the main task.
-8. After the task, an outro showing earned points, average points per task
+9. After the task, an outro showing earned points, average points per task
    trial, the cash bonus, and SPACE to continue.
-9. An optional participant feedback text box asking what worked well, what was
+10. An optional participant feedback text box asking what worked well, what was
    confusing/difficult/uncomfortable, and "Did you notice anything about the task
    that wasn't explicitly explained?" Type a comment and press ENTER
    to submit, or press ESC to skip. Backspace edits the response; long comments
    wrap and scroll within the box. The configured participant keyboard supplies
    text; experimenter F4 skips this page. Q and SPACE are ordinary text here.
+
+The short version keeps the original welcome page (including free target
+switching), two-target gray practice, dynamic-background page and practice,
+optional dynamic repeats, and ready page. It has no single-target practice,
+separate target-switching page, or training block. Both versions show unpaid
+practice feedback after every tutorial trial.
 
 Feedback is saved as `ex.ParticipantFeedback.text`, with `submitted`, `skipped`,
 screen `on`/`off` timestamps, and the prompt. A skipped draft is retained.
@@ -198,28 +255,34 @@ an unfinished trial is excluded from payment. `ex.Payout` is calculated and
 saved even when the run stops early or only practice has run (a zero payout).
 See [Early termination and recovery](participant_bonus.md#f4-and-early-termination).
 
-Both practice trials use normal moving texture targets, full coherence,
+All instruction tutorials and training use normal moving texture targets,
 spatially uniform reward weighting, the normal trial duration, and the soundOn
-setting. Dynamic practice uses the first configured dynamic noise level; if
-the main task has only fixed/null backgrounds, it uses noise level 1. The
-required stimulus folder is checked by the normal preflight validation.
+setting. Tutorials use full coherence. Dynamic tutorial practice uses the
+first configured main-task dynamic noise level; if the main task has only
+fixed/null backgrounds, it uses noise level 1. Training uses its own configured
+visibility and background levels. Selected stimulus folders must contain the
+corresponding `full`/`mixXX` textures and noise levels.
 
-The two practice trials are additional to the existing tutorial/pursuit/pre/main
-blocks. `testTrials` continues to specify main trials only. Practice does not
+Instruction tutorials and training are additional to the existing
+tutorial/pursuit/pre/main blocks. `testTrials` continues to specify main trials only. Practice does not
 replace main-task conditions or select/save a reward-landscape center.
 
-The exact copy, amount, screen timestamps, stage (`welcome`, `dynamic`, or
-`ready`), and acknowledgement of every page are saved in
+The selected version is saved in `ex.Instructions.version`. The exact copy,
+amount, screen timestamps, stage (`welcome`, `targets`, `dynamic`, `training`,
+or `ready`), and acknowledgement of every page are saved in
 `ex.Instructions.pages`. `max_bonus_dollar` in each page is the quoted session
 cap; `hourly_max_bonus_dollar`, `trials_per_hour`, and `planned_paid_trials`
 record how it was scaled. The original top-level `ex.Instructions` fields still
 describe the welcome page. Completed trial data are saved before showing the
 next page, and page acknowledgements are checkpointed before the next trial.
 
-Practice is saved separately in `ex.Instructions.Trials` (two required trials,
-plus up to three voluntary dynamic repeats) with
-`trialNumber` (1 through 5), `instructionTrialNumber` (1 for gray, 2 for dynamic),
-`instructionRepeatNumber` (0 for required trials, 1 through 3 for repeats),
+Practice and training are saved separately in `ex.Instructions.Trials` (short:
+two required trials plus up to three dynamic repeats; long: three required
+trials, up to three dynamic repeats, and `train.nreps` training trials) with
+`trialNumber` (up to 5 for short or `6 + train.nreps` for long),
+`instructionTrialNumber` (1 for the first gray trial, 2 for short dynamic or
+long two-target gray, 3 for long dynamic/training),
+`instructionRepeatNumber` (0 for required tutorials/training, 1 through 3 for repeats),
 `trialType='instructionPractice'`, `isInstructionTutorial=true`,
 `isTutorialTrial=true`,
 `runPhase='instructionPractice'`, and
@@ -229,9 +292,9 @@ The first actual task trial is `ex.Trials(1)`, with `trialNumber=1` and
 `trialType='task'`. `ex.j`, `ex.finish`, condition schedules, reward blocks,
 and regular pause schedules refer only to task trials. Practice has separate
 loop counters in `ex.Instructions.loopcnt`. Individual practice checkpoints are
-`instruction_practice/practice1.mat`, `practice2.mat`, and optional
-`practice3.mat` through `practice5.mat` under the session's
-trial directory, each containing a `Trials` variable. The directory is recorded
+`instruction_practice/practiceN.mat` under the session's trial directory
+(up to N=5 for short or N=`6 + train.nreps` for long), each containing a `Trials` variable.
+The directory is recorded
 in `ex.Header.onlineInstructionDirName`. Task checkpoints start at `tr1.mat`.
 After the final session MAT is saved, temporary task checkpoints are removed;
 the `instruction_practice` folder and its files are retained.
@@ -249,7 +312,15 @@ dynamic attempts (one required plus three extra); the ENTER option disappears
 after the third repeat. Holding ENTER does not request another trial: each
 feedback screen requires a fresh press and release from the participant
 keyboard. `practiceRepeatRequested` logs the choice in each practice record.
-The ready page appears once the participant continues or uses all repeats.
+Long-format training records use `trialType='instructionTraining'`,
+`runPhase='instructionTraining'`, `isInstructionTraining=true`, and
+`instructionTrainingNumber` from 1 through `train.nreps`. They retain the unpaid
+`isInstructionTutorial` flag. `ex.Instructions.trainingStartTrial` identifies
+the first training record, which shifts when dynamic practice is repeated.
+`ex.Instructions.trainingParamSchedules` preserves the schedule used for the
+complete block; the selected `train.visibility` is logged as `coherence` in
+each trial, matching existing task records. The ready page appears after
+tutorials/repeats in short, or after all configured training trials in long.
 This feedback is shown even if normal between-trial pauses are disabled.
 Regular pause cadence starts with the first task trial after practice.
 The reward accumulator and reward-event count reset in each trial as usual.

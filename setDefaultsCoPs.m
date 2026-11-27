@@ -1,6 +1,6 @@
 function ex = setDefaultsCoPs(ex)
 
-ex.exp.CoPs.instrOn = 1; % three instruction screens + two practice trials
+ex.exp.CoPs.instrOn = 1; % instruction pages, tutorials, and optional training
 ex.exp.CoPs.fbOn = true; % optional participant feedback screen after the bonus summary
 % Reward-peak blocks, shared with main's rewSwitches task.
 ctl.jointBlocks = true; % false keeps one center and uses exp.nreps
@@ -15,7 +15,13 @@ pay.max_bonus_dollar = 20; % maximum bonus per nominal hour (trials_per_hour pai
 pay.trials_per_hour = 180; % trial-count reference for scaling the session bonus cap
 pay.transform = 'linear'; % 'linear' or 'logit' (normalized inverse-logit / sigmoid)
 pay.logitSlope = 10; % steepness of the S-curve; used only for 'logit'
-instr.targetVisibility = 1; % visibility of the second, dynamic-background practice trial
+
+%instruction/training settings
+instr.version = 'long'; % 'short' retains the original two-tutorial flow
+instr.targetVisibility = 1; % contrast of dynamic-background tutorial and training targets
+train.nreps = 10; % unpaid training trials after the long-version tutorials; 0 skips training
+train.visibility = 1; % scalar or array of target texture mixing levels (legacy ctl.coherence)
+train.background_noise_lvl = 1; % scalar or array: -1 none, 0 static, positive dynamic noise level
 
 ctl.advance_trial_with_space = true; % requires space between trials, f4 to quit
 ctl.between_trial_pause_mean = 12; % average trials between pause screens (e.g. 5)
@@ -83,7 +89,7 @@ ctl.nsteps = 18*timing.waitHz; % controls length of trial
 graph.target_visibilityNull=1; %for no background
 %graph.targetVisibilityNull = graph.target_visibilityNull;
 graph.target_visibility0 =1;%[.2,.6, 1];%for fixed background linspace(.6, 1, 5);%[1,.8]; % [0,1] scales target/background blending without changing blend normalization
-graph.target_visibility =[1,.9,.8,.7,.6];
+graph.target_visibility =[1,.95,.9];%[1,.9,.8,.7,.6];
 graph.sequenceMode_vis = false; % true: target_visibility values are presented in listed order, cycling as needed
 
 ctl.target_num = 2; % scalar or vector; e.g. [1 2 2 2] gives 25% single-target trials
@@ -257,6 +263,7 @@ ex.exp.CoPs.pur = pur;
 ex.exp.CoPs.analysis = analysis;
 ex.exp.CoPs.pay = pay;
 ex.exp.CoPs.instr = instr;
+ex.exp.CoPs.train = train;
 ex.exp.CoPs.sync = sync;
 end
 

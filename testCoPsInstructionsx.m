@@ -76,12 +76,21 @@ writeMock(folder,'msgbox',[
     "global COPS_INSTRUCTIONS_TEST"
     "COPS_INSTRUCTIONS_TEST.popups{end+1}=message; handle=[];"
     "end"]);
+for name = {'runEx','runTrialTaskCoPsx','runCoPsInstructionPracticex', ...
+        'initDisplayx','getDefaultSettingsx','Datapixx','Eyelink', ...
+        'initCoPsKeyboardsx','inputdlg','resolveCoPsStimulusDirs'}
+    writeMock(folder,name{1},[
+        "function varargout=" + name{1} + "(varargin)"
+        "error('InstructionsTest:ForbiddenCall','Instruction preview must not initialize hardware, trials, or stimuli.');"
+        "end"]);
+end
 addpath(fileparts(mfilename('fullpath')),'-begin'); addpath(folder,'-begin');
 end
 
 function teardownOnce(testCase)
 path(testCase.TestData.originalPath);
 clear Screen DrawFormattedText readCoPsKeyboardx KbName WaitSecs refreshCoPsPreviewWindowx GetMouse GetSecs msgbox notifyCoPsQuestionx kPsychGUIWindow IsWin
+clear runEx runTrialTaskCoPsx runCoPsInstructionPracticex initDisplayx getDefaultSettingsx Datapixx Eyelink initCoPsKeyboardsx inputdlg resolveCoPsStimulusDirs
 folder=testCase.TestData.folder;
 assert(strcmp(fileparts(folder),fileparts(tempname)));
 rmdir(folder,'s');
@@ -559,6 +568,226 @@ clear Screen DrawFormattedText readCoPsKeyboardx KbName WaitSecs refreshCoPsPrev
 [ex,shown]=advanceCoPsInstructionFlowx(ex);
 end
 
+function testLongCopySplitsTrackingAndSwitchingAndExplainsTraining(testCase)
+[body,prompt]=formatCoPsInstructionTextx(struct(),'welcome',struct(),90,'long');
+verifySubstring(testCase,body,'practice trial with one target');
+verifySubstring(testCase,body,'$12.50 for this session');
+verifySubstring(testCase,body,'earn a point and hear a beep');
+verifyFalse(testCase,contains(body,'switch'));
+verifyEqual(testCase,prompt,'Press the SPACE BAR to begin.');
+body=formatCoPsInstructionTextx(struct(),'targets',struct(),90,'long');
+verifySubstring(testCase,body,'In most trials, there will be two targets');
+verifySubstring(testCase,body,'switch between them at any point, as often as you like');
+[body,prompt]=formatCoPsInstructionTextx(struct(),'training',struct(),90,'long');
+verifySubstring(testCase,body,'10 training trials with two targets and a changing background');
+verifySubstring(testCase,body,'Training points do not count');
+verifyEqual(testCase,prompt,'Press the SPACE BAR to begin training.');
+end
+
+function testLongFlowWaitsForAllTrainingBeforeReady(testCase)
+global COPS_INSTRUCTIONS_TEST
+for repeats=[0 3]
+    resetMock();
+    COPS_INSTRUCTIONS_TEST.spaces=repmat([false true false],1,5);
+    ex=fixture(); ex.exp.CoPs.instr.version='long';
+    ex=showInstructions(testCase,ex);
+    for k=1:3+repeats+10
+        ex.Instructions.Trials(k).practiceRepeatRequested=k>=3 && k<3+repeats;
+        if k==3+repeats, ex.Instructions.trainingStartTrial=k+1; end
+        [ex,shown]=advanceInstructions(testCase,ex);
+        verifyEqual(testCase,shown,ismember(k,[1 2 3+repeats 13+repeats]));
+    end
+    verifyEqual(testCase,ex.Instructions.version,'long');
+    verifyEqual(testCase,{ex.Instructions.pages.stage},{'welcome','targets','dynamic','training','ready'});
+    verifyTrue(testCase,all([ex.Instructions.pages.acknowledged]));
+end
+end
+
+function testLongSchedulesAndOverridesMatchAllTutorialsAndTraining(testCase)
+ex=planningFixture(); ex.exp.CoPs.instr.version='long';
+ex.exp.CoPs.instr.targetVisibility=0.35;
+ex.exp.CoPs.graph.background_noise_lvl=[-1 0 5 1];
+ex.setup.instructionPractice=true;
+ex.setup.instructionPracticeCount=16;
+ex=prepareCoPsTrialParamSchedules(ex);
+s=ex.exp.CoPs.trialParamSchedules;
+verifyEqual(testCase,getCoPsTotalRepsx(ex),16);
+verifyEqual(testCase,s.background_noise_lvl,[-1 -1 repmat(5,1,14)]);
+verifyEqual(testCase,s.target_num,[1 repmat(2,1,15)]);
+verifyEqual(testCase,s.coherence,ones(1,16));
+verifyEqual(testCase,s.target_visibility,[1 1 repmat(0.35,1,14)]);
+for k=1:3
+    [ctl,graph,rew]=configureCoPsPracticeTrialx(ex.exp.CoPs.ctl,ex.exp.CoPs.graph, ...
+        ex.exp.CoPs.rew,128,k,ex.exp.CoPs.instr);
+    verifyEqual(testCase,[ctl.target_num graph.background_noise_lvl graph.target_visibility], ...
+        [s.target_num(k) s.background_noise_lvl(k) s.target_visibility(k)]);
+    verifyEqual(testCase,[ctl.gauss_scalar ctl.coherence],[1 1]);
+    verifyFalse(testCase,rew.show_gauss_center_marker);
+end
+end
+
+function testLongPagesFitSmallCanvasAndAcceptQuestions(testCase)
+global COPS_INSTRUCTIONS_TEST
+for stage={'welcome','targets','dynamic','training','ready'}
+    resetMock(); COPS_INSTRUCTIONS_TEST.questionAt=2;
+    COPS_INSTRUCTIONS_TEST.spaces=[false false false true false];
+    ex=fixture(); ex.exp.CoPs.instr.version='long';
+    ex.setup.screenRect=[0 0 960 540];
+    ex=showInstructions(testCase,ex,stage{1});
+    draws=COPS_INSTRUCTIONS_TEST.flips{1};
+    verifyGreaterThanOrEqual(testCase,draws{1}.bounds(2),0);
+    verifyLessThanOrEqual(testCase,draws{2}.bounds(4),540);
+    verifyTrue(testCase,ex.Instructions.pages(end).acknowledged);
+    verifyNumElements(testCase,ex.Instructions.pages(end).questionRequests,1);
+end
+end
+
+function testRunInstrDefaultsToAllLongTextOnLocalScreen(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.screens=[0 1];
+COPS_INSTRUCTIONS_TEST.spaces=repmat([false true false],1,5);
+before=dir(testCase.TestData.folder);
+ex=previewInstructions(testCase);
+verifyEqual(testCase,ex.Instructions.version,'long');
+verifyEqual(testCase,{ex.Instructions.pages.stage},{'welcome','targets','dynamic','training','ready'});
+verifyTrue(testCase,all([ex.Instructions.pages.acknowledged]));
+verifyEqual(testCase,ex.setup.screenNum,0);
+verifyEqual(testCase,ex.setup.inputMode,'none');
+verifyEqual(testCase,ex.setup.eyeTracker,'none');
+verifyEmpty(testCase,ex.Trials);
+verifyFalse(testCase,isfield(ex.Instructions,'Trials'));
+verifyFalse(testCase,isfield(ex,'eyeCal'));
+verifyEqual(testCase,ex.Instructions.max_bonus_dollar,ex.exp.CoPs.pay.max_bonus_dollar);
+verifyEqual(testCase,{dir(testCase.TestData.folder).name},{before.name});
+opens=COPS_INSTRUCTIONS_TEST.calls(cellfun(@(c) strcmp(c{1},'OpenWindow'),COPS_INSTRUCTIONS_TEST.calls));
+verifyNumElements(testCase,opens,1);
+verifyEqual(testCase,opens{1}{2},0);
+verifyEqual(testCase,opens{1}{4},[96 54 864 486]);
+verifyEqual(testCase,opens{1}{end},32); % normal GUI window
+verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.closedAt,15);
+verifyFalse(testCase,any(cellfun(@(c) strcmp(c{1},'CloseAll'),COPS_INSTRUCTIONS_TEST.calls)));
+preferences=COPS_INSTRUCTIONS_TEST.calls(cellfun(@(c) strcmp(c{1},'Preference'),COPS_INSTRUCTIONS_TEST.calls));
+verifyEqual(testCase,preferences(end-1:end),{{'Preference','SkipSyncTests',0},{'Preference','ConserveVRAM',0}});
+end
+
+function testRunInstrAcceptsBothVersionsAndUsesWindowsLocalMonitor(testCase)
+global COPS_INSTRUCTIONS_TEST
+for version={'short','long'}
+    resetMock(); COPS_INSTRUCTIONS_TEST.screens=[0 1 2];
+    COPS_INSTRUCTIONS_TEST.isWindows=true;
+    COPS_INSTRUCTIONS_TEST.spaces=repmat([false true false],1,5);
+    ex=previewInstructions(testCase,version{1});
+    verifyEqual(testCase,ex.Instructions.version,version{1});
+    verifyEqual(testCase,ex.setup.screenNum,1);
+    if strcmp(version{1},'short'), count=3; else, count=5; end
+    verifyNumElements(testCase,ex.Instructions.pages,count);
+    if count==3
+        verifyEqual(testCase,{ex.Instructions.pages.stage},{'welcome','dynamic','ready'});
+    end
+end
+end
+
+function testRunInstrF4StopsBeforeNextPageAndClosesPreview(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.screens=0;
+COPS_INSTRUCTIONS_TEST.spaces=false(1,2);
+COPS_INSTRUCTIONS_TEST.quitAt=2;
+ex=previewInstructions(testCase);
+verifyEqual(testCase,ex.quit,4);
+verifyNumElements(testCase,ex.Instructions.pages,1);
+verifyFalse(testCase,ex.Instructions.pages.acknowledged);
+verifyEqual(testCase,COPS_INSTRUCTIONS_TEST.closedAt,2);
+end
+
+function testRunInstrIgnoresQuestionAndCalibrationShortcuts(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.screens=[0 1];
+COPS_INSTRUCTIONS_TEST.questionAt=2;
+COPS_INSTRUCTIONS_TEST.calibrationAt=3;
+COPS_INSTRUCTIONS_TEST.spaces=[false false false true false repmat([false true false],1,4)];
+ex=previewInstructions(testCase);
+verifyTrue(testCase,all([ex.Instructions.pages.acknowledged]));
+verifyEmpty(testCase,COPS_INSTRUCTIONS_TEST.popups);
+verifyFalse(testCase,isfield(ex,'Recalibration'));
+verifyEmpty(testCase,[ex.Instructions.pages.questionRequests]);
+opens=COPS_INSTRUCTIONS_TEST.calls(cellfun(@(c) strcmp(c{1},'OpenWindow'),COPS_INSTRUCTIONS_TEST.calls));
+verifyNumElements(testCase,opens,1);
+end
+
+function testRunInstrRestoresPreferencesAfterOpenFailure(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.screens=0;
+COPS_INSTRUCTIONS_TEST.popupFailure=true;
+verifyError(testCase,@() previewInstructions(testCase),'InstructionsTest:Popup');
+preferences=COPS_INSTRUCTIONS_TEST.calls(cellfun(@(c) strcmp(c{1},'Preference'),COPS_INSTRUCTIONS_TEST.calls));
+verifyEqual(testCase,preferences(end-1:end),{{'Preference','SkipSyncTests',0},{'Preference','ConserveVRAM',0}});
+end
+
+function testTrainDefaultsAndArraySchedulesAreIndependentOfTutorials(testCase)
+ex=planningFixture();
+verifyEqual(testCase,ex.exp.CoPs.train,struct('nreps',10,'visibility',1,'background_noise_lvl',1));
+verifyEqual(testCase,resolveCoPsTrainx(),ex.exp.CoPs.train);
+ex.exp.CoPs.instr.version='long';
+ex.exp.CoPs.train=struct('nreps',8,'visibility',[0.5 1 1 0.5], ...
+    'background_noise_lvl',[-1 0 5 5]);
+ex.setup.instructionPractice=true;
+ex.setup.instructionTrainingStart=6;
+ex.setup.instructionPracticeCount=13;
+ex=prepareCoPsTrialParamSchedules(ex);
+s=ex.exp.CoPs.trialParamSchedules;
+verifyEqual(testCase,s.coherence(1:5),ones(1,5));
+verifyEqual(testCase,s.background_noise_lvl(1:2),[-1 -1]);
+verifyEqual(testCase,s.background_noise_lvl(3:5),ones(1,3));
+verifyEqual(testCase,sort(s.coherence(6:13)),[0.5*ones(1,4) ones(1,4)]);
+verifyEqual(testCase,sort(s.background_noise_lvl(6:13)),[-1 -1 0 0 5 5 5 5]);
+verifyEqual(testCase,s.target_num(6:13),2*ones(1,8));
+for background=[-1 0 5]
+    train=struct('visibility',0.5,'background_noise_lvl',background);
+    [ctl,graph]=configureCoPsPracticeTrialx(ex.exp.CoPs.ctl,ex.exp.CoPs.graph, ...
+        ex.exp.CoPs.rew,128,3,ex.exp.CoPs.instr,train);
+    verifyEqual(testCase,ctl.coherence,0.5);
+    verifyEqual(testCase,ctl.gauss_scalar,1);
+    verifyEqual(testCase,graph.background_noise_lvl,background);
+    verifyEqual(testCase,isfield(graph,'nullBackgroundGray'),background==-1);
+end
+end
+
+function testCustomTrainingCountAndBackgroundReachTextAndReadyPage(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.spaces=repmat([false true false],1,5);
+ex=fixture(); ex.exp.CoPs.instr.version='long';
+ex.exp.CoPs.train=struct('nreps',2,'visibility',[0.5 1],'background_noise_lvl',0);
+ex=showInstructions(testCase,ex);
+for k=1:5
+    ex.Instructions.Trials(k).practiceRepeatRequested=false;
+    if k==3, ex.Instructions.trainingStartTrial=4; end
+    [ex,shown]=advanceInstructions(testCase,ex);
+    verifyEqual(testCase,shown,k~=4);
+end
+verifyEqual(testCase,{ex.Instructions.pages.stage},{'welcome','targets','dynamic','training','ready'});
+verifySubstring(testCase,ex.Instructions.pages(4).body,'2 training trials');
+verifySubstring(testCase,ex.Instructions.pages(4).body,'a static background');
+verifyFalse(testCase,contains(ex.Instructions.pages(4).body,'coherence'));
+end
+
+function testZeroTrainingCountSkipsToReady(testCase)
+global COPS_INSTRUCTIONS_TEST
+COPS_INSTRUCTIONS_TEST.spaces=repmat([false true false],1,2);
+ex=fixture(); ex.exp.CoPs.instr.version='long'; ex.exp.CoPs.train.nreps=0;
+ex=showInstructions(testCase,ex);
+ex.Instructions.Trials=repmat(struct('practiceRepeatRequested',false),1,3);
+[ex,shown]=advanceInstructions(testCase,ex);
+verifyTrue(testCase,shown);
+verifyEqual(testCase,ex.Instructions.pages(end).stage,'ready');
+end
+
+function ex=previewInstructions(testCase,varargin)
+original=pwd; cd(testCase.TestData.folder);
+cleanup=onCleanup(@() cd(original)); %#ok<NASGU>
+clear Screen DrawFormattedText readCoPsKeyboardx KbName WaitSecs refreshCoPsPreviewWindowx GetMouse
+ex=runInstr(varargin{:});
+end
+
 function ex=fixture()
 ex=struct('quit',0);
 ex.exp.CoPs.instrOn=true; ex.exp.CoPs.pay=resolveCoPsPayx();
@@ -570,6 +799,7 @@ end
 
 function ex=planningFixture()
 evalc('ex=setDefaultsCoPs(struct());');
+ex.exp.CoPs.instr.version='short';
 ex.exp.CoPs.instrOn=true;
 ex.exp.CoPs.pre.nreps=0; ex.exp.CoPs.tut.nreps=0; ex.exp.CoPs.pur.nreps=0;
 ex.exp.nreps=3; ex.finish=3;

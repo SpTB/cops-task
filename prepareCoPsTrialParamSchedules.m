@@ -117,21 +117,27 @@ sched.step_size_mult(blockInfo.mainIdx) = buildBalancedValueScheduleLocal(mainSt
 
 % The instruction practice is separate from the legacy one-target tutorial.
 idx = blockInfo.instructionIdx;
-sched.background_noise_lvl(idx) = -1;
-sched.target_visibility(idx) = 1;
-if numel(idx) > 1
-    dynamicNoise = mainNoise(isfinite(mainNoise) & mainNoise ~= -1 & mainNoise ~= 0);
-    if isempty(dynamicNoise), dynamicNoise = 1; end
-    practiceVisibility = 1;
-    if isfield(ex.exp.CoPs,'instr') && isfield(ex.exp.CoPs.instr,'targetVisibility')
-        practiceVisibility = ex.exp.CoPs.instr.targetVisibility;
+if ~isempty(idx)
+    instr = struct();
+    if isfield(ex.exp.CoPs,'instr'), instr = ex.exp.CoPs.instr; end
+    train = struct();
+    if isfield(ex.exp.CoPs,'train'), train = ex.exp.CoPs.train; end
+    train = resolveCoPsTrainx(train);
+    plan = getCoPsInstructionPlanx(instr,train);
+    for k = 1:numel(idx)
+        [practiceCtl,practiceGraph] = configureCoPsPracticeTrialx( ...
+            ex.exp.CoPs.ctl,ex.exp.CoPs.graph,ex.exp.CoPs.rew,0,min(k,plan.tutorialTrials),instr);
+        sched.background_noise_lvl(idx(k)) = practiceGraph.background_noise_lvl;
+        sched.target_visibility(idx(k)) = practiceGraph.target_visibility;
+        sched.target_num(idx(k)) = practiceCtl.target_num;
     end
-    validateattributes(practiceVisibility,{'numeric'},{'scalar','real','finite','>=',0,'<=',1});
-    sched.background_noise_lvl(idx(2:end)) = dynamicNoise(1);
-    sched.target_visibility(idx(2:end)) = practiceVisibility;
 end
-sched.target_num(idx) = 2;
 sched.coherence(idx) = 1;
+if ~isempty(idx) && isfield(ex.setup,'instructionTrainingStart')
+    trainingIdx = idx(idx >= ex.setup.instructionTrainingStart);
+    sched.background_noise_lvl(trainingIdx) = buildBalancedValueScheduleLocal(train.background_noise_lvl,numel(trainingIdx));
+    sched.coherence(trainingIdx) = buildBalancedValueScheduleLocal(train.visibility,numel(trainingIdx));
+end
 if ~isempty(mainStepSize), sched.step_size_mult(idx) = mainStepSize(1); end
 if ~isempty(targetMaskSigmaMult), sched.target_mask_sigma_mult(idx) = targetMaskSigmaMult(1); end
 
