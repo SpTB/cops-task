@@ -158,9 +158,11 @@ graph.radiusUnits = 'deg'; % 'deg' preserves the old visual angle; 'texturePx' u
 graph.radiusReferenceMonitorWidth = 38.5; % cm, previous rig calibration
 graph.radiusReferenceViewingDistance = 58; % cm
 graph.radiusReferenceScreenWidthPx = 1920;
-graph.radiusDeg = graph.radius * graph.size_mult * ...
-    atan((graph.radiusReferenceMonitorWidth / 2) / graph.radiusReferenceViewingDistance) * ...
-    180 / pi / (graph.radiusReferenceScreenWidthPx / 2);
+graph.radiusDeg = 2; % original was 1.614
+% legacy:
+% graph.radiusDeg = graph.radius * graph.size_mult * ...
+%     atan((graph.radiusReferenceMonitorWidth / 2) / graph.radiusReferenceViewingDistance) * ...
+%     180 / pi / (graph.radiusReferenceScreenWidthPx / 2);
 %graph.background_noise_lvl = 5; % how much does the background change from one step to the next
 
 % reward parameters
