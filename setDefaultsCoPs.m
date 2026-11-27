@@ -150,6 +150,8 @@ graph.size_mult = 1080/graph.texture_dim;
 graph.scaleTextureOnDraw = true; % keep source-sized textures; PTB scales them when drawing
 graph.full_as_background = 0;
 graph.texture_dims = [graph.texture_dim graph.texture_dim]; %in px
+% Full edge-to-edge field angle; resolved to pixels after opening the display.
+graph.fieldSizeDeg = 26;
 graph.radius = 15 * (graph.texture_dim/192); % legacy reference radius in texture px, at monitorWidth=38.5 cm
 
 graph.radiusUnits = 'deg'; % 'deg' preserves the old visual angle; 'texturePx' uses graph.radius directly

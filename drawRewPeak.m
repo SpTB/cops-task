@@ -148,13 +148,14 @@ if ~isfield(ex, 'exp') || ~isfield(ex.exp, 'CoPs') || ~isfield(ex.exp.CoPs, 'gra
 end
 
 graph = ex.exp.CoPs.graph;
+graph = resolveCoPsStimulusFieldx(graph, ex.setup);
 if ~isfield(graph, 'texture_dims') || isempty(graph.texture_dims) || ...
         ~isfield(graph, 'size_mult') || isempty(graph.size_mult)
     error('drawRewPeak:MissingTextureGeometry', ...
         'ex.exp.CoPs.graph must contain texture_dims and size_mult.');
 end
 
-gauss_dim = double(graph.texture_dims(1)) * double(graph.size_mult);
+gauss_dim = round(double(graph.texture_dims(1)) * double(graph.size_mult));
 screenRect = double(ex.setup.screenRect);
 screenWidthPx = screenRect(3);
 dpp = atan((double(ex.setup.monitorWidth) / 2) / double(ex.setup.viewingDistance)) * ...

@@ -270,6 +270,7 @@ displayCleanup = onCleanup(@closeCoPsDisplayx); %ok<NASGU>
 % The desktop overlay must not change stimulus colors or display mode.
 % DataPixx input, strobes, and reward remain controlled by the hardware flags.
 ex = initDisplayx(ex);
+ex.exp.CoPs.graph = resolveCoPsStimulusFieldx(ex.exp.CoPs.graph, ex.setup);
 flipInterval = 1 / ex.setup.refreshRate;
 if strcmp(ex.exp.CoPs.sync.mode, 'binary')
     flipInterval = Screen('GetFlipInterval', ex.setup.window);

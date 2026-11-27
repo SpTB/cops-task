@@ -48,10 +48,12 @@ end
 info.rewardMarkerFrames = markerFrames;
 info.rewardMarkerFrameCount = nnz(markerFrames);
 directory = cfg.outputDirectory;
-file = fullfile(directory,sprintf('trial_%03d.mp4',ex.j));
+stem = movieTitleLocal(cfg,t);
+if cfg.nTrials > 1, stem = sprintf('%s_trial_%03d',stem,ex.j); end
+file = fullfile(directory,[stem '.mp4']);
 suffix = 2;
 while isfile(file)
-    file = fullfile(directory,sprintf('trial_%03d_%02d.mp4',ex.j,suffix));
+    file = fullfile(directory,sprintf('%s_%02d.mp4',stem,suffix));
     suffix = suffix+1;
 end
 logicalRect = ex.setup.screenRect;
@@ -102,6 +104,21 @@ info.sourceSteps = steps;
 info.firstStimulusTime = startTime;
 info.mousePositions = mouse;
 info.sourceSampleTimes = times;
+end
+
+function title = movieTitleLocal(cfg,t)
+if isfield(cfg,'title') && strlength(cfg.title) > 0
+    title = char(cfg.title);
+    return;
+end
+switch t.background_noise_lvl
+    case -1, background = 'null';
+    case 0, background = 'fixed';
+    otherwise, background = sprintf('%g',t.background_noise_lvl);
+end
+landscapes = {'flat','top-left','top-right','bottom-left','bottom-right'};
+title = sprintf('targets-%d_bg-%s_coh-%g_vis-%g_landscape-%s', ...
+    t.target_num,background,t.coherence,t.target_visibility,landscapes{cfg.rewardLandscape+1});
 end
 
 function [actual,nominal] = timelineLocal(t,active,lastStep)

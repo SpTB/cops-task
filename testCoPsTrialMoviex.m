@@ -51,6 +51,8 @@ verifyEqual(testCase,[info.frameCount info.durationSec info.fps],[150 5 30]);
 verifyEqual(testCase,info.sourceSteps,1:150);
 verifyEqual(testCase,info.mouseDrawnFrames,150);
 verifyTrue(testCase,isfile(info.file));
+verifyEqual(testCase,info.file,fullfile(ex.setup.recording.outputDirectory, ...
+    'targets-2_bg-null_coh-1_vis-1_landscape-flat.mp4'));
 verifyEqual(testCase,COPS_MOVIE_TEST.nFrames,150);
 creates=calls('CreateMovie');
 verifyEqual(testCase,creates{1}{2},ex.setup.window); % encoder owner must be onscreen
@@ -190,11 +192,38 @@ verifyEqual(testCase,info.status,'noStimulus');
 verifyEmpty(testCase,calls('CreateMovie'));
 end
 
+function testAutomaticMovieTitleUsesActualTrialParameters(testCase)
+[ex,scene,textures]=fixture(testCase);
+ex.Trials.target_num=1;
+ex.Trials.background_noise_lvl=3;
+ex.Trials.coherence=0.6;
+ex.Trials.target_visibility=0.35;
+ex.setup.recording.rewardLandscape=4;
+info=exportMovie(testCase,ex,textures,scene);
+verifyEqual(testCase,info.file,fullfile(ex.setup.recording.outputDirectory, ...
+    'targets-1_bg-3_coh-0.6_vis-0.35_landscape-bottom-right.mp4'));
+end
+
+function testCustomMovieTitleAndMultipleTrialNames(testCase)
+[ex,scene,textures]=fixture(testCase);
+ex.setup.recording.title="Tracking demo";
+info=exportMovie(testCase,ex,textures,scene);
+verifyEqual(testCase,info.file,fullfile(ex.setup.recording.outputDirectory,'Tracking demo.mp4'));
+ex.setup.recording.nTrials=2;
+first=exportMovie(testCase,ex,textures,scene);
+ex.j=2; ex.Trials(2)=ex.Trials(1);
+second=exportMovie(testCase,ex,textures,scene);
+verifyEqual(testCase,first.file,fullfile(ex.setup.recording.outputDirectory,'Tracking demo_trial_001.mp4'));
+verifyEqual(testCase,second.file,fullfile(ex.setup.recording.outputDirectory,'Tracking demo_trial_002.mp4'));
+end
+
 function testExportDoesNotOverwriteAnExistingMovie(testCase)
 [ex,scene,textures]=fixture(testCase);
 first=exportMovie(testCase,ex,textures,scene);
 second=exportMovie(testCase,ex,textures,scene);
 verifyNotEqual(testCase,first.file,second.file);
+verifyEqual(testCase,second.file,fullfile(ex.setup.recording.outputDirectory, ...
+    'targets-2_bg-null_coh-1_vis-1_landscape-flat_02.mp4'));
 verifyTrue(testCase,isfile(first.file)); verifyTrue(testCase,isfile(second.file));
 end
 
@@ -239,11 +268,13 @@ info=exportCoPsTrialMoviex(ex,textures,scene);
 end
 
 function [ex,scene,textures]=fixture(testCase)
+directory=tempname(testCase.TestData.folder); mkdir(directory);
 ex=struct('j',1,'states',struct('GO',6));
 ex.setup=struct('window',7,'screenRect',[0 0 1920 1080]);
 ex.setup.recording=struct('fps',30,'length',5,'movieSizePx',[1280 720], ...
-    'mouseVisible',true,'outputDirectory',testCase.TestData.folder);
+    'mouseVisible',true,'outputDirectory',directory,'title',"",'nTrials',1,'rewardLandscape',0);
 ex.Trials=struct('trialCompleted',true,'waitSecs',1/30, ...
+    'target_num',2,'background_noise_lvl',-1,'coherence',1,'target_visibility',1, ...
     'frameState',6*ones(150,1),'frameStep',(1:150)', ...
     'flip_info',[50+(0:149)'/30 zeros(150,3)], ...
     'mousePositions',[960 540 50;960 540 55]);

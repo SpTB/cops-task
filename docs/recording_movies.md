@@ -14,18 +14,22 @@ are shown. Reward beeps and a green reward outline are enabled by default and
 can be disabled independently.
 
 ```matlab
+ex = recEx("Tracking demo", length=5); % demo/movies/Tracking demo.mp4
 ex = recEx(length=5, targetNum=2, visibility=1, background=-1, mouseVisible=true);
-ex = recEx(8, background=1, visibility=0.5, mouseVisible=false);
+ex = recEx("", length=8, background=1, visibility=0.5, mouseVisible=false);
 ex = recEx(nTrials=3, length=4, fps=60, outputDir="presentation_movies");
 ex = recEx(displayReward=true, rewardMarker=true);
 ex = recEx(rewardLandscape=1); % Gaussian peak in the top-left quadrant
 ```
 
-The first numeric argument is an optional shortcut for `length`. All other
-arguments use name-value syntax. Options:
+The optional first argument is a movie title string. Omit it or pass `""`,
+`''`, or `[]` to name the movie from its actual trial parameters. Supply duration
+with `length=...`; a numeric first argument is no longer a length shortcut.
+All remaining arguments use name-value syntax. Options:
 
 | Argument | Default | Meaning |
 | --- | --- | --- |
+| `title` (first positional argument) | `""` | Movie filename without its extension; empty selects an automatic parameter-based title |
 | `length` | `10` | Stimulus/movie length in seconds, rounded to a movie frame |
 | `targetNum` | `2` | One or two targets |
 | `visibility` | `1` | Target visibility from 0 to 1, including null/fixed backgrounds |
@@ -39,9 +43,9 @@ arguments use name-value syntax. Options:
 | `fps` | `30` | Movie frame rate (positive integer, up to 240) |
 | `movieSizePx` | `[1280 720]` | Output `[width height]`, both even |
 | `windowSizePx` | `[960 540]` | Requested preview window size |
-| `outputDir` | `""` | Parent folder for movies; empty uses the session's `movies` folder |
+| `outputDir` | `""` | Movie folder; empty uses `<repo>/demo/movies`; no session subfolders are added |
 | `stimulusDir` | `""` | Generated bank/session directory; empty uses the bundled test bank |
-| `filePrefix` | `"demo"` | Prefix for the accompanying session data and movie subfolder |
+| `filePrefix` | `"demo"` | Prefix for the accompanying session data |
 
 The stimulus updates at the existing configured rate (normally 30 Hz). A 60 fps
 movie repeats each stimulus step twice; it does not introduce extra motion.
@@ -112,13 +116,22 @@ The console prints the absolute movie directory and each completed file.
 Default output is:
 
 ```text
-test_data/output/demo/YYYY.MM.DD/movies/<session-name>/trial_001.mp4
+demo/movies/targets-2_bg-null_coh-1_vis-1_landscape-flat.mp4
 ```
 
-The `demo` folder is the default subject ID; `filePrefix` selects another ID.
-An explicit `outputDir` also gets a per-session subfolder. Session naming
-follows the regular filename mechanism, using `filePrefix`. Existing movies
-are preserved by adding a numeric suffix if a trial filename already exists.
+Movies are saved directly in this repository-relative folder (or directly in
+an explicit `outputDir`), without per-session subfolders. The folder is independent
+of the current working directory and `filePrefix`.
+
+Automatic titles include the trial's number of targets, background (`null` for
+`-1`, `fixed` for `0`, otherwise the noise level), coherence, visibility, and
+reward landscape (`flat`, `top-left`, `top-right`, `bottom-left`, or `bottom-right`).
+Coherence is the trial's actual `ctl.coherence`, separate from the `visibility`
+option. A custom first-argument title replaces this automatic name; filename
+characters such as slashes and colons are replaced with underscores.
+
+For `nTrials>1`, each filename gets `_trial_001`, `_trial_002`, etc. Existing movies
+are preserved by adding `_02`, `_03`, etc. when a filename already exists.
 Normal session/trial MAT data are saved too. The returned `ex.MovieFiles` lists
 successful exports; `ex.Trials(i).movie` records frame count, duration, size,
 source step indices, and the sampled mouse path.

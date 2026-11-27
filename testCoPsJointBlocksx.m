@@ -250,6 +250,8 @@ end
 function testHumanSchedulesStartRewardBlocksAtTaskTrialOne(testCase)
 evalc('ex = setDefaultsCoPs(struct());');
 ex.setup = localSetup();
+ex.setup.monitorWidth = 54;
+ex.setup.viewingDistance = 65;
 ex.exp.CoPs.pre.nreps = 0;
 ex.exp.CoPs.ctl.numBlocks = 3;
 ex.exp.CoPs.ctl.blockMeanTrials = 2;

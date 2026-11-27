@@ -104,7 +104,9 @@ positionBound = 1 + (2 * graph.radius * ctl.targetHiddenBoundsFrac) / ...
 coordinates = [-1 1 -positionBound positionBound];
 posT = struct('x1', coordinates, 'y1', coordinates, ...
     'x2', -coordinates, 'y2', -coordinates);
-setup = struct('window', 10001, 'screenRect', logicalRect);
+setup = struct('window', 10001, 'screenRect', logicalRect, ...
+    'monitorWidth', 54, 'viewingDistance', 65);
+graph = resolveCoPsStimulusFieldx(graph, setup);
 
 drawnSize = fliplr(graph.texture_dims) * graph.size_mult;
 logicalSize = logicalRect(3:4) - logicalRect(1:2);

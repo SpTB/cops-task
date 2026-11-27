@@ -1,9 +1,7 @@
 function ex = prepareCoPsMovieOutputx(ex)
-% Separate per-session movie folder, outside the temporary trial MAT folder.
-[~,stem] = fileparts(ex.Header.onlineFileName);
-base = char(ex.setup.recording.outputDir);
-if isempty(base), base = fullfile(ex.Header.onlineDirName,'movies'); end
-directory = fullfile(base,stem);
+% Resolve the movie folder without adding per-session subfolders.
+directory = char(ex.setup.recording.outputDir);
+if isempty(directory), directory = fullfile(fileparts(mfilename('fullpath')),'demo','movies'); end
 if ~isfolder(directory)
     [ok,message] = mkdir(directory);
     if ~ok, error('recEx:OutputDirectory','Cannot create movie directory: %s',message); end

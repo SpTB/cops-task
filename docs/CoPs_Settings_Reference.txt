@@ -133,7 +133,13 @@ graph.texture_dim: <positive integer> Initial square source-image size in pixels
 
 graph.texture_dims: <two positive integers> Source image dimensions [height width]; normally replaced by auto-detection
 
-graph.size_mult: <positive number> Scale from source pixels to displayed pixels; auto-detection may adjust it
+graph.size_mult: <positive number> Scale from source pixels to displayed pixels; fieldSizeDeg resolves it after display initialization and source-image auto-detection
+
+graph.fieldSizeDeg: <positive number or []> Full edge-to-edge angle of the centered square stimulus field. Default 26 deg on each side, using screen-plane geometry. Empty/missing retains legacy pixel sizing.
+
+graph.fieldSizePx: <resolved positive integer> Field side in current display pixels; approximately 1067 at 1920 px screen width or 1423 at 2560 px on the human rig (54 cm wide, 65 cm away)
+
+graph.fieldSizeActualDeg: <resolved positive number> Actual full angular span after rounding the field side to an integer pixel. Accurate fullscreen geometry requires measured monitor width and viewing distance; windowed previews scale the whole display into a desktop window. A field that cannot fit is rejected rather than reduced or cropped.
 
 graph.scaleTextureOnDraw: <true/false> Scale textures during drawing instead of resizing each texture beforehand
 

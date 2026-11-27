@@ -57,19 +57,36 @@ verifyTrue(testCase,c.rewardMarker);
 verifyEqual(testCase,c.rewardLandscape,0);
 verifyEqual(testCase,c.rewardMarkerDuration,0.2);
 verifyEqual(testCase,c.fps,30);
+verifyEqual(testCase,c.title,"");
 verifyEqual(testCase,ex.MovieFiles,{'test.mp4'});
 end
 
-function testNamedAndPositionalLengthsAndCustomControls(testCase)
+function testNamedLengthAndPositionalTitleWithCustomControls(testCase)
 global COPS_RECEX_TEST
 invoke(testCase,length=8,targetNum=1,visibility=0.4,background=1,mouseVisible=false,nTrials=3);
 c=COPS_RECEX_TEST.args.recording;
 verifyEqual(testCase,[c.length c.targetNum c.visibility c.background c.nTrials],[8 1 0.4 1 3]);
 verifyFalse(testCase,COPS_RECEX_TEST.args.showCursor);
-invoke(testCase,2.5,fps=60,movieSizePx=[1920 1080]);
+invoke(testCase,"Tracking demo",length=2.5,fps=60,movieSizePx=[1920 1080]);
 c=COPS_RECEX_TEST.args.recording;
 verifyEqual(testCase,[c.length c.fps],[2.5 60]);
 verifyEqual(testCase,c.movieSizePx,[1920 1080]);
+verifyEqual(testCase,c.title,"Tracking demo");
+invoke(testCase,'length',5);
+verifyEqual(testCase,COPS_RECEX_TEST.args.recording.length,5);
+verifyEqual(testCase,COPS_RECEX_TEST.args.recording.title,"");
+invoke(testCase,"length",length=3);
+verifyEqual(testCase,COPS_RECEX_TEST.args.recording.title,"length");
+end
+
+function testEmptyTitlesUseAutomaticNamesAndCustomTitlesStayInOneFile(testCase)
+global COPS_RECEX_TEST
+for title={"",'',[],"   "}
+    invoke(testCase,title{1},length=5);
+    verifyEqual(testCase,COPS_RECEX_TEST.args.recording.title,"");
+end
+invoke(testCase,"  Tracking/demo: 1.mp4  ");
+verifyEqual(testCase,COPS_RECEX_TEST.args.recording.title,"Tracking_demo_ 1");
 end
 
 function testGeneratedStimulusDirectoryIsForwardedToRunEx(testCase)
@@ -81,6 +98,7 @@ verifyEqual(testCase,COPS_RECEX_TEST.args.recording.stimulusDir,folder);
 end
 
 function testInvalidInputsFailBeforeStartingTask(testCase)
+verifyError(testCase,@() invoke(testCase,8),'recEx:Title');
 verifyError(testCase,@() invoke(testCase,length=0),'MATLAB:validators:mustBePositive');
 verifyError(testCase,@() invoke(testCase,targetNum=3),'MATLAB:validators:mustBeMember');
 verifyError(testCase,@() invoke(testCase,movieSizePx=[1279 720]),'recEx:MovieSize');
@@ -172,14 +190,14 @@ verifyFalse(testCase,ex.exp.CoPs.instrOn);
 verifyFalse(testCase,ex.exp.CoPs.ctl.advance_trial_with_space);
 end
 
-function testOutputDirectoryResolvesAbsolutePathAndKeepsFilesSeparate(testCase)
+function testOutputDirectoryResolvesAbsolutePathWithoutSessionSubfolder(testCase)
 original=pwd; cd(testCase.TestData.folder);
 cleanup=onCleanup(@() cd(original)); %#ok<NASGU>
 ex.Header=struct('onlineFileName','demo_session.mat','onlineDirName',testCase.TestData.folder);
 ex.setup.recording.outputDir="my_movies";
 ex=prepareCoPsMovieOutputx(ex);
 verifyEqual(testCase,ex.setup.recording.outputDirectory, ...
-    fullfile(testCase.TestData.folder,'my_movies','demo_session'));
+    fullfile(testCase.TestData.folder,'my_movies'));
 end
 
 function ex=invoke(testCase,varargin)

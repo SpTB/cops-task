@@ -92,6 +92,7 @@ end
 timing = ex.exp.CoPs.timing;
 [graph, textureGeometryInfo] = localResolveGraphTextureGeometryFromStimulusLocal( ...
     graph, localCurrentStimulusDirLocal(ex));
+graph = resolveCoPsStimulusFieldx(graph, ex.setup);
 [graph, radiusInfo] = localResolveGraphRadiusForDisplayLocal(graph, ex.setup);
 ex.exp.CoPs.graph = graph;
 [rew, gaussSigmaInfo] = localResolveRewardGaussianSigmaForDisplayLocal(rew, ex.setup);
@@ -450,7 +451,7 @@ end
 ex.Trials(ex.j).rewardRadiusPx = max_distance_reward;
 ex.Trials(ex.j).mainRewardRadiusPx = main_reward_radius_px;
 ex.Trials(ex.j).mainRewardRadiusDeg = main_reward_radius_px / ppd;
-gauss_dim = graph.texture_dims(1)*graph.size_mult; % based on texture size
+gauss_dim = round(graph.texture_dims(1)*graph.size_mult); % integer reward-matrix size
 
 %reward_mat = gauss_rew_land(gauss_dim, [gauss_dim/2, gauss_dim/2], rew.gauss_sigma); % reward matrix
 % Resolve the fixed session center or the current reward-peak block.

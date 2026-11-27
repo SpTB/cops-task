@@ -22,11 +22,12 @@ retain the existing timestamp and collision suffixes. Existing data are not move
 
 The human rig's normal data root is `/home/nei-op4/Desktop/CoPs`. Explicit
 `test1` and `mouse_mini` runs use `<repo>/test_data/output`, which is ignored by
-Git. `recEx` uses that test root too, with movies under the participant's date
-folder unless `outputDir` is supplied. Ordinary `runEx` reads the selected
-stimulus bank; it does not generate or rewrite that bank. Whether the normal
-data root is itself inside a repository depends on where the repository was
-cloned.
+Git. `recEx` uses that test root for session/trial data, with movies under
+`<repo>/demo/movies/` unless `outputDir` is supplied, without session subfolders.
+Movie names use the optional `recEx` title or the trial parameters. Ordinary
+`runEx` reads the selected stimulus bank; it does not generate or rewrite that
+bank. Whether the normal data root is itself inside a repository depends on
+where the repository was cloned.
 
 The Command Window prints the resolved session MAT path as `CoPs output:`.
 After `ex = runEx(...)`, it can also be obtained with

@@ -11,6 +11,7 @@ ctl = ex.exp.CoPs.ctl;
 if ~localLogicalScalar(ctl, 'jointBlocks', false)
     return
 end
+ex.exp.CoPs.graph = resolveCoPsStimulusFieldx(ex.exp.CoPs.graph, ex.setup);
 
 numBlocks = localPositiveInteger(ctl, 'numBlocks');
 meanTrials = localPositiveInteger(ctl, 'blockMeanTrials');
